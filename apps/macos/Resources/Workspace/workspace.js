@@ -1,4 +1,19 @@
-import { workspaceTransforms } from './scale-model.mjs'
+const INTERFACE_SCALE_STEPS = Object.freeze([0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75])
+
+function workspaceTransforms({ interfaceScale: requestedInterfaceScale, artboardZoom: requestedZoom, canvas }) {
+  const ui = Number(requestedInterfaceScale)
+  const zoom = Number(requestedZoom)
+  if (!INTERFACE_SCALE_STEPS.includes(ui)) throw new RangeError('Interface Scale must use an allowed step')
+  if (!Number.isFinite(zoom) || zoom < 0.1 || zoom > 4) {
+    throw new RangeError('Artboard zoom must be between 10% and 400%')
+  }
+  return Object.freeze({
+    interfaceScale: ui,
+    chromeRemPixels: 16 * ui,
+    artboardTransform: `scale(${zoom})`,
+    exportGeometry: Object.freeze({ width: canvas.width, height: canvas.height }),
+  })
+}
 
 const elements = {
   deckTitle: document.querySelector('#deck-title'),
