@@ -5,11 +5,13 @@ struct DeckWorkbenchApp: App {
     @StateObject private var controller: DeckSessionController
 
     init() {
+        let initializedController: DeckSessionController
         do {
-            _controller = StateObject(wrappedValue: try DeckSessionController())
+            initializedController = try DeckSessionController()
         } catch {
             fatalError(WorkbenchFailure.unexpected(error).errorDescription ?? "Deck Workbench could not start")
         }
+        _controller = StateObject(wrappedValue: initializedController)
     }
 
     var body: some Scene {
