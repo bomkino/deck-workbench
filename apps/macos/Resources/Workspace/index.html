@@ -43,15 +43,14 @@
 
       <section class="editorial-spine">
         <nav class="sequence" aria-label="Deck sequence">
-          <p class="panel-label">Sequence</p>
-          <div class="section-row">
-            <span class="disclosure" aria-hidden="true">⌄</span>
-            <strong id="section-title">Opening</strong>
+          <div class="sequence-heading">
+            <p class="panel-label">Sequence</p>
+            <div class="sequence-actions">
+              <button id="add-section" type="button" disabled aria-label="Add Section">+ Section</button>
+              <button id="add-slide" type="button" disabled aria-label="Add Slide">+ Slide</button>
+            </div>
           </div>
-          <button class="slide-row selected" id="slide-row" type="button" disabled>
-            <span class="slide-number">01</span>
-            <span id="slide-label">Cover</span>
-          </button>
+          <div id="sequence-list" class="sequence-list"></div>
         </nav>
 
         <section class="story" aria-labelledby="story-heading">

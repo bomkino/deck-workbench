@@ -18,6 +18,8 @@ const evidence = join(artifacts, 'evidence')
 const pdfPath = join(evidence, 'tracer.pdf')
 const createResult = JSON.parse(readFileSync(join(evidence, 'create-result.json'), 'utf8'))
 const reopenResult = JSON.parse(readFileSync(join(evidence, 'reopen-result.json'), 'utf8'))
+const storyCreateResult = JSON.parse(readFileSync(join(evidence, 'story-create-result.json'), 'utf8'))
+const storyReopenResult = JSON.parse(readFileSync(join(evidence, 'story-reopen-result.json'), 'utf8'))
 
 if (!readdirSync(artifacts).includes(zipName)) {
   throw new Error(`Missing exact-SHA artifact: ${zipName}`)
@@ -57,7 +59,7 @@ ${commits}
 
 | Seam | Scenario | Independent expectation | Result |
 |---|---|---|---|
-| Deck kernel | prepare/commit/query/undo/redo plus stale and invalid rejection | Prepare is private; rejection is atomic; history is semantic | Pass: 11 portable scenario tests |
+| Deck kernel | prepare/commit/query/undo/redo plus stale and invalid rejection | Prepare is private; rejection is atomic; history is semantic | Pass: 13 portable scenario tests |
 | Document store | append/fsync/hash/replay/checkpoint plus corrupt/unsupported probes | Acknowledgement follows durable append; replay is deterministic | Pass: restart replay reached revision ${createResult.journalReplayRevision} |
 | Typed bridge | generated Swift/JavaScript parity and malformed method | Only named methods cross the WebView boundary | Pass |
 | Scale model | Interface Scale 1.25 and artboard zoom 0.5 | Chrome scale does not alter slide/export geometry | Pass |
@@ -67,7 +69,7 @@ ${commits}
 
 | Command | Exit | Key result / artifact |
 |---|---:|---|
-| \`npm test\` | 0 | 11/11 causal tests passed |
+| \`npm test\` | 0 | 13/13 causal tests passed |
 | \`node scripts/verify-source.mjs\` | 0 | Source contract passed |
 | \`scripts/build-macos.sh\` | 0 | arm64 app built and ad-hoc signed |
 | \`scripts/verify-packaged-macos.sh\` | 0 | ZIP extracted; signature, architecture and exact journey passed |
@@ -117,10 +119,59 @@ No third-party production runtime dependency is present.
 
 ## Next dispatchable ticket
 
-- Ticket: \`DW-W01 — Story Document\`
-- Exact user journey: expand the proven Story document surface through the same semantic command, durability and projection seams
-- Dependency/gate: begin only from this green DW-T00 architecture; do not introduce Garuda, editor dependencies or broad export work
+- Ticket: next bounded \`DW-W01 — Story Document\` slice
+- Exact user journey: rename Story structure and set Slide intent through the same semantic command, durability and projection seams
+- Dependency/gate: preserve the green DW-T00 architecture; do not introduce Garuda, editor dependencies or broad export work
 `
 
 writeFileSync(join(evidence, 'DW-T00-EVIDENCE-RECEIPT.md'), receipt)
-console.log(`Wrote exact-SHA evidence receipt for ${endingSHA}`)
+
+const storyReceipt = `# DW-W01 Story structure slice evidence receipt
+
+## Identity
+
+- Repository: \`bomkino/deck-workbench\`
+- Branch: \`${branch}\`
+- DW-T00 baseline SHA: \`0e434c508088a5150b20c2d8aef92d830fa17b7c\`
+- Ending SHA: \`${endingSHA}\`
+- Slice: Section/Slide creation and ordering
+- Date: ${new Date().toISOString()}
+
+## User-observable slice
+
+The extracted macOS app creates a second Section and Slide through the typed bridge, projects the expanded Editorial Spine, reorders both entities by stable ID, saves and quits, reopens the same semantic Deck, undoes and redoes the cross-Section Slide move through durable history, and checkpoints revision ${storyReopenResult.redoRevision}.
+
+## Public seams exercised
+
+| Seam | Scenario | Result |
+|---|---|---|
+| Kernel | \`section.add\`, \`slide.add\`, \`section.move\`, \`slide.move\` prepare/commit and atomic rejection | Pass |
+| Story projection | Ordered Sections/Slides and canonical headline summaries | Pass |
+| Typed bridge | Four structural commands plus query/undo/redo from WebView | Pass |
+| Journal/replay | Four commands, undo and redo in one hash chain; pre-checkpoint restart at revision ${storyCreateResult.journalReplayRevision} | Pass |
+| Packaged app | Native create → add/reorder → save/quit → reopen → undo/redo | Pass |
+
+## Packaged artifact
+
+- Path: \`${relative(root, zipPath)}\`
+- SHA-256: \`${sha256(zipPath)}\`
+- Executable architecture: \`arm64\` only
+- Embedded commit: \`${endingSHA}\`
+- Code-sign, ZIP and extracted verification: pass
+- Create revision: ${storyCreateResult.revision}
+- Reopen / undo / redo revisions: ${storyReopenResult.reopenedRevision} / ${storyReopenResult.undoRevision} / ${storyReopenResult.redoRevision}
+
+## Honest status
+
+- Status: **Packaged macOS DW-W01 structural slice**, not full integrated DW-W01
+- Supported claims: native Story document structure creation; stable-ID ordering; durable replay; reopen undo/redo; minimal Editorial Spine controls
+- Unsupported claims: Section rename, Deck rename, Slide intent editing, arbitrary Content Blocks, crash-injection matrix, Garuda parity, production editor behavior
+- Scope boundary: no Garuda shell, editor dependency or export expansion was introduced
+
+## Next dispatchable slice
+
+- Add \`section.rename\` and \`slide.intent.set\` with the same prepared-change/history seam and user-visible Story controls.
+`
+
+writeFileSync(join(evidence, 'DW-W01-STORY-SLICE-RECEIPT.md'), storyReceipt)
+console.log(`Wrote exact-SHA DW-T00 and DW-W01 evidence receipts for ${endingSHA}`)

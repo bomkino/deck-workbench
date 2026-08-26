@@ -17,8 +17,9 @@ function workspaceTransforms({ interfaceScale: requestedInterfaceScale, artboard
 
 const elements = {
   deckTitle: document.querySelector('#deck-title'),
-  sectionTitle: document.querySelector('#section-title'),
-  slideLabel: document.querySelector('#slide-label'),
+  sequenceList: document.querySelector('#sequence-list'),
+  addSection: document.querySelector('#add-section'),
+  addSlide: document.querySelector('#add-slide'),
   headline: document.querySelector('#headline'),
   artboardHeadline: document.querySelector('#artboard-headline'),
   artboardIntent: document.querySelector('#artboard-intent'),
@@ -38,6 +39,7 @@ const elements = {
 }
 
 let projection = null
+let storyDocument = null
 let interfaceScale = 1
 let artboardZoom = 0.35
 
@@ -53,13 +55,13 @@ function setBusy(label) {
   elements.commit.disabled = true
   elements.undo.disabled = true
   elements.redo.disabled = true
+  elements.addSection.disabled = true
+  elements.addSlide.disabled = true
 }
 
 function renderProjection(next) {
   projection = next
   elements.deckTitle.textContent = next.deckTitle
-  elements.sectionTitle.textContent = next.section.title
-  elements.slideLabel.textContent = next.slide.intent[0].toUpperCase() + next.slide.intent.slice(1)
   elements.headline.disabled = false
   elements.headline.value = next.headline.plainText
   elements.artboardHeadline.textContent = next.headline.plainText
@@ -70,9 +72,149 @@ function renderProjection(next) {
   elements.commit.disabled = false
   elements.undo.disabled = !next.history.canUndo
   elements.redo.disabled = !next.history.canRedo
+  elements.addSection.disabled = false
+  elements.addSlide.disabled = false
   elements.saveState.textContent = 'Durable and projected'
   applyScales()
+  void refreshSequence()
   return next
+}
+
+function renderSequence(next) {
+  storyDocument = next
+  elements.sequenceList.replaceChildren()
+  let slideNumber = 1
+  next.sections.forEach((section, sectionIndex) => {
+    const sectionRow = document.createElement('div')
+    sectionRow.className = 'section-row'
+    const title = document.createElement('strong')
+    title.textContent = section.title
+    sectionRow.append(title)
+    if (sectionIndex > 0) {
+      const move = document.createElement('button')
+      move.type = 'button'
+      move.className = 'move-up'
+      move.textContent = '↑'
+      move.setAttribute('aria-label', `Move ${section.title} up`)
+      move.addEventListener('click', () => moveSectionUp(section.id))
+      sectionRow.append(move)
+    }
+    elements.sequenceList.append(sectionRow)
+
+    section.slides.forEach((slide, slideIndex) => {
+      const entry = document.createElement('div')
+      entry.className = 'slide-entry'
+      const select = document.createElement('button')
+      select.type = 'button'
+      select.className = `slide-row${projection?.slide.id === slide.id ? ' selected' : ''}`
+      const number = document.createElement('span')
+      number.className = 'slide-number'
+      number.textContent = String(slideNumber).padStart(2, '0')
+      const label = document.createElement('span')
+      label.textContent = slide.headline?.plainText || slide.intent
+      select.append(number, label)
+      select.addEventListener('click', () => selectSlide(slide.id))
+      entry.append(select)
+      if (slideIndex > 0) {
+        const move = document.createElement('button')
+        move.type = 'button'
+        move.className = 'move-up'
+        move.textContent = '↑'
+        move.setAttribute('aria-label', `Move Slide ${slideNumber} up`)
+        move.addEventListener('click', () => moveSlideUp(section.id, slide.id))
+        entry.append(move)
+      }
+      elements.sequenceList.append(entry)
+      slideNumber += 1
+    })
+  })
+}
+
+async function refreshSequence() {
+  try {
+    renderSequence(await window.deckBridge.query({ name: 'story.document', params: {} }))
+  } catch {
+    // No Deck is open yet; the native shell owns empty-document state.
+  }
+}
+
+async function executeStructural(type, payload, selectedSlideId = projection?.slide.id) {
+  if (!projection) return
+  setBusy(`Validating ${type}…`)
+  try {
+    await window.deckBridge.execute({
+      command: {
+        commandId: crypto.randomUUID(),
+        expectedRevision: projection.revision,
+        type,
+        payload,
+        source: { kind: 'ui', label: 'Story document' },
+        issuedAt: new Date().toISOString(),
+      },
+    })
+    const next = await window.deckBridge.query({
+      name: 'slide.activeProjection',
+      params: selectedSlideId ? { slideId: selectedSlideId } : {},
+    })
+    renderProjection(next)
+  } catch (error) {
+    elements.saveState.textContent = `${error.name ?? 'Error'}: ${error.message}`
+    renderProjection(projection)
+  }
+}
+
+async function selectSlide(slideId) {
+  try {
+    renderProjection(await window.deckBridge.query({ name: 'slide.activeProjection', params: { slideId } }))
+  } catch (error) {
+    elements.saveState.textContent = `${error.name ?? 'Error'}: ${error.message}`
+  }
+}
+
+async function addSection() {
+  if (!storyDocument) return
+  await executeStructural('section.add', {
+    sectionId: crypto.randomUUID(),
+    title: `Section ${storyDocument.sections.length + 1}`,
+    afterSectionId: storyDocument.sections.at(-1)?.id ?? null,
+  })
+}
+
+async function addSlide() {
+  if (!storyDocument || !projection) return
+  const section = storyDocument.sections.find((candidate) => candidate.id === projection.section.id)
+  if (!section) return
+  const slideId = crypto.randomUUID()
+  await executeStructural('slide.add', {
+    sectionId: section.id,
+    slideId,
+    blockId: crypto.randomUUID(),
+    intent: 'statement',
+    headline: richText('Untitled Story'),
+    afterSlideId: section.slides.at(-1)?.id ?? null,
+  }, slideId)
+}
+
+async function moveSectionUp(sectionId) {
+  if (!storyDocument) return
+  const index = storyDocument.sections.findIndex((section) => section.id === sectionId)
+  if (index <= 0) return
+  await executeStructural('section.move', {
+    sectionId,
+    afterSectionId: index > 1 ? storyDocument.sections[index - 2].id : null,
+  })
+}
+
+async function moveSlideUp(sectionId, slideId) {
+  if (!storyDocument) return
+  const section = storyDocument.sections.find((candidate) => candidate.id === sectionId)
+  const index = section?.slides.findIndex((slide) => slide.id === slideId) ?? -1
+  if (index <= 0) return
+  await executeStructural('slide.move', {
+    slideId,
+    targetSectionId: sectionId,
+    afterSlideId: index > 1 ? section.slides[index - 2].id : null,
+  }, slideId)
 }
 
 function applyScales() {
@@ -126,6 +268,8 @@ async function historyAction(method) {
 }
 
 elements.commit.addEventListener('click', commitHeadline)
+elements.addSection.addEventListener('click', addSection)
+elements.addSlide.addEventListener('click', addSlide)
 elements.headline.addEventListener('keydown', (event) => {
   if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') commitHeadline()
 })

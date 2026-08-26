@@ -53,9 +53,26 @@ test "$(wc -l < "$DOCUMENT/journal.ndjson" | tr -d ' ')" = "4"
 swift -e 'import Foundation; import PDFKit; let u = URL(fileURLWithPath: CommandLine.arguments[1]); guard let d = PDFDocument(url: u), d.pageCount == 1 else { exit(1) }' "$PDF"
 node "$REPOSITORY_ROOT/scripts/verify-tracer-output.mjs" "$DOCUMENT" "$CREATE_RESULT" "$REOPEN_RESULT" "$PDF"
 
+STORY_DOCUMENT="$JOURNEY_ROOT/Story.pitchdeck"
+STORY_CREATE_RESULT="$JOURNEY_ROOT/story-create-result.json"
+STORY_REOPEN_RESULT="$JOURNEY_ROOT/story-reopen-result.json"
+
+"$BINARY" --tracer-story-create "$STORY_DOCUMENT" "$STORY_CREATE_RESULT"
+test -f "$STORY_DOCUMENT/manifest.json"
+test -f "$STORY_DOCUMENT/checkpoint.json"
+test -f "$STORY_DOCUMENT/journal.ndjson"
+test "$(wc -l < "$STORY_DOCUMENT/journal.ndjson" | tr -d ' ')" = "4"
+
+"$BINARY" --tracer-story-reopen "$STORY_DOCUMENT" "$STORY_REOPEN_RESULT"
+test "$(wc -l < "$STORY_DOCUMENT/journal.ndjson" | tr -d ' ')" = "6"
+node "$REPOSITORY_ROOT/scripts/verify-story-tracer-output.mjs" \
+  "$STORY_DOCUMENT" "$STORY_CREATE_RESULT" "$STORY_REOPEN_RESULT"
+
 mkdir -p "$REPOSITORY_ROOT/artifacts/evidence"
 cp "$CREATE_RESULT" "$REPOSITORY_ROOT/artifacts/evidence/create-result.json"
 cp "$REOPEN_RESULT" "$REPOSITORY_ROOT/artifacts/evidence/reopen-result.json"
+cp "$STORY_CREATE_RESULT" "$REPOSITORY_ROOT/artifacts/evidence/story-create-result.json"
+cp "$STORY_REOPEN_RESULT" "$REPOSITORY_ROOT/artifacts/evidence/story-reopen-result.json"
 cp "$PDF" "$REPOSITORY_ROOT/artifacts/evidence/tracer.pdf"
 (
   cd "$REPOSITORY_ROOT/artifacts/evidence"

@@ -41,6 +41,23 @@ function projection(session) {
   return kernel.query(session, 'slide.activeProjection', {})
 }
 
+function execute(session, value) {
+  const prepared = kernel.prepare(session, value)
+  assert.equal(prepared.ok, true, prepared.error?.message)
+  return kernel.commit(session, prepared)
+}
+
+function structuralCommand(revision, type, payload, commandId = `${type}-${revision}`) {
+  return {
+    commandId,
+    expectedRevision: revision,
+    type,
+    payload,
+    source: { kind: 'ui', label: 'Story document' },
+    issuedAt: '2026-08-26T22:20:00Z',
+  }
+}
+
 test('content.update prepares privately, commits atomically, and preserves Slide identity', () => {
   const session = kernel.open(checkpoint())
   const original = JSON.stringify(kernel.serializeSession(session))
@@ -123,4 +140,80 @@ test('unsupported checkpoint schema rejects explicitly', () => {
   future.schemaVersion = 2
   const result = kernel.open(future)
   assert.equal(result.error.name, 'UnsupportedSchema')
+})
+
+test('Sections and Slides add and reorder through semantic history using stable IDs', () => {
+  const session = kernel.open(checkpoint())
+  const openingSectionId = 'section-00000000-0000-4000-8000-000000000001'
+  const openingSlideId = 'slide-00000000-0000-4000-8000-000000000001'
+  const secondSectionId = 'section-00000000-0000-4000-8000-000000000002'
+  const secondSlideId = 'slide-00000000-0000-4000-8000-000000000002'
+
+  const before = JSON.stringify(kernel.serializeSession(session))
+  const preparedSection = kernel.prepare(session, structuralCommand(0, 'section.add', {
+    sectionId: secondSectionId,
+    title: 'Act Two',
+    afterSectionId: openingSectionId,
+  }))
+  assert.equal(preparedSection.ok, true)
+  assert.equal(JSON.stringify(kernel.serializeSession(session)), before)
+  kernel.commit(session, preparedSection)
+
+  execute(session, structuralCommand(1, 'slide.add', {
+    sectionId: secondSectionId,
+    slideId: secondSlideId,
+    blockId: 'block-00000000-0000-4000-8000-000000000002',
+    intent: 'statement',
+    headline: {
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: 'The Work Begins' }] }],
+    },
+    afterSlideId: null,
+  }))
+  execute(session, structuralCommand(2, 'section.move', {
+    sectionId: secondSectionId,
+    afterSectionId: null,
+  }))
+  execute(session, structuralCommand(3, 'slide.move', {
+    slideId: secondSlideId,
+    targetSectionId: openingSectionId,
+    afterSlideId: openingSlideId,
+  }))
+
+  const story = kernel.query(session, 'story.document', {})
+  assert.equal(story.revision, 4)
+  assert.deepEqual(JSON.parse(JSON.stringify(story.sections.map((section) => section.id))), [
+    secondSectionId,
+    openingSectionId,
+  ])
+  assert.deepEqual(JSON.parse(JSON.stringify(story.sections[1].slides.map((slide) => slide.id))), [
+    openingSlideId,
+    secondSlideId,
+  ])
+
+  const reopened = kernel.open(kernel.serializeSession(session))
+  kernel.commit(reopened, kernel.prepareUndo(reopened))
+  const undone = kernel.query(reopened, 'story.document', {})
+  assert.deepEqual(JSON.parse(JSON.stringify(undone.sections[0].slides.map((slide) => slide.id))), [secondSlideId])
+  kernel.commit(reopened, kernel.prepareRedo(reopened))
+  assert.equal(kernel.query(reopened, 'story.document', {}).revision, 6)
+})
+
+test('invalid structural commands reject atomically without consuming identities', () => {
+  const session = kernel.open(checkpoint())
+  const before = JSON.stringify(kernel.serializeSession(session))
+  const invalidMove = kernel.prepare(session, structuralCommand(0, 'slide.move', {
+    slideId: 'slide-00000000-0000-4000-8000-000000000001',
+    targetSectionId: 'missing-section',
+    afterSlideId: null,
+  }))
+  const duplicateSection = kernel.prepare(session, structuralCommand(0, 'section.add', {
+    sectionId: 'section-00000000-0000-4000-8000-000000000001',
+    title: 'Duplicate',
+    afterSectionId: null,
+  }, 'duplicate-section'))
+
+  assert.equal(invalidMove.error.name, 'InvalidCommand')
+  assert.equal(duplicateSection.error.name, 'InvalidCommand')
+  assert.equal(JSON.stringify(kernel.serializeSession(session)), before)
 })

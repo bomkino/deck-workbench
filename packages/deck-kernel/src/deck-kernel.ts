@@ -46,15 +46,43 @@ type DeckSnapshot = {
   sections: Section[]
 }
 
+type ContentUpdatePayload = {
+  slideId: string
+  blockId: string
+  value: RichTextDocument
+}
+
+type SectionAddPayload = {
+  sectionId: string
+  title: string
+  afterSectionId?: string | null
+}
+
+type SectionMovePayload = {
+  sectionId: string
+  afterSectionId: string | null
+}
+
+type SlideAddPayload = {
+  sectionId: string
+  slideId: string
+  blockId: string
+  intent: string
+  headline: RichTextDocument
+  afterSlideId?: string | null
+}
+
+type SlideMovePayload = {
+  slideId: string
+  targetSectionId: string
+  afterSlideId: string | null
+}
+
 type CommandEnvelope = {
   commandId: string
   expectedRevision: number
-  type: 'content.update'
-  payload: {
-    slideId: string
-    blockId: string
-    value: RichTextDocument
-  }
+  type: 'content.update' | 'section.add' | 'section.move' | 'slide.add' | 'slide.move'
+  payload: JsonObject
   source: {
     kind: 'ui' | 'keyboard' | 'cli' | 'mcp' | 'migration'
     label?: string
@@ -62,11 +90,20 @@ type CommandEnvelope = {
   issuedAt: string
 }
 
+type HistoryOperation =
+  | { type: 'content.set'; payload: ContentUpdatePayload }
+  | { type: 'section.insert'; payload: { section: Section; afterSectionId: string | null } }
+  | { type: 'section.remove'; payload: { sectionId: string } }
+  | { type: 'section.move'; payload: SectionMovePayload }
+  | { type: 'slide.insert'; payload: { sectionId: string; slide: Slide; afterSlideId: string | null } }
+  | { type: 'slide.remove'; payload: { slideId: string } }
+  | { type: 'slide.move'; payload: SlideMovePayload }
+
 type HistoryEntry = {
   id: string
   label: string
-  forward: CommandEnvelope['payload']
-  inverse: CommandEnvelope['payload']
+  forward: HistoryOperation
+  inverse: HistoryOperation
 }
 
 type Checkpoint = {
@@ -160,14 +197,75 @@ function findBlock(deck: DeckSnapshot, slideId: string, blockId: string): Conten
   return undefined
 }
 
-function replaceBlockValue(
-  deck: DeckSnapshot,
-  payload: CommandEnvelope['payload'],
-): DeckSnapshot {
+function findSlideLocation(deck: DeckSnapshot, slideId: string): { sectionIndex: number; slideIndex: number } | undefined {
+  for (let sectionIndex = 0; sectionIndex < deck.sections.length; sectionIndex += 1) {
+    const slideIndex = deck.sections[sectionIndex].slides.findIndex((slide) => slide.id === slideId)
+    if (slideIndex >= 0) return { sectionIndex, slideIndex }
+  }
+  return undefined
+}
+
+function insertAfter<T extends { id: string }>(items: T[], value: T, afterId: string | null): void {
+  if (items.some((item) => item.id === value.id)) throw new Error(`Identity already exists: ${value.id}`)
+  if (afterId === null) {
+    items.unshift(value)
+    return
+  }
+  const anchorIndex = items.findIndex((item) => item.id === afterId)
+  if (anchorIndex < 0) throw new Error(`Ordering anchor does not exist: ${afterId}`)
+  items.splice(anchorIndex + 1, 0, value)
+}
+
+function applyHistoryOperation(deck: DeckSnapshot, operation: HistoryOperation): DeckSnapshot {
   const next = clone(deck)
-  const block = findBlock(next, payload.slideId, payload.blockId)
-  if (!block) throw new Error('Content Block does not exist')
-  block.value = clone(payload.value)
+  if (operation.type === 'content.set') {
+    const block = findBlock(next, operation.payload.slideId, operation.payload.blockId)
+    if (!block) throw new Error('Content Block does not exist')
+    block.value = clone(operation.payload.value)
+    return next
+  }
+  if (operation.type === 'section.insert') {
+    insertAfter(next.sections, clone(operation.payload.section), operation.payload.afterSectionId)
+    return next
+  }
+  if (operation.type === 'section.remove') {
+    const index = next.sections.findIndex((section) => section.id === operation.payload.sectionId)
+    if (index < 0) throw new Error('Section does not exist')
+    next.sections.splice(index, 1)
+    return next
+  }
+  if (operation.type === 'section.move') {
+    const index = next.sections.findIndex((section) => section.id === operation.payload.sectionId)
+    if (index < 0) throw new Error('Section does not exist')
+    if (operation.payload.afterSectionId === operation.payload.sectionId) {
+      throw new Error('Section cannot be ordered after itself')
+    }
+    const [section] = next.sections.splice(index, 1)
+    insertAfter(next.sections, section, operation.payload.afterSectionId)
+    return next
+  }
+  if (operation.type === 'slide.insert') {
+    const section = next.sections.find((candidate) => candidate.id === operation.payload.sectionId)
+    if (!section) throw new Error('Target Section does not exist')
+    if (findSlideLocation(next, operation.payload.slide.id)) throw new Error('Slide identity already exists')
+    insertAfter(section.slides, clone(operation.payload.slide), operation.payload.afterSlideId)
+    return next
+  }
+  if (operation.type === 'slide.remove') {
+    const location = findSlideLocation(next, operation.payload.slideId)
+    if (!location) throw new Error('Slide does not exist')
+    next.sections[location.sectionIndex].slides.splice(location.slideIndex, 1)
+    return next
+  }
+  const location = findSlideLocation(next, operation.payload.slideId)
+  if (!location) throw new Error('Slide does not exist')
+  if (operation.payload.afterSlideId === operation.payload.slideId) {
+    throw new Error('Slide cannot be ordered after itself')
+  }
+  const target = next.sections.find((section) => section.id === operation.payload.targetSectionId)
+  if (!target) throw new Error('Target Section does not exist')
+  const [slide] = next.sections[location.sectionIndex].slides.splice(location.slideIndex, 1)
+  insertAfter(target.slides, slide, operation.payload.afterSlideId)
   return next
 }
 
@@ -279,6 +377,34 @@ function query(session: KernelSession, name: string, params: JsonObject = {}): J
       redoDepth: checkpoint.redoStack.length,
     }
   }
+  if (name === 'story.document') {
+    return {
+      deckId: checkpoint.deck.deckId,
+      deckTitle: checkpoint.deck.title,
+      revision: checkpoint.revision,
+      sections: checkpoint.deck.sections.map((section) => ({
+        id: section.id,
+        title: section.title,
+        slides: section.slides.map((slide) => {
+          const headline = slide.contentBlocks.find((block) => block.role === 'headline')
+          return {
+            id: slide.id,
+            intent: slide.intent,
+            headline: headline
+              ? {
+                  id: headline.id,
+                  plainText: richTextToPlainText(headline.value),
+                }
+              : null,
+          }
+        }),
+      })),
+      history: {
+        canUndo: checkpoint.undoStack.length > 0,
+        canRedo: checkpoint.redoStack.length > 0,
+      },
+    }
+  }
   if (name === 'slide.activeProjection') {
     const requestedSlideId = typeof params.slideId === 'string' ? params.slideId : undefined
     for (const section of checkpoint.deck.sections) {
@@ -327,31 +453,128 @@ function prepare(session: KernelSession, command: CommandEnvelope): PrepareResul
       `Expected revision ${session.checkpoint.revision}; received ${String(command.expectedRevision)}`,
     )
   }
-  if (command.type !== 'content.update') {
-    return failure('InvalidCommand', `Unsupported command type: ${String(command.type)}`)
+  if (!command.payload || typeof command.payload !== 'object') {
+    return failure('InvalidCommand', `${String(command.type)} requires a payload`)
   }
-  const payload = command.payload
-  if (!payload || typeof payload.slideId !== 'string' || typeof payload.blockId !== 'string') {
-    return failure('InvalidCommand', 'content.update requires slideId and blockId')
-  }
-  if (!isRichTextDocument(payload.value)) {
-    return failure('InvalidCommand', 'content.update value must be semantic rich-text JSON')
-  }
-  const currentBlock = findBlock(session.checkpoint.deck, payload.slideId, payload.blockId)
-  if (!currentBlock) return failure('InvalidCommand', 'Content Block does not exist')
 
-  const before = clone(currentBlock.value)
-  const nextDeck = replaceBlockValue(session.checkpoint.deck, payload)
+  let forward: HistoryOperation
+  let inverse: HistoryOperation
+  let label: string
+  let projectionHints: string[] = ['story', 'slide.activeProjection', 'history']
+  try {
+    if (command.type === 'content.update') {
+      const slideId = assertString(command.payload.slideId, 'slideId')
+      const blockId = assertString(command.payload.blockId, 'blockId')
+      if (!isRichTextDocument(command.payload.value)) {
+        throw new Error('content.update value must be semantic rich-text JSON')
+      }
+      const currentBlock = findBlock(session.checkpoint.deck, slideId, blockId)
+      if (!currentBlock) throw new Error('Content Block does not exist')
+      forward = {
+        type: 'content.set',
+        payload: { slideId, blockId, value: clone(command.payload.value) },
+      }
+      inverse = {
+        type: 'content.set',
+        payload: { slideId, blockId, value: clone(currentBlock.value) },
+      }
+      label = 'Update headline'
+    } else if (command.type === 'section.add') {
+      const sectionId = assertString(command.payload.sectionId, 'sectionId')
+      const title = assertString(command.payload.title, 'title')
+      const afterSectionId = command.payload.afterSectionId === undefined
+        ? session.checkpoint.deck.sections.at(-1)?.id ?? null
+        : command.payload.afterSectionId === null
+          ? null
+          : assertString(command.payload.afterSectionId, 'afterSectionId')
+      forward = {
+        type: 'section.insert',
+        payload: { section: { id: sectionId, title, slides: [] }, afterSectionId },
+      }
+      inverse = { type: 'section.remove', payload: { sectionId } }
+      label = `Add Section: ${title}`
+      projectionHints = ['story', 'sequence', 'history']
+    } else if (command.type === 'section.move') {
+      const sectionId = assertString(command.payload.sectionId, 'sectionId')
+      const index = session.checkpoint.deck.sections.findIndex((section) => section.id === sectionId)
+      if (index < 0) throw new Error('Section does not exist')
+      const afterSectionId = command.payload.afterSectionId === null
+        ? null
+        : assertString(command.payload.afterSectionId, 'afterSectionId')
+      const previousAfterSectionId = index > 0 ? session.checkpoint.deck.sections[index - 1].id : null
+      forward = { type: 'section.move', payload: { sectionId, afterSectionId } }
+      inverse = { type: 'section.move', payload: { sectionId, afterSectionId: previousAfterSectionId } }
+      label = 'Move Section'
+      projectionHints = ['story', 'sequence', 'history']
+    } else if (command.type === 'slide.add') {
+      const sectionId = assertString(command.payload.sectionId, 'sectionId')
+      const section = session.checkpoint.deck.sections.find((candidate) => candidate.id === sectionId)
+      if (!section) throw new Error('Target Section does not exist')
+      const slideId = assertString(command.payload.slideId, 'slideId')
+      const blockId = assertString(command.payload.blockId, 'blockId')
+      const intent = assertString(command.payload.intent, 'intent')
+      if (!isRichTextDocument(command.payload.headline)) {
+        throw new Error('slide.add headline must be semantic rich-text JSON')
+      }
+      const blockIdExists = session.checkpoint.deck.sections.some((candidateSection) =>
+        candidateSection.slides.some((slide) => slide.contentBlocks.some((block) => block.id === blockId)),
+      )
+      if (blockIdExists) throw new Error('Content Block identity already exists')
+      const afterSlideId = command.payload.afterSlideId === undefined
+        ? section.slides.at(-1)?.id ?? null
+        : command.payload.afterSlideId === null
+          ? null
+          : assertString(command.payload.afterSlideId, 'afterSlideId')
+      const slide: Slide = {
+        id: slideId,
+        intent,
+        contentBlocks: [{
+          id: blockId,
+          semanticKey: 'slide.headline',
+          role: 'headline',
+          value: clone(command.payload.headline),
+        }],
+      }
+      forward = { type: 'slide.insert', payload: { sectionId, slide, afterSlideId } }
+      inverse = { type: 'slide.remove', payload: { slideId } }
+      label = 'Add Slide'
+      projectionHints = ['story', 'sequence', 'slide.activeProjection', 'history']
+    } else if (command.type === 'slide.move') {
+      const slideId = assertString(command.payload.slideId, 'slideId')
+      const targetSectionId = assertString(command.payload.targetSectionId, 'targetSectionId')
+      const location = findSlideLocation(session.checkpoint.deck, slideId)
+      if (!location) throw new Error('Slide does not exist')
+      const sourceSection = session.checkpoint.deck.sections[location.sectionIndex]
+      const previousAfterSlideId = location.slideIndex > 0 ? sourceSection.slides[location.slideIndex - 1].id : null
+      const afterSlideId = command.payload.afterSlideId === null
+        ? null
+        : assertString(command.payload.afterSlideId, 'afterSlideId')
+      forward = { type: 'slide.move', payload: { slideId, targetSectionId, afterSlideId } }
+      inverse = {
+        type: 'slide.move',
+        payload: { slideId, targetSectionId: sourceSection.id, afterSlideId: previousAfterSlideId },
+      }
+      label = 'Move Slide'
+      projectionHints = ['story', 'sequence', 'slide.activeProjection', 'history']
+    } else {
+      return failure('InvalidCommand', `Unsupported command type: ${String(command.type)}`)
+    }
+  } catch (error) {
+    return failure('InvalidCommand', (error as Error).message)
+  }
+
+  let nextDeck: DeckSnapshot
+  try {
+    nextDeck = applyHistoryOperation(session.checkpoint.deck, forward)
+  } catch (error) {
+    return failure('InvalidCommand', (error as Error).message)
+  }
   const nextRevision = session.checkpoint.revision + 1
   const entry: HistoryEntry = {
     id: command.commandId,
-    label: 'Update headline',
-    forward: clone(payload),
-    inverse: {
-      slideId: payload.slideId,
-      blockId: payload.blockId,
-      value: before,
-    },
+    label,
+    forward: clone(forward),
+    inverse: clone(inverse),
   }
   const acknowledgement = {
     commandId: command.commandId,
@@ -375,7 +598,7 @@ function prepare(session: KernelSession, command: CommandEnvelope): PrepareResul
       operation: 'command',
       command: clone(command),
     },
-    projectionHints: ['story', 'slide.activeProjection', 'history'],
+    projectionHints,
   }
 }
 
@@ -390,7 +613,7 @@ function prepareUndo(session: KernelSession): PrepareResult {
     commandId: `undo:${entry.id}:${nextRevision}`,
     baseRevision: session.checkpoint.revision,
     nextRevision,
-    nextDeck: replaceBlockValue(session.checkpoint.deck, entry.inverse),
+    nextDeck: applyHistoryOperation(session.checkpoint.deck, entry.inverse),
     nextUndoStack: clone(stack.slice(0, -1)),
     nextRedoStack: [...clone(session.checkpoint.redoStack), entry],
     nextProcessedCommands: clone(session.checkpoint.processedCommands),
@@ -410,7 +633,7 @@ function prepareRedo(session: KernelSession): PrepareResult {
     commandId: `redo:${entry.id}:${nextRevision}`,
     baseRevision: session.checkpoint.revision,
     nextRevision,
-    nextDeck: replaceBlockValue(session.checkpoint.deck, entry.forward),
+    nextDeck: applyHistoryOperation(session.checkpoint.deck, entry.forward),
     nextUndoStack: [...clone(session.checkpoint.undoStack), entry],
     nextRedoStack: clone(stack.slice(0, -1)),
     nextProcessedCommands: clone(session.checkpoint.processedCommands),

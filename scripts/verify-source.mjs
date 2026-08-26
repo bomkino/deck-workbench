@@ -12,6 +12,7 @@ const required = [
   'packages/bridge-contract/bridge.contract.json',
   'scripts/build-macos.sh',
   'scripts/verify-packaged-macos.sh',
+  'scripts/verify-story-tracer-output.mjs',
   'THIRD_PARTY.md',
   'LICENSE',
 ]

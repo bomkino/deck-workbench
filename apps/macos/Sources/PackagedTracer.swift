@@ -6,7 +6,8 @@ import Foundation
 enum PackagedTracer {
     static func runIfRequested(controller: DeckSessionController) async {
         let arguments = CommandLine.arguments
-        guard let modeIndex = arguments.firstIndex(where: { $0 == "--tracer-create" || $0 == "--tracer-reopen" }) else {
+        let modes = ["--tracer-create", "--tracer-reopen", "--tracer-story-create", "--tracer-story-reopen"]
+        guard let modeIndex = arguments.firstIndex(where: { modes.contains($0) }) else {
             return
         }
         print("DW-T00 tracer process started: \(arguments[modeIndex])")
@@ -32,7 +33,7 @@ enum PackagedTracer {
                     documentURL: URL(fileURLWithPath: arguments[modeIndex + 1]),
                     resultURL: URL(fileURLWithPath: arguments[modeIndex + 2])
                 )
-            } else {
+            } else if mode == "--tracer-reopen" {
                 guard arguments.count > modeIndex + 3 else {
                     throw WorkbenchFailure(name: "InvalidCommand", message: "--tracer-reopen requires Deck, PDF and result paths")
                 }
@@ -41,6 +42,24 @@ enum PackagedTracer {
                     documentURL: URL(fileURLWithPath: arguments[modeIndex + 1]),
                     pdfURL: URL(fileURLWithPath: arguments[modeIndex + 2]),
                     resultURL: URL(fileURLWithPath: arguments[modeIndex + 3])
+                )
+            } else if mode == "--tracer-story-create" {
+                guard arguments.count > modeIndex + 2 else {
+                    throw WorkbenchFailure(name: "InvalidCommand", message: "--tracer-story-create requires Deck and result paths")
+                }
+                try await storyCreatePhase(
+                    controller: controller,
+                    documentURL: URL(fileURLWithPath: arguments[modeIndex + 1]),
+                    resultURL: URL(fileURLWithPath: arguments[modeIndex + 2])
+                )
+            } else {
+                guard arguments.count > modeIndex + 2 else {
+                    throw WorkbenchFailure(name: "InvalidCommand", message: "--tracer-story-reopen requires Deck and result paths")
+                }
+                try await storyReopenPhase(
+                    controller: controller,
+                    documentURL: URL(fileURLWithPath: arguments[modeIndex + 1]),
+                    resultURL: URL(fileURLWithPath: arguments[modeIndex + 2])
                 )
             }
             watchdog.cancel()
@@ -167,6 +186,163 @@ enum PackagedTracer {
             "unsupportedSchemaFailure": negativeResults.unsupportedSchema,
         ], to: resultURL)
         print("DW-T00 tracer reopen phase passed")
+    }
+
+    private static func storyCreatePhase(
+        controller: DeckSessionController,
+        documentURL: URL,
+        resultURL: URL
+    ) async throws {
+        print("DW-W01 Story create phase: document")
+        fflush(stdout)
+        let initial = try await controller.presentNewDocument(tracerDestination: documentURL)
+        guard initial["revision"] as? Int == 0,
+              let openingSection = initial["section"] as? [String: Any],
+              let openingSectionId = openingSection["id"] as? String,
+              let openingSlide = initial["slide"] as? [String: Any],
+              let openingSlideId = openingSlide["id"] as? String
+        else {
+            throw WorkbenchFailure(name: "InvalidCommand", message: "Story Deck did not start with the canonical fixture")
+        }
+
+        let secondSectionId = UUID().uuidString.lowercased()
+        let secondSlideId = UUID().uuidString.lowercased()
+        let secondBlockId = UUID().uuidString.lowercased()
+        let rawStory = try await controller.invokeWorkspaceForTracer(
+            """
+            const richText = (text) => ({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] });
+            const execute = async (type, payload) => {
+              const story = await deckBridge.query({ name: 'story.document', params: {} });
+              return await deckBridge.execute({ command: {
+                commandId: crypto.randomUUID(), expectedRevision: story.revision, type, payload,
+                source: { kind: 'ui', label: 'DW-W01 packaged Story journey' },
+                issuedAt: new Date().toISOString()
+              }});
+            };
+            await execute('section.add', { sectionId: secondSectionId, title: 'Act Two', afterSectionId: openingSectionId });
+            await execute('slide.add', {
+              sectionId: secondSectionId, slideId: secondSlideId, blockId: secondBlockId,
+              intent: 'statement', headline: richText('The Work Begins'), afterSlideId: null
+            });
+            await execute('section.move', { sectionId: secondSectionId, afterSectionId: null });
+            await execute('slide.move', { slideId: secondSlideId, targetSectionId: openingSectionId, afterSlideId: openingSlideId });
+            return await deckBridge.query({ name: 'story.document', params: {} });
+            """,
+            arguments: [
+                "openingSectionId": openingSectionId,
+                "openingSlideId": openingSlideId,
+                "secondSectionId": secondSectionId,
+                "secondSlideId": secondSlideId,
+                "secondBlockId": secondBlockId,
+            ]
+        )
+        let story = try requireStory(rawStory, revision: 4)
+        try requireStoryOrder(
+            story,
+            sectionIds: [secondSectionId, openingSectionId],
+            slideIdsBySection: [[], [openingSlideId, secondSlideId]]
+        )
+
+        guard let durableDocumentURL = controller.documentURL else {
+            throw WorkbenchFailure(name: "MissingAttachment", message: "Created Story Deck URL is unavailable")
+        }
+        let replayController = try DeckSessionController()
+        _ = try replayController.openDocument(at: durableDocumentURL)
+        let replayed = try replayController.query(name: "story.document", params: [:])
+        _ = try requireStory(replayed, revision: 4)
+
+        try controller.save()
+        try writeJSON([
+            "phase": "story-create",
+            "revision": 4,
+            "sectionIds": [secondSectionId, openingSectionId],
+            "openingSlideIds": [openingSlideId, secondSlideId],
+            "journalReplayRevision": 4,
+        ], to: resultURL)
+        print("DW-W01 Story create phase passed")
+    }
+
+    private static func storyReopenPhase(
+        controller: DeckSessionController,
+        documentURL: URL,
+        resultURL: URL
+    ) async throws {
+        print("DW-W01 Story reopen phase: document")
+        fflush(stdout)
+        _ = try controller.openDocument(at: documentURL)
+        try await controller.renderCurrentProjection()
+        let rawReopened = try await controller.invokeWorkspaceForTracer(
+            "return await deckBridge.query({ name: 'story.document', params: {} })"
+        )
+        let reopened = try requireStory(rawReopened, revision: 4)
+        guard let sections = reopened["sections"] as? [[String: Any]],
+              sections.count == 2,
+              let secondSectionId = sections[0]["id"] as? String,
+              let openingSectionId = sections[1]["id"] as? String,
+              let openingSlides = sections[1]["slides"] as? [[String: Any]],
+              openingSlides.count == 2,
+              let openingSlideId = openingSlides[0]["id"] as? String,
+              let secondSlideId = openingSlides[1]["id"] as? String
+        else {
+            throw WorkbenchFailure(name: "JournalCorruption", message: "Story ordering did not survive reopen")
+        }
+
+        let rawUndone = try await controller.invokeWorkspaceForTracer(
+            "await deckBridge.undo(); return await deckBridge.query({ name: 'story.document', params: {} })"
+        )
+        let undone = try requireStory(rawUndone, revision: 5)
+        try requireStoryOrder(
+            undone,
+            sectionIds: [secondSectionId, openingSectionId],
+            slideIdsBySection: [[secondSlideId], [openingSlideId]]
+        )
+
+        let rawRedone = try await controller.invokeWorkspaceForTracer(
+            "await deckBridge.redo(); return await deckBridge.query({ name: 'story.document', params: {} })"
+        )
+        let redone = try requireStory(rawRedone, revision: 6)
+        try requireStoryOrder(
+            redone,
+            sectionIds: [secondSectionId, openingSectionId],
+            slideIdsBySection: [[], [openingSlideId, secondSlideId]]
+        )
+        try controller.save()
+        try writeJSON([
+            "phase": "story-reopen",
+            "reopenedRevision": 4,
+            "undoRevision": 5,
+            "redoRevision": 6,
+            "sectionIds": [secondSectionId, openingSectionId],
+            "openingSlideIds": [openingSlideId, secondSlideId],
+        ], to: resultURL)
+        print("DW-W01 Story reopen phase passed")
+    }
+
+    private static func requireStory(_ raw: Any?, revision: Int) throws -> [String: Any] {
+        guard let story = raw as? [String: Any], story["revision"] as? Int == revision else {
+            throw WorkbenchFailure(name: "JournalCorruption", message: "Story projection has the wrong revision")
+        }
+        return story
+    }
+
+    private static func requireStoryOrder(
+        _ story: [String: Any],
+        sectionIds: [String],
+        slideIdsBySection: [[String]]
+    ) throws {
+        guard let sections = story["sections"] as? [[String: Any]],
+              sections.count == sectionIds.count,
+              sections.map({ $0["id"] as? String }) == sectionIds.map({ Optional($0) })
+        else {
+            throw WorkbenchFailure(name: "JournalCorruption", message: "Story Section order is incorrect")
+        }
+        for (index, section) in sections.enumerated() {
+            guard let slides = section["slides"] as? [[String: Any]],
+                  slides.map({ $0["id"] as? String }) == slideIdsBySection[index].map({ Optional($0) })
+            else {
+                throw WorkbenchFailure(name: "JournalCorruption", message: "Story Slide order is incorrect")
+            }
+        }
     }
 
     private static func writeJSON(_ value: [String: Any], to url: URL) throws {

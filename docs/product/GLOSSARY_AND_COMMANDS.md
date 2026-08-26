@@ -105,6 +105,7 @@ Queries are read-only and do not advance revision:
 deck.summary
 story.section
 story.slide
+story.document
 slide.designOptions
 slide.activeProjection
 history.summary
@@ -113,3 +114,5 @@ export.plan
 ```
 
 Avoid a generic query language or raw state dump across the privilege boundary. Create a new named projection when a real caller needs one.
+
+`story.document` is the bounded ordered Editorial Spine projection: Deck identity/title, revision, Section identity/title, and each Slide identity/intent/headline summary. It is not a raw checkpoint and does not expose history payloads or host paths.

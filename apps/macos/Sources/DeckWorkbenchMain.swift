@@ -7,8 +7,8 @@ import WebKit
 enum DeckWorkbenchMain {
     @MainActor
     static func main() {
-        let isTracer = CommandLine.arguments.contains("--tracer-create")
-            || CommandLine.arguments.contains("--tracer-reopen")
+        let tracerModes = ["--tracer-create", "--tracer-reopen", "--tracer-story-create", "--tracer-story-reopen"]
+        let isTracer = CommandLine.arguments.contains(where: { tracerModes.contains($0) })
         if !isTracer {
             DeckWorkbenchApp.main()
             return
