@@ -9,8 +9,19 @@ enum PackagedTracer {
         guard let modeIndex = arguments.firstIndex(where: { $0 == "--tracer-create" || $0 == "--tracer-reopen" }) else {
             return
         }
+        print("DW-T00 tracer process started: \(arguments[modeIndex])")
+        fflush(stdout)
+        let watchdog = Task.detached {
+            try? await Task.sleep(for: .seconds(120))
+            guard !Task.isCancelled else { return }
+            fputs("WorkspaceUnavailable: packaged tracer exceeded 120 seconds\n", stderr)
+            fflush(stderr)
+            Darwin.exit(124)
+        }
         do {
             try await controller.waitForTracerWorkspace()
+            print("DW-T00 workspace loaded")
+            fflush(stdout)
             let mode = arguments[modeIndex]
             if mode == "--tracer-create" {
                 guard arguments.count > modeIndex + 2 else {
@@ -32,9 +43,11 @@ enum PackagedTracer {
                     resultURL: URL(fileURLWithPath: arguments[modeIndex + 3])
                 )
             }
+            watchdog.cancel()
             fflush(stdout)
-            NSApplication.shared.terminate(nil)
+            Darwin.exit(0)
         } catch {
+            watchdog.cancel()
             let failure = WorkbenchFailure.unexpected(error)
             fputs("\(failure.name): \(failure.message)\n", stderr)
             fflush(stderr)
@@ -47,6 +60,8 @@ enum PackagedTracer {
         documentURL: URL,
         resultURL: URL
     ) async throws {
+        print("DW-T00 create phase: document")
+        fflush(stdout)
         let initial = try controller.createDocument(at: documentURL, title: "DW-T00 Tracer")
         try await controller.renderCurrentProjection()
         guard initial["revision"] as? Int == 0 else {
@@ -104,6 +119,8 @@ enum PackagedTracer {
         pdfURL: URL,
         resultURL: URL
     ) async throws {
+        print("DW-T00 reopen phase: document")
+        fflush(stdout)
         let reopened = try controller.openDocument(at: documentURL)
         try await controller.renderCurrentProjection()
         let reopenedHeadline = (reopened["headline"] as? [String: Any])?["plainText"] as? String
