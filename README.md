@@ -4,7 +4,7 @@ A local-first, story-first application for prototyping, reviewing and handing of
 
 ## Status
 
-Pre-alpha. `DW-T00` proves the first integrated Apple-Silicon Story Document tracer. The bounded `DW-W01` macOS work adds durable Section/Slide creation, ordering, Section rename and Slide intent; this is not the complete cross-platform Story Document ticket, a production editor or a release build.
+Pre-alpha. `DW-T00` proves the first integrated Apple-Silicon Story Document tracer. The bounded `DW-W01` macOS work adds durable Deck/Section/Slide structure, ordering, intent and semantic Content Blocks; this is not the complete cross-platform Story Document ticket, a production editor or a release build.
 
 The tracer creates a native `.pitchdeck`, edits one canonical Story headline through the typed bridge and host-owned durable command seam, reopens with undo history, and exports one PDF page. Its macOS 26 arm64 workflow builds, ad-hoc signs, extracts, verifies, and runs the exact packaged journey at the checked-out SHA.
 

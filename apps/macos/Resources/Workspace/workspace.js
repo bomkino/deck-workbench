@@ -17,10 +17,13 @@ function workspaceTransforms({ interfaceScale: requestedInterfaceScale, artboard
 
 const elements = {
   deckTitle: document.querySelector('#deck-title'),
+  renameDeck: document.querySelector('#rename-deck'),
   sequenceList: document.querySelector('#sequence-list'),
   addSection: document.querySelector('#add-section'),
   addSlide: document.querySelector('#add-slide'),
   headline: document.querySelector('#headline'),
+  additionalContent: document.querySelector('#additional-content'),
+  addBody: document.querySelector('#add-body'),
   artboardHeadline: document.querySelector('#artboard-headline'),
   artboardIntent: document.querySelector('#artboard-intent'),
   revision: document.querySelector('#revision'),
@@ -59,6 +62,8 @@ function setBusy(label) {
   elements.addSection.disabled = true
   elements.addSlide.disabled = true
   elements.slideIntent.disabled = true
+  elements.renameDeck.disabled = true
+  elements.addBody.disabled = true
 }
 
 function renderProjection(next) {
@@ -66,6 +71,7 @@ function renderProjection(next) {
   elements.deckTitle.textContent = next.deckTitle
   elements.headline.disabled = false
   elements.headline.value = next.headline.plainText
+  renderAdditionalContent(next.contentBlocks ?? [])
   elements.artboardHeadline.textContent = next.headline.plainText
   elements.artboardIntent.textContent = next.slide.intent
   elements.slideIntent.value = next.slide.intent
@@ -78,10 +84,35 @@ function renderProjection(next) {
   elements.addSection.disabled = false
   elements.addSlide.disabled = false
   elements.slideIntent.disabled = false
+  elements.renameDeck.disabled = false
+  elements.addBody.disabled = false
   elements.saveState.textContent = 'Durable and projected'
   applyScales()
   void refreshSequence()
   return next
+}
+
+function renderAdditionalContent(blocks) {
+  elements.additionalContent.replaceChildren()
+  blocks.filter((block) => block.id !== projection?.headline.id).forEach((block) => {
+    const field = document.createElement('label')
+    field.className = 'content-field'
+    const role = document.createElement('span')
+    role.textContent = block.role
+    const textarea = document.createElement('textarea')
+    textarea.value = block.plainText
+    textarea.rows = 4
+    const footer = document.createElement('footer')
+    const key = document.createElement('span')
+    key.textContent = block.semanticKey
+    const commit = document.createElement('button')
+    commit.type = 'button'
+    commit.textContent = 'Commit'
+    commit.addEventListener('click', () => updateContentBlock(block.id, textarea.value))
+    footer.append(key, commit)
+    field.append(role, textarea, footer)
+    elements.additionalContent.append(field)
+  })
 }
 
 function renderSequence(next) {
@@ -252,6 +283,11 @@ function applyScales() {
 
 async function commitHeadline() {
   if (!projection) return
+  await updateContentBlock(projection.headline.id, elements.headline.value)
+}
+
+async function updateContentBlock(blockId, value) {
+  if (!projection) return
   setBusy('Validating and writing journal…')
   try {
     const result = await window.deckBridge.execute({
@@ -261,10 +297,10 @@ async function commitHeadline() {
         type: 'content.update',
         payload: {
           slideId: projection.slide.id,
-          blockId: projection.headline.id,
-          value: richText(elements.headline.value),
+          blockId,
+          value: richText(value),
         },
-        source: { kind: 'ui', label: 'Story headline' },
+        source: { kind: 'ui', label: 'Story content' },
         issuedAt: new Date().toISOString(),
       },
     })
@@ -273,6 +309,26 @@ async function commitHeadline() {
     elements.saveState.textContent = `${error.name ?? 'Error'}: ${error.message}`
     renderProjection(projection)
   }
+}
+
+async function renameDeck() {
+  if (!projection) return
+  const title = window.prompt('Deck name', projection.deckTitle)?.trim()
+  if (!title || title === projection.deckTitle) return
+  await executeStructural('deck.rename', { title })
+}
+
+async function addBody() {
+  if (!projection) return
+  const blockId = crypto.randomUUID()
+  await executeStructural('content.add', {
+    slideId: projection.slide.id,
+    blockId,
+    semanticKey: `story.body.${blockId}`,
+    role: 'body',
+    value: richText('New Story body'),
+    afterBlockId: projection.contentBlocks.at(-1)?.id ?? null,
+  }, projection.slide.id)
 }
 
 async function historyAction(method) {
@@ -288,6 +344,8 @@ async function historyAction(method) {
 }
 
 elements.commit.addEventListener('click', commitHeadline)
+elements.renameDeck.addEventListener('click', renameDeck)
+elements.addBody.addEventListener('click', addBody)
 elements.addSection.addEventListener('click', addSection)
 elements.addSlide.addEventListener('click', addSlide)
 elements.headline.addEventListener('keydown', (event) => {

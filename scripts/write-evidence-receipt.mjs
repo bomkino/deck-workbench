@@ -134,22 +134,22 @@ const storyReceipt = `# DW-W01 Story structure slice evidence receipt
 - Branch: \`${branch}\`
 - DW-T00 baseline SHA: \`0e434c508088a5150b20c2d8aef92d830fa17b7c\`
 - Ending SHA: \`${endingSHA}\`
-- Slice: Section/Slide creation, ordering and Story metadata
+- Slice: Deck/Section/Slide structure, ordering and semantic Story content
 - Date: ${new Date().toISOString()}
 
 ## User-observable slice
 
-The extracted macOS app creates a second Section and Slide through the typed bridge, projects the expanded Editorial Spine, reorders both entities by stable ID, renames the Section, sets Slide intent, saves and quits, reopens the same semantic Deck, undoes and redoes the intent change through durable history, and checkpoints revision ${storyReopenResult.redoRevision}.
+The extracted macOS app creates a second Section and Slide through the typed bridge, projects the expanded Editorial Spine, reorders both entities by stable ID, renames the Deck and Section, sets Slide intent, adds a role-keyed semantic Content Block, saves and quits, reopens the same semantic Deck, undoes and redoes the Content addition through durable history, and checkpoints revision ${storyReopenResult.redoRevision}.
 
 ## Public seams exercised
 
 | Seam | Scenario | Result |
 |---|---|---|
-| Kernel | \`section.add\`, \`section.rename\`, \`slide.add\`, \`section.move\`, \`slide.move\`, \`slide.intent.set\` prepare/commit and atomic rejection | Pass |
+| Kernel | \`deck.rename\`, \`section.add\`, \`section.rename\`, \`slide.add\`, \`section.move\`, \`slide.move\`, \`slide.intent.set\`, \`content.add\`, \`content.update\` prepare/commit and atomic rejection | Pass |
 | Story projection | Ordered Sections/Slides and canonical headline summaries | Pass |
-| Typed bridge | Six Story commands plus query/undo/redo from WebView | Pass |
-| Journal/replay | Six commands, undo and redo in one hash chain; pre-checkpoint restart at revision ${storyCreateResult.journalReplayRevision} | Pass |
-| Packaged app | Native create → add/reorder/rename/intent → save/quit → reopen → undo/redo | Pass |
+| Typed bridge | Eight packaged Story commands plus query/undo/redo from WebView | Pass |
+| Journal/replay | Eight commands, undo and redo in one hash chain; pre-checkpoint restart at revision ${storyCreateResult.journalReplayRevision} | Pass |
+| Packaged app | Native create → add/reorder/rename/intent/content → save/quit → reopen → undo/redo | Pass |
 
 ## Packaged artifact
 
@@ -164,13 +164,13 @@ The extracted macOS app creates a second Section and Slide through the typed bri
 ## Honest status
 
 - Status: **Packaged macOS DW-W01 structural slice**, not full integrated DW-W01
-- Supported claims: native Story document structure creation; stable-ID ordering; Section rename; Slide intent; durable replay; reopen undo/redo; minimal Editorial Spine controls
-- Unsupported claims: Deck rename, arbitrary Content Blocks, crash-injection matrix, Garuda parity, production editor behavior
+- Supported claims: native Story document structure creation; stable-ID ordering; Deck/Section rename; Slide intent; role-keyed Content add/update; durable replay; reopen undo/redo; minimal Editorial Spine controls
+- Unsupported claims: Content removal UI, multi-paragraph rich editor behavior, crash-injection matrix, Garuda parity, production editor behavior
 - Scope boundary: no Garuda shell, editor dependency or export expansion was introduced
 
 ## Next dispatchable slice
 
-- Add \`deck.rename\` and \`content.add\` with the same prepared-change/history seam and user-visible Story controls.
+- Add explicit close/session lifecycle and crash-injection recovery coverage without expanding the editor surface.
 `
 
 writeFileSync(join(evidence, 'DW-W01-STORY-SLICE-RECEIPT.md'), storyReceipt)

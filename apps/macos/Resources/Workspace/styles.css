@@ -53,6 +53,8 @@ button:disabled { color: var(--faint); }
 }
 
 .toolbar h1, .panel-heading h2 { margin: 0.1rem 0 0; font-size: 0.9rem; font-weight: 560; }
+.deck-title-row { display: flex; align-items: center; gap: 0.5rem; }
+.deck-title-row button { min-height: 1.5rem; padding: 0.15rem 0.4rem; font-size: 0.58rem; }
 .eyebrow, .panel-label { margin: 0; color: var(--muted); font-size: 0.65rem; letter-spacing: 0.12em; text-transform: uppercase; }
 
 .toolbar-actions { display: flex; align-items: center; gap: 0.45rem; }
@@ -105,7 +107,13 @@ button:disabled { color: var(--faint); }
   line-height: 1.06;
 }
 .story textarea:disabled { color: var(--faint); }
+.additional-content { display: grid; gap: 0.8rem; margin-top: 1rem; overflow: auto; }
+.content-field { display: grid; gap: 0.35rem; color: var(--muted); font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.08em; }
+.story .content-field textarea { min-height: 5rem; padding: 0.65rem; border: 1px solid var(--rule); background: transparent; color: var(--text); font-family: ui-serif, Georgia, serif; font-size: 0.95rem; line-height: 1.35; resize: vertical; }
+.content-field footer { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
+.content-field footer span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: none; letter-spacing: normal; }
 .story-footer { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: 1rem; }
+.story-footer > div { display: flex; gap: 0.4rem; }
 .story-footer p { margin: 0; color: var(--muted); font-size: 0.7rem; }
 
 .stage { overflow: hidden; }

@@ -18,7 +18,7 @@ type RichTextDocument = {
 type ContentBlock = {
   id: string
   semanticKey: string
-  role: 'headline'
+  role: string
   value: RichTextDocument
 }
 
@@ -50,6 +50,19 @@ type ContentUpdatePayload = {
   slideId: string
   blockId: string
   value: RichTextDocument
+}
+
+type ContentAddPayload = {
+  slideId: string
+  blockId: string
+  semanticKey: string
+  role: string
+  value: RichTextDocument
+  afterBlockId?: string | null
+}
+
+type DeckRenamePayload = {
+  title: string
 }
 
 type SectionAddPayload = {
@@ -91,7 +104,7 @@ type SlideIntentPayload = {
 type CommandEnvelope = {
   commandId: string
   expectedRevision: number
-  type: 'content.update' | 'section.add' | 'section.rename' | 'section.move' | 'slide.add' | 'slide.move' | 'slide.intent.set'
+  type: 'deck.rename' | 'content.add' | 'content.update' | 'section.add' | 'section.rename' | 'section.move' | 'slide.add' | 'slide.move' | 'slide.intent.set'
   payload: JsonObject
   source: {
     kind: 'ui' | 'keyboard' | 'cli' | 'mcp' | 'migration'
@@ -101,7 +114,10 @@ type CommandEnvelope = {
 }
 
 type HistoryOperation =
+  | { type: 'deck.rename'; payload: DeckRenamePayload }
   | { type: 'content.set'; payload: ContentUpdatePayload }
+  | { type: 'content.insert'; payload: { slideId: string; block: ContentBlock; afterBlockId: string | null } }
+  | { type: 'content.remove'; payload: { slideId: string; blockId: string } }
   | { type: 'section.insert'; payload: { section: Section; afterSectionId: string | null } }
   | { type: 'section.remove'; payload: { sectionId: string } }
   | { type: 'section.rename'; payload: SectionRenamePayload }
@@ -209,6 +225,12 @@ function findBlock(deck: DeckSnapshot, slideId: string, blockId: string): Conten
   return undefined
 }
 
+function blockIdentityExists(deck: DeckSnapshot, blockId: string): boolean {
+  return deck.sections.some((section) =>
+    section.slides.some((slide) => slide.contentBlocks.some((block) => block.id === blockId)),
+  )
+}
+
 function findSlideLocation(deck: DeckSnapshot, slideId: string): { sectionIndex: number; slideIndex: number } | undefined {
   for (let sectionIndex = 0; sectionIndex < deck.sections.length; sectionIndex += 1) {
     const slideIndex = deck.sections[sectionIndex].slides.findIndex((slide) => slide.id === slideId)
@@ -230,10 +252,31 @@ function insertAfter<T extends { id: string }>(items: T[], value: T, afterId: st
 
 function applyHistoryOperation(deck: DeckSnapshot, operation: HistoryOperation): DeckSnapshot {
   const next = clone(deck)
+  if (operation.type === 'deck.rename') {
+    next.title = operation.payload.title
+    return next
+  }
   if (operation.type === 'content.set') {
     const block = findBlock(next, operation.payload.slideId, operation.payload.blockId)
     if (!block) throw new Error('Content Block does not exist')
     block.value = clone(operation.payload.value)
+    return next
+  }
+  if (operation.type === 'content.insert') {
+    const location = findSlideLocation(next, operation.payload.slideId)
+    if (!location) throw new Error('Slide does not exist')
+    if (blockIdentityExists(next, operation.payload.block.id)) throw new Error('Content Block identity already exists')
+    const blocks = next.sections[location.sectionIndex].slides[location.slideIndex].contentBlocks
+    insertAfter(blocks, clone(operation.payload.block), operation.payload.afterBlockId)
+    return next
+  }
+  if (operation.type === 'content.remove') {
+    const location = findSlideLocation(next, operation.payload.slideId)
+    if (!location) throw new Error('Slide does not exist')
+    const blocks = next.sections[location.sectionIndex].slides[location.slideIndex].contentBlocks
+    const index = blocks.findIndex((block) => block.id === operation.payload.blockId)
+    if (index < 0) throw new Error('Content Block does not exist')
+    blocks.splice(index, 1)
     return next
   }
   if (operation.type === 'section.insert') {
@@ -414,6 +457,12 @@ function query(session: KernelSession, name: string, params: JsonObject = {}): J
           return {
             id: slide.id,
             intent: slide.intent,
+            contentBlocks: slide.contentBlocks.map((block) => ({
+              id: block.id,
+              semanticKey: block.semanticKey,
+              role: block.role,
+              plainText: richTextToPlainText(block.value),
+            })),
             headline: headline
               ? {
                   id: headline.id,
@@ -449,6 +498,13 @@ function query(session: KernelSession, name: string, params: JsonObject = {}): J
             value: clone(headline.value),
             plainText: richTextToPlainText(headline.value),
           },
+          contentBlocks: slide.contentBlocks.map((block) => ({
+            id: block.id,
+            semanticKey: block.semanticKey,
+            role: block.role,
+            value: clone(block.value),
+            plainText: richTextToPlainText(block.value),
+          })),
           canvas: clone(checkpoint.deck.canvasPreset),
           history: {
             canUndo: checkpoint.undoStack.length > 0,
@@ -486,7 +542,42 @@ function prepare(session: KernelSession, command: CommandEnvelope): PrepareResul
   let label: string
   let projectionHints: string[] = ['story', 'slide.activeProjection', 'history']
   try {
-    if (command.type === 'content.update') {
+    if (command.type === 'deck.rename') {
+      const title = assertString(command.payload.title, 'title')
+      forward = { type: 'deck.rename', payload: { title } }
+      inverse = { type: 'deck.rename', payload: { title: session.checkpoint.deck.title } }
+      label = `Rename Deck: ${title}`
+      projectionHints = ['story', 'sequence', 'slide.activeProjection', 'history']
+    } else if (command.type === 'content.add') {
+      const slideId = assertString(command.payload.slideId, 'slideId')
+      const location = findSlideLocation(session.checkpoint.deck, slideId)
+      if (!location) throw new Error('Slide does not exist')
+      const blockId = assertString(command.payload.blockId, 'blockId')
+      const semanticKey = assertString(command.payload.semanticKey, 'semanticKey')
+      const role = assertString(command.payload.role, 'role')
+      if (blockIdentityExists(session.checkpoint.deck, blockId)) throw new Error('Content Block identity already exists')
+      if (!isRichTextDocument(command.payload.value)) {
+        throw new Error('content.add value must be semantic rich-text JSON')
+      }
+      const blocks = session.checkpoint.deck.sections[location.sectionIndex].slides[location.slideIndex].contentBlocks
+      if (blocks.some((block) => block.semanticKey === semanticKey)) {
+        throw new Error('Content Block semantic key already exists on Slide')
+      }
+      const afterBlockId = command.payload.afterBlockId === undefined
+        ? blocks.at(-1)?.id ?? null
+        : command.payload.afterBlockId === null
+          ? null
+          : assertString(command.payload.afterBlockId, 'afterBlockId')
+      const block: ContentBlock = {
+        id: blockId,
+        semanticKey,
+        role,
+        value: clone(command.payload.value),
+      }
+      forward = { type: 'content.insert', payload: { slideId, block, afterBlockId } }
+      inverse = { type: 'content.remove', payload: { slideId, blockId } }
+      label = `Add Content: ${role}`
+    } else if (command.type === 'content.update') {
       const slideId = assertString(command.payload.slideId, 'slideId')
       const blockId = assertString(command.payload.blockId, 'blockId')
       if (!isRichTextDocument(command.payload.value)) {
@@ -502,7 +593,7 @@ function prepare(session: KernelSession, command: CommandEnvelope): PrepareResul
         type: 'content.set',
         payload: { slideId, blockId, value: clone(currentBlock.value) },
       }
-      label = 'Update headline'
+      label = `Update Content: ${currentBlock.role}`
     } else if (command.type === 'section.add') {
       const sectionId = assertString(command.payload.sectionId, 'sectionId')
       const title = assertString(command.payload.title, 'title')
@@ -549,10 +640,7 @@ function prepare(session: KernelSession, command: CommandEnvelope): PrepareResul
       if (!isRichTextDocument(command.payload.headline)) {
         throw new Error('slide.add headline must be semantic rich-text JSON')
       }
-      const blockIdExists = session.checkpoint.deck.sections.some((candidateSection) =>
-        candidateSection.slides.some((slide) => slide.contentBlocks.some((block) => block.id === blockId)),
-      )
-      if (blockIdExists) throw new Error('Content Block identity already exists')
+      if (blockIdentityExists(session.checkpoint.deck, blockId)) throw new Error('Content Block identity already exists')
       const afterSlideId = command.payload.afterSlideId === undefined
         ? section.slides.at(-1)?.id ?? null
         : command.payload.afterSlideId === null

@@ -12,6 +12,8 @@ native create
 → move Slide across Sections by stable ID
 → rename Section
 → set Slide intent
+→ rename Deck
+→ add role-keyed semantic Content Block
 → save and quit
 → reopen
 → undo and redo the move through durable history
@@ -25,8 +27,11 @@ native create
 - `slide.add`
 - `slide.move`
 - `slide.intent.set`
+- `deck.rename`
+- `content.add`
+- `content.update`
 
-All six use the existing command envelope, non-mutating prepare, append/fsync-before-commit acknowledgement, hash-chained journal, idempotency map and semantic undo/redo stacks.
+All Story commands use the existing command envelope, non-mutating prepare, append/fsync-before-commit acknowledgement, hash-chained journal, idempotency map and semantic undo/redo stacks.
 
 ## Projection
 
@@ -39,15 +44,14 @@ All six use the existing command envelope, non-mutating prepare, append/fsync-be
 - the minimal Sequence rail renders all Sections and Slides;
 - native controls can add a Section, add a Slide, select a Slide and move an item up;
 - packaged automation creates and reorders two Sections/two Slides through the typed WebView bridge;
-- restart replay reaches revision 6 before checkpoint save;
-- packaged quit/reopen preserves structure/metadata and intent undo/redo reaches revisions 7/8;
+- restart replay reaches revision 8 before checkpoint save;
+- packaged quit/reopen preserves structure/metadata/content and Content Block undo/redo reaches revisions 9/10;
 - the final app artifact remains arm64-only, ad-hoc signed, extracted and exact-SHA verified;
 - all DW-T00 tests and packaged journey remain green.
 
 ## Explicitly deferred
 
-- Deck rename;
-- arbitrary Content Block add/remove;
+- Content Block removal and rich-editor schema breadth;
 - drag-and-drop interaction;
 - crash-injection matrix beyond the recovery behavior already proven;
 - Garuda parity, editor dependencies and export breadth.

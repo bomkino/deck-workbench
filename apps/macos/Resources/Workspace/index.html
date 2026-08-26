@@ -17,7 +17,10 @@
       <header class="toolbar">
         <div>
           <p class="eyebrow">Deck Workbench</p>
-          <h1 id="deck-title">No Deck open</h1>
+          <div class="deck-title-row">
+            <h1 id="deck-title">No Deck open</h1>
+            <button id="rename-deck" type="button" disabled>Rename</button>
+          </div>
         </div>
         <div class="toolbar-actions" aria-label="History and view controls">
           <button id="undo" type="button" disabled>Undo</button>
@@ -71,9 +74,13 @@
               placeholder="Create or open a Deck to begin."
             ></textarea>
           </label>
+          <div id="additional-content" class="additional-content"></div>
           <div class="story-footer">
             <p id="save-state" role="status">No document session</p>
-            <button id="commit-headline" type="button" disabled>Commit headline</button>
+            <div>
+              <button id="add-body" type="button" disabled>+ Body</button>
+              <button id="commit-headline" type="button" disabled>Commit headline</button>
+            </div>
           </div>
         </section>
 
