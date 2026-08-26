@@ -139,7 +139,7 @@ const storyReceipt = `# DW-W01 Story structure slice evidence receipt
 
 ## User-observable slice
 
-The extracted macOS app creates a second Section and Slide through the typed bridge, projects the expanded Editorial Spine, reorders both entities by stable ID, renames the Deck and Section, sets Slide intent, adds a role-keyed semantic Content Block, saves and quits, reopens the same semantic Deck, undoes and redoes the Content addition through durable history, and checkpoints revision ${storyReopenResult.redoRevision}.
+The extracted macOS app creates a second Section and Slide through the typed bridge, projects the expanded Editorial Spine, reorders both entities by stable ID, renames the Deck and Section, sets Slide intent, adds a role-keyed semantic Content Block, repairs an injected stale manifest head, explicitly closes the session, reopens the same semantic Deck, undoes and redoes the Content addition through durable history, and checkpoints revision ${storyReopenResult.redoRevision}.
 
 ## Public seams exercised
 
@@ -149,6 +149,8 @@ The extracted macOS app creates a second Section and Slide through the typed bri
 | Story projection | Ordered Sections/Slides and canonical headline summaries | Pass |
 | Typed bridge | Eight packaged Story commands plus query/undo/redo from WebView | Pass |
 | Journal/replay | Eight commands, undo and redo in one hash chain; pre-checkpoint restart at revision ${storyCreateResult.journalReplayRevision} | Pass |
+| Crash recovery | Stale manifest head with valid durable journal tail | Pass: repaired and replayed to revision ${storyCreateResult.crashRecoveryRevision} |
+| Session lifecycle | Checkpoint, host close, cleared projection, new-process reopen | Pass |
 | Packaged app | Native create → add/reorder/rename/intent/content → save/quit → reopen → undo/redo | Pass |
 
 ## Packaged artifact
@@ -164,13 +166,13 @@ The extracted macOS app creates a second Section and Slide through the typed bri
 ## Honest status
 
 - Status: **Packaged macOS DW-W01 structural slice**, not full integrated DW-W01
-- Supported claims: native Story document structure creation; stable-ID ordering; Deck/Section rename; Slide intent; role-keyed Content add/update; durable replay; reopen undo/redo; minimal Editorial Spine controls
-- Unsupported claims: Content removal UI, multi-paragraph rich editor behavior, crash-injection matrix, Garuda parity, production editor behavior
+- Supported claims: native Story document structure creation; stable-ID ordering; Deck/Section rename; Slide intent; role-keyed Content add/update; durable replay and stale-head repair; explicit close/reopen undo/redo; minimal Editorial Spine controls
+- Unsupported claims: Content removal UI, multi-paragraph rich editor behavior, broader crash-injection matrix, Garuda parity, production editor behavior
 - Scope boundary: no Garuda shell, editor dependency or export expansion was introduced
 
 ## Next dispatchable slice
 
-- Add explicit close/session lifecycle and crash-injection recovery coverage without expanding the editor surface.
+- Add semantic Content removal and Section/Slide deletion decisions only after their user-visible history behavior is specified.
 `
 
 writeFileSync(join(evidence, 'DW-W01-STORY-SLICE-RECEIPT.md'), storyReceipt)

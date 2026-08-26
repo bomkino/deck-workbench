@@ -10,6 +10,7 @@ extension UTType {
 @MainActor
 protocol WorkspaceProjectionSink: AnyObject {
     func renderProjection(_ projection: [String: Any]) async throws
+    func clearProjection() async throws
     func writeOnePagePDF(to destination: URL) async throws
 }
 
@@ -127,6 +128,17 @@ final class DeckSessionController: ObservableObject {
         guard let store else { throw WorkbenchFailure(name: "KernelUnavailable", message: "No Deck is open") }
         try store.saveCheckpoint(kernel.serialize())
         status = "Checkpoint saved at revision \(store.currentRevision)"
+    }
+
+    func closeDocument() async throws {
+        guard hasDocument else { return }
+        try save()
+        store = nil
+        documentURL = nil
+        documentTitle = "No Deck open"
+        hasDocument = false
+        status = "Deck closed"
+        try await workspace?.clearProjection()
     }
 
     func setInterfaceScale(_ value: Double) throws -> [String: Any] {

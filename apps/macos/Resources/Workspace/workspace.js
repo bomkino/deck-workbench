@@ -92,6 +92,29 @@ function renderProjection(next) {
   return next
 }
 
+function clearProjection() {
+  projection = null
+  storyDocument = null
+  elements.deckTitle.textContent = 'No Deck open'
+  elements.sequenceList.replaceChildren()
+  elements.headline.value = ''
+  elements.headline.disabled = true
+  elements.additionalContent.replaceChildren()
+  elements.artboardHeadline.textContent = 'No Deck open'
+  elements.artboardIntent.textContent = '—'
+  elements.revision.textContent = 'Revision —'
+  elements.binding.textContent = '—'
+  elements.commit.disabled = true
+  elements.undo.disabled = true
+  elements.redo.disabled = true
+  elements.addSection.disabled = true
+  elements.addSlide.disabled = true
+  elements.slideIntent.disabled = true
+  elements.renameDeck.disabled = true
+  elements.addBody.disabled = true
+  elements.saveState.textContent = 'No document session'
+}
+
 function renderAdditionalContent(blocks) {
   elements.additionalContent.replaceChildren()
   blocks.filter((block) => block.id !== projection?.headline.id).forEach((block) => {
@@ -396,6 +419,7 @@ async function boot() {
 
 window.deckWorkbench = Object.freeze({
   renderProjection,
+  clearProjection,
   exportFrame() {
     const rect = elements.artboard.getBoundingClientRect()
     return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }

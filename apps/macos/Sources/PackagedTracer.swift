@@ -272,7 +272,11 @@ enum PackagedTracer {
         let replayed = try replayController.query(name: "story.document", params: [:])
         _ = try requireStory(replayed, revision: 8)
 
-        try controller.save()
+        let crashRecoveryRevision = try verifyInterruptedManifestRecovery(from: durableDocumentURL)
+        try await controller.closeDocument()
+        guard !controller.hasDocument else {
+            throw WorkbenchFailure(name: "InvalidCommand", message: "Explicit close left the Deck session open")
+        }
         try writeJSON([
             "phase": "story-create",
             "revision": 8,
@@ -284,6 +288,8 @@ enum PackagedTracer {
             "slideIntent": "editorial-body",
             "bodyBlockId": bodyBlockId,
             "bodyText": "A body block that survives design.",
+            "crashRecoveryRevision": crashRecoveryRevision,
+            "closedBeforeReopen": true,
         ], to: resultURL)
         print("DW-W01 Story create phase passed")
     }
@@ -399,6 +405,41 @@ enum PackagedTracer {
                 throw WorkbenchFailure(name: "JournalCorruption", message: "Story Slide order is incorrect")
             }
         }
+    }
+
+    private static func verifyInterruptedManifestRecovery(from documentURL: URL) throws -> Int {
+        let files = FileManager.default
+        let recoveryURL = documentURL.deletingLastPathComponent()
+            .appendingPathComponent("Interrupted-\(UUID().uuidString).pitchdeck", isDirectory: true)
+        try files.copyItem(at: documentURL, to: recoveryURL)
+
+        let journalURL = recoveryURL.appendingPathComponent("journal.ndjson")
+        let journalText = try String(contentsOf: journalURL, encoding: .utf8)
+        let lines = journalText.split(separator: "\n", omittingEmptySubsequences: true)
+        guard lines.count >= 2,
+              let staleRecordData = String(lines[lines.count - 2]).data(using: .utf8),
+              let staleRecord = try JSONSerialization.jsonObject(with: staleRecordData) as? [String: Any],
+              let staleHash = staleRecord["recordHash"] as? String
+        else {
+            throw WorkbenchFailure(name: "JournalCorruption", message: "Crash-recovery fixture has no valid prior journal head")
+        }
+
+        let manifestURL = recoveryURL.appendingPathComponent("manifest.json")
+        var manifest = try JSONSerialization.jsonObject(with: Data(contentsOf: manifestURL)) as! [String: Any]
+        manifest["journalHeadHash"] = staleHash
+        try JSONSerialization.data(withJSONObject: manifest, options: [.prettyPrinted, .sortedKeys])
+            .write(to: manifestURL, options: [.atomic])
+
+        let (_, loaded) = try PitchDeckDocumentStore.open(at: recoveryURL)
+        guard loaded.repairedJournalHead else {
+            throw WorkbenchFailure(name: "JournalCorruption", message: "Interrupted manifest head was not repaired")
+        }
+        let recoveredController = try DeckSessionController()
+        let recovered = try recoveredController.openDocument(at: recoveryURL)
+        guard recovered["revision"] as? Int == 8 else {
+            throw WorkbenchFailure(name: "JournalCorruption", message: "Crash recovery did not replay the durable journal tail")
+        }
+        return 8
     }
 
     private static func writeJSON(_ value: [String: Any], to url: URL) throws {

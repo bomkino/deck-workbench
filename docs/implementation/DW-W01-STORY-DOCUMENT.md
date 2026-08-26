@@ -15,6 +15,7 @@ native create
 → rename Deck
 → add role-keyed semantic Content Block
 → save and quit
+→ explicitly close the host session
 → reopen
 → undo and redo the move through durable history
 ```
@@ -46,6 +47,8 @@ All Story commands use the existing command envelope, non-mutating prepare, appe
 - packaged automation creates and reorders two Sections/two Slides through the typed WebView bridge;
 - restart replay reaches revision 8 before checkpoint save;
 - packaged quit/reopen preserves structure/metadata/content and Content Block undo/redo reaches revisions 9/10;
+- a stale manifest head over a valid fsynced journal tail is repaired and replayed to revision 8;
+- explicit close checkpoints the Deck, clears host ownership and clears the workspace projection before the reopen process;
 - the final app artifact remains arm64-only, ad-hoc signed, extracted and exact-SHA verified;
 - all DW-T00 tests and packaged journey remain green.
 

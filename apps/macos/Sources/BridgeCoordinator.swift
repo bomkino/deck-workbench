@@ -56,6 +56,16 @@ final class BridgeCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDel
         )
     }
 
+    func clearProjection() async throws {
+        guard let webView else { throw WorkbenchFailure(name: "WorkspaceUnavailable", message: "WebView is unavailable") }
+        _ = try await webView.callAsyncJavaScript(
+            "deckWorkbench.clearProjection()",
+            arguments: [:],
+            in: nil,
+            contentWorld: .page
+        )
+    }
+
     func writeOnePagePDF(to destination: URL) async throws {
         guard let webView else { throw WorkbenchFailure(name: "WorkspaceUnavailable", message: "WebView is unavailable") }
         let rawFrame = try await webView.callAsyncJavaScript(

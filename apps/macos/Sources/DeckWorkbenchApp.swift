@@ -32,6 +32,10 @@ struct DeckWorkbenchApp: App {
                 Button("Save") { try? controller.save() }
                     .keyboardShortcut("s")
                     .disabled(!controller.hasDocument)
+                Button("Close Deck") {
+                    Task { try? await controller.closeDocument() }
+                }
+                .disabled(!controller.hasDocument)
             }
             CommandGroup(replacing: .undoRedo) {
                 Button("Undo") {
@@ -76,6 +80,8 @@ struct WorkbenchRootView: View {
                 Button("New Deck…") { Task { _ = try? await controller.presentNewDocument() } }
                 Button("Open…") { Task { _ = try? await controller.presentOpenDocument() } }
                 Button("Save") { try? controller.save() }
+                    .disabled(!controller.hasDocument)
+                Button("Close") { Task { try? await controller.closeDocument() } }
                     .disabled(!controller.hasDocument)
                 Divider().frame(height: 18)
                 Text(controller.documentTitle).font(.headline)
