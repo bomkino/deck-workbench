@@ -17,7 +17,7 @@ enum DeckWorkbenchMain {
         let application = NSApplication.shared
         let delegate = TracerApplicationDelegate()
         application.delegate = delegate
-        application.setActivationPolicy(.accessory)
+        application.setActivationPolicy(.regular)
         application.run()
     }
 }
@@ -30,6 +30,7 @@ final class TracerApplicationDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         do {
+            NSApplication.shared.activate(ignoringOtherApps: true)
             let controller = try DeckSessionController()
             let coordinator = BridgeCoordinator(controller: controller)
             let webView = WorkspaceWebViewFactory.make(coordinator: coordinator)

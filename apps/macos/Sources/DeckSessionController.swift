@@ -243,32 +243,23 @@ final class DeckSessionController: ObservableObject {
         tracerDestination: URL? = nil
     ) async -> NSApplication.ModalResponse {
         await withCheckedContinuation { continuation in
+            NSApplication.shared.activate(ignoringOtherApps: true)
             panel.begin { continuation.resume(returning: $0) }
             if tracerDestination != nil {
+                print("DW-T00 native save panel presented")
+                fflush(stdout)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) {
                     panel.makeKeyAndOrderFront(nil)
-                    Self.postReturnKey(to: panel)
+                    Self.postSystemReturnKey()
                 }
             }
         }
     }
 
-    private static func postReturnKey(to panel: NSSavePanel) {
-        for eventType in [NSEvent.EventType.keyDown, .keyUp] {
-            guard let event = NSEvent.keyEvent(
-                with: eventType,
-                location: .zero,
-                modifierFlags: [],
-                timestamp: ProcessInfo.processInfo.systemUptime,
-                windowNumber: panel.windowNumber,
-                context: nil,
-                characters: "\r",
-                charactersIgnoringModifiers: "\r",
-                isARepeat: false,
-                keyCode: 36
-            ) else { continue }
-            NSApplication.shared.postEvent(event, atStart: false)
-        }
+    private static func postSystemReturnKey() {
+        let source = CGEventSource(stateID: .hidSystemState)
+        CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: true)?.post(tap: .cghidEventTap)
+        CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: false)?.post(tap: .cghidEventTap)
     }
 
     private static let allowedInterfaceScales: Set<Double> = [0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75]
