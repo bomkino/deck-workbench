@@ -245,11 +245,29 @@ final class DeckSessionController: ObservableObject {
         await withCheckedContinuation { continuation in
             panel.begin { continuation.resume(returning: $0) }
             if tracerDestination != nil {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) {
                     panel.makeKeyAndOrderFront(nil)
-                    panel.perform(Selector(("ok:")), with: nil)
+                    Self.postReturnKey(to: panel)
                 }
             }
+        }
+    }
+
+    private static func postReturnKey(to panel: NSSavePanel) {
+        for eventType in [NSEvent.EventType.keyDown, .keyUp] {
+            guard let event = NSEvent.keyEvent(
+                with: eventType,
+                location: .zero,
+                modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: panel.windowNumber,
+                context: nil,
+                characters: "\r",
+                charactersIgnoringModifiers: "\r",
+                isARepeat: false,
+                keyCode: 36
+            ) else { continue }
+            NSApplication.shared.postEvent(event, atStart: false)
         }
     }
 

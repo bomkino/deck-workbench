@@ -104,11 +104,18 @@ final class BridgeCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDel
         guard message.name == BridgeContract.messageHandler,
               let body = message.body as? [String: Any],
               let requestId = body["requestId"] as? String,
-              requestId.count <= 128,
-              let rawMethod = body["method"] as? String,
+              requestId.count <= 128
+        else {
+            return
+        }
+        guard let rawMethod = body["method"] as? String,
               let method = BridgeMethod(rawValue: rawMethod),
               let payload = body["payload"] as? [String: Any]
         else {
+            try? await respond(
+                requestId: requestId,
+                failure: WorkbenchFailure(name: "InvalidCommand", message: "Unknown or malformed bridge method")
+            )
             return
         }
         do {

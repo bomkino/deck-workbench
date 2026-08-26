@@ -100,6 +100,17 @@ enum PackagedTracer {
             throw WorkbenchFailure(name: "InvalidCommand", message: "Interface Scale and artboard zoom did not remain independent")
         }
 
+        guard let durableDocumentURL = controller.documentURL else {
+            throw WorkbenchFailure(name: "MissingAttachment", message: "Created Deck URL is unavailable")
+        }
+        let replayController = try DeckSessionController()
+        let replayed = try replayController.openDocument(at: durableDocumentURL)
+        guard replayed["revision"] as? Int == 3,
+              ((replayed["headline"] as? [String: Any])?["plainText"] as? String) == "A hill that refuses to be scenery"
+        else {
+            throw WorkbenchFailure(name: "JournalCorruption", message: "Journal replay from revision-zero checkpoint failed")
+        }
+
         try controller.save()
         try writeJSON([
             "phase": "create",
@@ -108,6 +119,7 @@ enum PackagedTracer {
             "interfaceScale": 1.25,
             "artboardZoom": 0.5,
             "nativeSavePanel": true,
+            "journalReplayRevision": 3,
             "document": controller.documentURL?.path ?? documentURL.path,
         ], to: resultURL)
         print("DW-T00 tracer create phase passed")
