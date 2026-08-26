@@ -4,7 +4,27 @@ A local-first, story-first application for prototyping, reviewing and handing of
 
 ## Status
 
-Pre-alpha. The repository is beginning with an Apple-Silicon Story Document tracer. Do not use it for production client work yet.
+Pre-alpha. `DW-T00` proves the first integrated Apple-Silicon Story Document tracer; it is not a production editor or release build.
+
+The tracer creates a native `.pitchdeck`, edits one canonical Story headline through the typed bridge and host-owned durable command seam, reopens with undo history, and exports one PDF page. Its macOS 26 arm64 workflow builds, ad-hoc signs, extracts, verifies, and runs the exact packaged journey at the checked-out SHA.
+
+## Verify
+
+Portable command and contract checks:
+
+```sh
+npm run verify
+```
+
+On Apple-Silicon macOS 26 or newer:
+
+```sh
+scripts/build-macos.sh
+scripts/verify-packaged-macos.sh
+node scripts/write-evidence-receipt.mjs
+```
+
+The packaged artifact and exact-SHA receipt are written under `artifacts/`.
 
 ## Principles
 

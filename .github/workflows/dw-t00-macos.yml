@@ -42,6 +42,7 @@ jobs:
       - run: node scripts/verify-source.mjs
       - run: scripts/build-macos.sh
       - run: scripts/verify-packaged-macos.sh
+      - run: node scripts/write-evidence-receipt.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: deck-workbench-dw-t00-${{ github.sha }}
