@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "handler": "deckWorkbench",
+  "methods": [
+    { "name": "deck.create", "swiftCase": "deckCreate", "javascriptName": "create" },
+    { "name": "deck.open", "swiftCase": "deckOpen", "javascriptName": "open" },
+    { "name": "deck.query", "swiftCase": "deckQuery", "javascriptName": "query" },
+    { "name": "deck.execute", "swiftCase": "deckExecute", "javascriptName": "execute" },
+    { "name": "deck.undo", "swiftCase": "deckUndo", "javascriptName": "undo" },
+    { "name": "deck.redo", "swiftCase": "deckRedo", "javascriptName": "redo" },
+    { "name": "deck.exportPDF", "swiftCase": "deckExportPDF", "javascriptName": "exportPDF" },
+    { "name": "ui.getPreferences", "swiftCase": "uiGetPreferences", "javascriptName": "getPreferences" },
+    { "name": "ui.setInterfaceScale", "swiftCase": "uiSetInterfaceScale", "javascriptName": "setInterfaceScale" },
+    { "name": "ui.setArtboardZoom", "swiftCase": "uiSetArtboardZoom", "javascriptName": "setArtboardZoom" }
+  ]
+}

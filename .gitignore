@@ -1,0 +1,48 @@
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Node / web
+node_modules/
+.pnpm-store/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Swift / Xcode
+.build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+
+# Electron packaging
+release/
+out/
+*.AppImage
+*.pkg.tar.zst
+
+# Application artifacts
+artifacts/
+exports/
+*.app
+*.app.zip
+*.dmg
+*.zip.sha256
+
+# Local Deck documents and private material
+*.pitchdeck
+!fixtures/**/*.pitchdeck
+private/
+client-material/
+fonts-private/
+
+# Logs and environment
+*.log
+.env
+.env.*
+!.env.example
+
+# Editors
+.vscode/
+.idea/

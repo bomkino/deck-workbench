@@ -1,0 +1,6 @@
+ts	phase	decision	why	evidence	result
+2026-08-26T21:20:00Z	DW-T00 bootstrap	Start from pinned main and create codex/apple-silicon-story-tracer	Remote main exactly matched build contract; no user delta existed	GitHub branch API plus local git status/rev-parse	accepted
+2026-08-26T21:20:00Z	DW-T00 runtime gate	Treat local run as source-only until arm64 macOS 26 evidence exists	Runtime is Linux x86_64 with no Swift or Clang	uname/node/swift/clang probes	external native gate recorded
+2026-08-26T21:35:00Z	DW-T00 kernel host	Use one TypeScript kernel bundle inside host-owned serial JavaScriptCore adapter	Smallest accepted adapter keeps Deck semantics outside WebView and has a documented replacement seam	SYSTEM_ARCHITECTURE plus caller-first DeckKernelJSON boundary	accepted for tracer
+2026-08-26T21:35:00Z	DW-T00 dependencies	Use no third-party production runtime packages	Tracer needs only Apple frameworks and Node built-ins for generation/tests	package.json and THIRD_PARTY.md	accepted
+2026-08-26T21:35:00Z	DW-T00 checkpointing	Retain full hash-chained journal after atomic checkpoints in tracer	Avoid unsafe compaction while preserving durable history and restart replay	DOCUMENT_AND_RECOVERY acknowledgement/checkpoint order	bounded tracer decision; compaction deferred

@@ -1,0 +1,15 @@
+{
+  "name": "deck-workbench",
+  "version": "0.0.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "generate": "node scripts/generate-bridge.mjs && node scripts/build-kernel.mjs",
+    "test": "npm run generate && node --test tests/*.test.mjs",
+    "verify": "npm test && node scripts/verify-source.mjs"
+  }
+}

@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Deck Workbench</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="bridge.generated.js" defer></script>
+    <script type="module" src="workspace.js"></script>
+  </head>
+  <body>
+    <main class="workbench" aria-label="Deck Workbench Editorial Desk">
+      <header class="toolbar">
+        <div>
+          <p class="eyebrow">Deck Workbench</p>
+          <h1 id="deck-title">No Deck open</h1>
+        </div>
+        <div class="toolbar-actions" aria-label="History and view controls">
+          <button id="undo" type="button" disabled>Undo</button>
+          <button id="redo" type="button" disabled>Redo</button>
+          <label>
+            <span>Interface</span>
+            <select id="interface-scale" aria-label="Interface Scale">
+              <option value="0.8">80%</option>
+              <option value="0.9">90%</option>
+              <option value="1">100%</option>
+              <option value="1.1">110%</option>
+              <option value="1.25">125%</option>
+              <option value="1.5">150%</option>
+              <option value="1.75">175%</option>
+            </select>
+          </label>
+          <label>
+            <span>Artboard</span>
+            <input id="artboard-zoom" type="range" min="0.15" max="0.8" step="0.05" value="0.35" />
+          </label>
+        </div>
+      </header>
+
+      <section class="editorial-spine">
+        <nav class="sequence" aria-label="Deck sequence">
+          <p class="panel-label">Sequence</p>
+          <div class="section-row">
+            <span class="disclosure" aria-hidden="true">⌄</span>
+            <strong id="section-title">Opening</strong>
+          </div>
+          <button class="slide-row selected" id="slide-row" type="button" disabled>
+            <span class="slide-number">01</span>
+            <span id="slide-label">Cover</span>
+          </button>
+        </nav>
+
+        <section class="story" aria-labelledby="story-heading">
+          <div class="panel-heading">
+            <div>
+              <p class="panel-label">Story</p>
+              <h2 id="story-heading">Canonical writing</h2>
+            </div>
+            <p class="revision" id="revision">Revision —</p>
+          </div>
+          <label class="story-field">
+            <span>Headline</span>
+            <textarea
+              id="headline"
+              rows="7"
+              disabled
+              aria-describedby="save-state"
+              placeholder="Create or open a Deck to begin."
+            ></textarea>
+          </label>
+          <div class="story-footer">
+            <p id="save-state" role="status">No document session</p>
+            <button id="commit-headline" type="button" disabled>Commit headline</button>
+          </div>
+        </section>
+
+        <section class="stage" aria-label="Visual stage">
+          <div class="panel-heading">
+            <div>
+              <p class="panel-label">Visual stage</p>
+              <h2>Same Slide projection</h2>
+            </div>
+            <p id="zoom-label">35%</p>
+          </div>
+          <div class="stage-scroll">
+            <article class="artboard" id="artboard" aria-label="Projected Slide">
+              <p class="artboard-kicker" id="artboard-intent">Cover</p>
+              <h3 id="artboard-headline">Untitled Story</h3>
+              <p class="artboard-furniture">pitch.dog / Deck Workbench tracer</p>
+            </article>
+          </div>
+        </section>
+
+        <aside class="inspector" aria-label="Inspector">
+          <p class="panel-label">Inspector</p>
+          <section>
+            <h2>Content</h2>
+            <dl>
+              <div><dt>Binding</dt><dd id="binding">—</dd></div>
+              <div><dt>Role</dt><dd>Headline</dd></div>
+              <div><dt>Source</dt><dd>Story</dd></div>
+            </dl>
+          </section>
+          <section>
+            <h2>Canvas</h2>
+            <dl>
+              <div><dt>Preset</dt><dd id="canvas-preset">2576 × 1080</dd></div>
+              <div><dt>Zoom</dt><dd id="inspector-zoom">35%</dd></div>
+              <div><dt>Interface</dt><dd id="inspector-interface">100%</dd></div>
+            </dl>
+          </section>
+          <section>
+            <h2>Durability</h2>
+            <p class="small">A change appears here only after journal append and fsync succeed.</p>
+          </section>
+        </aside>
+      </section>
+    </main>
+  </body>
+</html>

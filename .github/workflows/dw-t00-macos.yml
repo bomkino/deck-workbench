@@ -1,0 +1,47 @@
+name: DW-T00 macOS arm64
+
+on:
+  push:
+    branches:
+      - codex/apple-silicon-story-tracer
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  portable-seams:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm test
+      - run: node scripts/verify-source.mjs
+
+  packaged-apple-silicon:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Prove native runner
+        run: |
+          test "$(uname -m)" = "arm64"
+          test "$(sw_vers -productVersion | cut -d. -f1)" -ge 26
+      - run: npm test
+      - run: node scripts/verify-source.mjs
+      - run: scripts/build-macos.sh
+      - run: scripts/verify-packaged-macos.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deck-workbench-dw-t00-${{ github.sha }}
+          path: |
+            artifacts/*.app.zip
+            artifacts/*.sha256
+            artifacts/evidence/*
+          if-no-files-found: error
