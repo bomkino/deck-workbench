@@ -119,9 +119,9 @@ No third-party production runtime dependency is present.
 
 ## Next dispatchable ticket
 
-- Ticket: next bounded \`DW-W01 — Story Document\` slice
-- Exact user journey: rename Story structure and set Slide intent through the same semantic command, durability and projection seams
-- Dependency/gate: preserve the green DW-T00 architecture; do not introduce Garuda, editor dependencies or broad export work
+- Ticket: \`DW-W01-D01 — Story deletion semantics\`
+- Exact user journey: remove a Content Block and undo it with stable identity/order; decide empty-Section, last-Slide and cascading-delete behavior before Section/Slide removal exists
+- Dependency/gate: Design It Twice is required because deletion semantics are a one-way document/history decision; preserve the green DW-T00 architecture
 `
 
 writeFileSync(join(evidence, 'DW-T00-EVIDENCE-RECEIPT.md'), receipt)
@@ -170,9 +170,11 @@ The extracted macOS app creates a second Section and Slide through the typed bri
 - Unsupported claims: Content removal UI, multi-paragraph rich editor behavior, broader crash-injection matrix, Garuda parity, production editor behavior
 - Scope boundary: no Garuda shell, editor dependency or export expansion was introduced
 
-## Next dispatchable slice
+## Next dispatchable ticket
 
-- Add semantic Content removal and Section/Slide deletion decisions only after their user-visible history behavior is specified.
+- Ticket: \`DW-W01-D01 — Story deletion semantics\`
+- Exact user journey: remove a Content Block, save/close/reopen, undo to restore its stable identity and order; compare Section/Slide deletion policies before implementation.
+- Gate: genuine one-way document/history decision requiring Design It Twice. No Garuda, editor dependency or export expansion is needed.
 `
 
 writeFileSync(join(evidence, 'DW-W01-STORY-SLICE-RECEIPT.md'), storyReceipt)
