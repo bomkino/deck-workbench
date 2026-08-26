@@ -1,6 +1,5 @@
 import SwiftUI
 
-@main
 struct DeckWorkbenchApp: App {
     @StateObject private var controller: DeckSessionController
 
@@ -18,7 +17,6 @@ struct DeckWorkbenchApp: App {
         WindowGroup("Deck Workbench") {
             WorkbenchRootView(controller: controller)
                 .frame(minWidth: 1180, minHeight: 700)
-                .task { await PackagedTracer.runIfRequested(controller: controller) }
         }
         .windowStyle(.titleBar)
         .commands {

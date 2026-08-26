@@ -9,6 +9,15 @@ struct WorkspaceWebView: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> WKWebView {
+        WorkspaceWebViewFactory.make(coordinator: context.coordinator)
+    }
+
+    func updateNSView(_ webView: WKWebView, context: Context) {}
+}
+
+@MainActor
+enum WorkspaceWebViewFactory {
+    static func make(coordinator: BridgeCoordinator) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.preferences.isTextInteractionEnabled = true
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
@@ -17,15 +26,13 @@ struct WorkspaceWebView: NSViewRepresentable {
             fatalError("Workspace resources are unavailable")
         }
         configuration.setURLSchemeHandler(schemeHandler, forURLScheme: "pitchdog-ui")
-        configuration.userContentController.add(context.coordinator, name: BridgeContract.messageHandler)
+        configuration.userContentController.add(coordinator, name: BridgeContract.messageHandler)
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
-        webView.navigationDelegate = context.coordinator
+        webView.navigationDelegate = coordinator
         webView.allowsMagnification = false
-        context.coordinator.attach(webView: webView)
+        coordinator.attach(webView: webView)
         webView.load(URLRequest(url: URL(string: "pitchdog-ui://app/index.html")!))
         return webView
     }
-
-    func updateNSView(_ webView: WKWebView, context: Context) {}
 }
