@@ -63,6 +63,11 @@ type SectionMovePayload = {
   afterSectionId: string | null
 }
 
+type SectionRenamePayload = {
+  sectionId: string
+  title: string
+}
+
 type SlideAddPayload = {
   sectionId: string
   slideId: string
@@ -78,10 +83,15 @@ type SlideMovePayload = {
   afterSlideId: string | null
 }
 
+type SlideIntentPayload = {
+  slideId: string
+  intent: string
+}
+
 type CommandEnvelope = {
   commandId: string
   expectedRevision: number
-  type: 'content.update' | 'section.add' | 'section.move' | 'slide.add' | 'slide.move'
+  type: 'content.update' | 'section.add' | 'section.rename' | 'section.move' | 'slide.add' | 'slide.move' | 'slide.intent.set'
   payload: JsonObject
   source: {
     kind: 'ui' | 'keyboard' | 'cli' | 'mcp' | 'migration'
@@ -94,10 +104,12 @@ type HistoryOperation =
   | { type: 'content.set'; payload: ContentUpdatePayload }
   | { type: 'section.insert'; payload: { section: Section; afterSectionId: string | null } }
   | { type: 'section.remove'; payload: { sectionId: string } }
+  | { type: 'section.rename'; payload: SectionRenamePayload }
   | { type: 'section.move'; payload: SectionMovePayload }
   | { type: 'slide.insert'; payload: { sectionId: string; slide: Slide; afterSlideId: string | null } }
   | { type: 'slide.remove'; payload: { slideId: string } }
   | { type: 'slide.move'; payload: SlideMovePayload }
+  | { type: 'slide.intent.set'; payload: SlideIntentPayload }
 
 type HistoryEntry = {
   id: string
@@ -234,6 +246,12 @@ function applyHistoryOperation(deck: DeckSnapshot, operation: HistoryOperation):
     next.sections.splice(index, 1)
     return next
   }
+  if (operation.type === 'section.rename') {
+    const section = next.sections.find((candidate) => candidate.id === operation.payload.sectionId)
+    if (!section) throw new Error('Section does not exist')
+    section.title = operation.payload.title
+    return next
+  }
   if (operation.type === 'section.move') {
     const index = next.sections.findIndex((section) => section.id === operation.payload.sectionId)
     if (index < 0) throw new Error('Section does not exist')
@@ -255,6 +273,12 @@ function applyHistoryOperation(deck: DeckSnapshot, operation: HistoryOperation):
     const location = findSlideLocation(next, operation.payload.slideId)
     if (!location) throw new Error('Slide does not exist')
     next.sections[location.sectionIndex].slides.splice(location.slideIndex, 1)
+    return next
+  }
+  if (operation.type === 'slide.intent.set') {
+    const location = findSlideLocation(next, operation.payload.slideId)
+    if (!location) throw new Error('Slide does not exist')
+    next.sections[location.sectionIndex].slides[location.slideIndex].intent = operation.payload.intent
     return next
   }
   const location = findSlideLocation(next, operation.payload.slideId)
@@ -494,6 +518,15 @@ function prepare(session: KernelSession, command: CommandEnvelope): PrepareResul
       inverse = { type: 'section.remove', payload: { sectionId } }
       label = `Add Section: ${title}`
       projectionHints = ['story', 'sequence', 'history']
+    } else if (command.type === 'section.rename') {
+      const sectionId = assertString(command.payload.sectionId, 'sectionId')
+      const title = assertString(command.payload.title, 'title')
+      const section = session.checkpoint.deck.sections.find((candidate) => candidate.id === sectionId)
+      if (!section) throw new Error('Section does not exist')
+      forward = { type: 'section.rename', payload: { sectionId, title } }
+      inverse = { type: 'section.rename', payload: { sectionId, title: section.title } }
+      label = `Rename Section: ${title}`
+      projectionHints = ['story', 'sequence', 'history']
     } else if (command.type === 'section.move') {
       const sectionId = assertString(command.payload.sectionId, 'sectionId')
       const index = session.checkpoint.deck.sections.findIndex((section) => section.id === sectionId)
@@ -555,6 +588,16 @@ function prepare(session: KernelSession, command: CommandEnvelope): PrepareResul
         payload: { slideId, targetSectionId: sourceSection.id, afterSlideId: previousAfterSlideId },
       }
       label = 'Move Slide'
+      projectionHints = ['story', 'sequence', 'slide.activeProjection', 'history']
+    } else if (command.type === 'slide.intent.set') {
+      const slideId = assertString(command.payload.slideId, 'slideId')
+      const intent = assertString(command.payload.intent, 'intent')
+      const location = findSlideLocation(session.checkpoint.deck, slideId)
+      if (!location) throw new Error('Slide does not exist')
+      const currentIntent = session.checkpoint.deck.sections[location.sectionIndex].slides[location.slideIndex].intent
+      forward = { type: 'slide.intent.set', payload: { slideId, intent } }
+      inverse = { type: 'slide.intent.set', payload: { slideId, intent: currentIntent } }
+      label = `Set Slide intent: ${intent}`
       projectionHints = ['story', 'sequence', 'slide.activeProjection', 'history']
     } else {
       return failure('InvalidCommand', `Unsupported command type: ${String(command.type)}`)

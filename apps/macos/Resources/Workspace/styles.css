@@ -75,6 +75,8 @@ button:disabled { color: var(--faint); }
 .sequence-actions button { flex: 1; padding-inline: 0.35rem; font-size: 0.62rem; }
 .sequence-list { margin-top: 0.75rem; }
 .section-row { display: flex; align-items: center; justify-content: space-between; gap: 0.35rem; margin-top: 0.75rem; padding: 0.35rem 0; font-size: 0.75rem; }
+.section-tools { display: flex; gap: 0.2rem; }
+.rename-section { min-height: 1.7rem; padding-inline: 0.35rem; font-size: 0.55rem; }
 .disclosure { color: var(--muted); }
 .slide-entry { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.25rem; margin-top: 0.3rem; }
 .slide-row { width: 100%; display: grid; grid-template-columns: 1.7rem minmax(0, 1fr); text-align: left; overflow: hidden; }
@@ -138,6 +140,8 @@ button:disabled { color: var(--faint); }
 .inspector dl div { display: flex; justify-content: space-between; gap: 0.8rem; padding: 0.24rem 0; font-size: 0.68rem; }
 .inspector dt { color: var(--muted); }
 .inspector dd { max-width: 7rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inspector-control { display: grid; gap: 0.35rem; margin-top: 0.8rem; color: var(--muted); font-size: 0.65rem; }
+.inspector-control select { width: 100%; min-height: 2rem; }
 .small { color: var(--muted); font-size: 0.68rem; line-height: 1.45; }
 
 @media (prefers-reduced-motion: no-preference) {

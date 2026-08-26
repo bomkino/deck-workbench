@@ -61,10 +61,10 @@ STORY_REOPEN_RESULT="$JOURNEY_ROOT/story-reopen-result.json"
 test -f "$STORY_DOCUMENT/manifest.json"
 test -f "$STORY_DOCUMENT/checkpoint.json"
 test -f "$STORY_DOCUMENT/journal.ndjson"
-test "$(wc -l < "$STORY_DOCUMENT/journal.ndjson" | tr -d ' ')" = "4"
+test "$(wc -l < "$STORY_DOCUMENT/journal.ndjson" | tr -d ' ')" = "6"
 
 "$BINARY" --tracer-story-reopen "$STORY_DOCUMENT" "$STORY_REOPEN_RESULT"
-test "$(wc -l < "$STORY_DOCUMENT/journal.ndjson" | tr -d ' ')" = "6"
+test "$(wc -l < "$STORY_DOCUMENT/journal.ndjson" | tr -d ' ')" = "8"
 node "$REPOSITORY_ROOT/scripts/verify-story-tracer-output.mjs" \
   "$STORY_DOCUMENT" "$STORY_CREATE_RESULT" "$STORY_REOPEN_RESULT"
 

@@ -35,6 +35,7 @@ const elements = {
   zoomLabel: document.querySelector('#zoom-label'),
   inspectorZoom: document.querySelector('#inspector-zoom'),
   inspectorInterface: document.querySelector('#inspector-interface'),
+  slideIntent: document.querySelector('#slide-intent'),
   artboard: document.querySelector('#artboard'),
 }
 
@@ -57,6 +58,7 @@ function setBusy(label) {
   elements.redo.disabled = true
   elements.addSection.disabled = true
   elements.addSlide.disabled = true
+  elements.slideIntent.disabled = true
 }
 
 function renderProjection(next) {
@@ -66,6 +68,7 @@ function renderProjection(next) {
   elements.headline.value = next.headline.plainText
   elements.artboardHeadline.textContent = next.headline.plainText
   elements.artboardIntent.textContent = next.slide.intent
+  elements.slideIntent.value = next.slide.intent
   elements.revision.textContent = `Revision ${next.revision}`
   elements.binding.textContent = next.headline.semanticKey
   elements.canvasPreset.textContent = `${next.canvas.width} × ${next.canvas.height}`
@@ -74,6 +77,7 @@ function renderProjection(next) {
   elements.redo.disabled = !next.history.canRedo
   elements.addSection.disabled = false
   elements.addSlide.disabled = false
+  elements.slideIntent.disabled = false
   elements.saveState.textContent = 'Durable and projected'
   applyScales()
   void refreshSequence()
@@ -90,6 +94,15 @@ function renderSequence(next) {
     const title = document.createElement('strong')
     title.textContent = section.title
     sectionRow.append(title)
+    const tools = document.createElement('span')
+    tools.className = 'section-tools'
+    const rename = document.createElement('button')
+    rename.type = 'button'
+    rename.className = 'rename-section'
+    rename.textContent = 'Rename'
+    rename.setAttribute('aria-label', `Rename ${section.title}`)
+    rename.addEventListener('click', () => renameSection(section.id, section.title))
+    tools.append(rename)
     if (sectionIndex > 0) {
       const move = document.createElement('button')
       move.type = 'button'
@@ -97,8 +110,9 @@ function renderSequence(next) {
       move.textContent = '↑'
       move.setAttribute('aria-label', `Move ${section.title} up`)
       move.addEventListener('click', () => moveSectionUp(section.id))
-      sectionRow.append(move)
+      tools.append(move)
     }
+    sectionRow.append(tools)
     elements.sequenceList.append(sectionRow)
 
     section.slides.forEach((slide, slideIndex) => {
@@ -205,6 +219,12 @@ async function moveSectionUp(sectionId) {
   })
 }
 
+async function renameSection(sectionId, currentTitle) {
+  const title = window.prompt('Section name', currentTitle)?.trim()
+  if (!title || title === currentTitle) return
+  await executeStructural('section.rename', { sectionId, title })
+}
+
 async function moveSlideUp(sectionId, slideId) {
   if (!storyDocument) return
   const section = storyDocument.sections.find((candidate) => candidate.id === sectionId)
@@ -294,6 +314,13 @@ elements.artboardZoom.addEventListener('input', async () => {
   } catch (error) {
     elements.saveState.textContent = `${error.name ?? 'Error'}: ${error.message}`
   }
+})
+elements.slideIntent.addEventListener('change', async () => {
+  if (!projection) return
+  await executeStructural('slide.intent.set', {
+    slideId: projection.slide.id,
+    intent: elements.slideIntent.value,
+  }, projection.slide.id)
 })
 
 async function boot() {

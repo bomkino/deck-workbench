@@ -226,6 +226,8 @@ enum PackagedTracer {
             });
             await execute('section.move', { sectionId: secondSectionId, afterSectionId: null });
             await execute('slide.move', { slideId: secondSlideId, targetSectionId: openingSectionId, afterSlideId: openingSlideId });
+            await execute('section.rename', { sectionId: secondSectionId, title: 'Act II' });
+            await execute('slide.intent.set', { slideId: secondSlideId, intent: 'editorial-body' });
             return await deckBridge.query({ name: 'story.document', params: {} });
             """,
             arguments: [
@@ -236,12 +238,19 @@ enum PackagedTracer {
                 "secondBlockId": secondBlockId,
             ]
         )
-        let story = try requireStory(rawStory, revision: 4)
+        let story = try requireStory(rawStory, revision: 6)
         try requireStoryOrder(
             story,
             sectionIds: [secondSectionId, openingSectionId],
             slideIdsBySection: [[], [openingSlideId, secondSlideId]]
         )
+        guard let storySections = story["sections"] as? [[String: Any]],
+              storySections[0]["title"] as? String == "Act II",
+              let openingSlides = storySections[1]["slides"] as? [[String: Any]],
+              openingSlides[1]["intent"] as? String == "editorial-body"
+        else {
+            throw WorkbenchFailure(name: "InvalidCommand", message: "Story rename or Slide intent did not project")
+        }
 
         guard let durableDocumentURL = controller.documentURL else {
             throw WorkbenchFailure(name: "MissingAttachment", message: "Created Story Deck URL is unavailable")
@@ -249,15 +258,17 @@ enum PackagedTracer {
         let replayController = try DeckSessionController()
         _ = try replayController.openDocument(at: durableDocumentURL)
         let replayed = try replayController.query(name: "story.document", params: [:])
-        _ = try requireStory(replayed, revision: 4)
+        _ = try requireStory(replayed, revision: 6)
 
         try controller.save()
         try writeJSON([
             "phase": "story-create",
-            "revision": 4,
+            "revision": 6,
             "sectionIds": [secondSectionId, openingSectionId],
             "openingSlideIds": [openingSlideId, secondSlideId],
-            "journalReplayRevision": 4,
+            "journalReplayRevision": 6,
+            "renamedSectionTitle": "Act II",
+            "slideIntent": "editorial-body",
         ], to: resultURL)
         print("DW-W01 Story create phase passed")
     }
@@ -274,7 +285,7 @@ enum PackagedTracer {
         let rawReopened = try await controller.invokeWorkspaceForTracer(
             "return await deckBridge.query({ name: 'story.document', params: {} })"
         )
-        let reopened = try requireStory(rawReopened, revision: 4)
+        let reopened = try requireStory(rawReopened, revision: 6)
         guard let sections = reopened["sections"] as? [[String: Any]],
               sections.count == 2,
               let secondSectionId = sections[0]["id"] as? String,
@@ -286,34 +297,53 @@ enum PackagedTracer {
         else {
             throw WorkbenchFailure(name: "JournalCorruption", message: "Story ordering did not survive reopen")
         }
+        guard sections[0]["title"] as? String == "Act II",
+              openingSlides[1]["intent"] as? String == "editorial-body"
+        else {
+            throw WorkbenchFailure(name: "JournalCorruption", message: "Story rename or Slide intent did not survive reopen")
+        }
 
         let rawUndone = try await controller.invokeWorkspaceForTracer(
             "await deckBridge.undo(); return await deckBridge.query({ name: 'story.document', params: {} })"
         )
-        let undone = try requireStory(rawUndone, revision: 5)
+        let undone = try requireStory(rawUndone, revision: 7)
         try requireStoryOrder(
             undone,
             sectionIds: [secondSectionId, openingSectionId],
-            slideIdsBySection: [[secondSlideId], [openingSlideId]]
+            slideIdsBySection: [[], [openingSlideId, secondSlideId]]
         )
+        guard let undoneSections = undone["sections"] as? [[String: Any]],
+              let undoneSlides = undoneSections[1]["slides"] as? [[String: Any]],
+              undoneSlides[1]["intent"] as? String == "statement"
+        else {
+            throw WorkbenchFailure(name: "InvalidCommand", message: "Undo did not restore Slide intent")
+        }
 
         let rawRedone = try await controller.invokeWorkspaceForTracer(
             "await deckBridge.redo(); return await deckBridge.query({ name: 'story.document', params: {} })"
         )
-        let redone = try requireStory(rawRedone, revision: 6)
+        let redone = try requireStory(rawRedone, revision: 8)
         try requireStoryOrder(
             redone,
             sectionIds: [secondSectionId, openingSectionId],
             slideIdsBySection: [[], [openingSlideId, secondSlideId]]
         )
+        guard let redoneSections = redone["sections"] as? [[String: Any]],
+              let redoneSlides = redoneSections[1]["slides"] as? [[String: Any]],
+              redoneSlides[1]["intent"] as? String == "editorial-body"
+        else {
+            throw WorkbenchFailure(name: "InvalidCommand", message: "Redo did not restore Slide intent")
+        }
         try controller.save()
         try writeJSON([
             "phase": "story-reopen",
-            "reopenedRevision": 4,
-            "undoRevision": 5,
-            "redoRevision": 6,
+            "reopenedRevision": 6,
+            "undoRevision": 7,
+            "redoRevision": 8,
             "sectionIds": [secondSectionId, openingSectionId],
             "openingSlideIds": [openingSlideId, secondSlideId],
+            "renamedSectionTitle": "Act II",
+            "slideIntent": "editorial-body",
         ], to: resultURL)
         print("DW-W01 Story reopen phase passed")
     }

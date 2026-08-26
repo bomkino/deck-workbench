@@ -10,6 +10,8 @@ native create
 → add Slide with canonical headline
 → reorder Section by stable ID
 → move Slide across Sections by stable ID
+→ rename Section
+→ set Slide intent
 → save and quit
 → reopen
 → undo and redo the move through durable history
@@ -19,10 +21,12 @@ native create
 
 - `section.add`
 - `section.move`
+- `section.rename`
 - `slide.add`
 - `slide.move`
+- `slide.intent.set`
 
-All four use the existing command envelope, non-mutating prepare, append/fsync-before-commit acknowledgement, hash-chained journal, idempotency map and semantic undo/redo stacks.
+All six use the existing command envelope, non-mutating prepare, append/fsync-before-commit acknowledgement, hash-chained journal, idempotency map and semantic undo/redo stacks.
 
 ## Projection
 
@@ -35,15 +39,14 @@ All four use the existing command envelope, non-mutating prepare, append/fsync-b
 - the minimal Sequence rail renders all Sections and Slides;
 - native controls can add a Section, add a Slide, select a Slide and move an item up;
 - packaged automation creates and reorders two Sections/two Slides through the typed WebView bridge;
-- restart replay reaches revision 4 before checkpoint save;
-- packaged quit/reopen preserves order and undo/redo reaches revisions 5/6;
+- restart replay reaches revision 6 before checkpoint save;
+- packaged quit/reopen preserves structure/metadata and intent undo/redo reaches revisions 7/8;
 - the final app artifact remains arm64-only, ad-hoc signed, extracted and exact-SHA verified;
 - all DW-T00 tests and packaged journey remain green.
 
 ## Explicitly deferred
 
-- Deck and Section rename;
-- Slide intent editing;
+- Deck rename;
 - arbitrary Content Block add/remove;
 - drag-and-drop interaction;
 - crash-injection matrix beyond the recovery behavior already proven;

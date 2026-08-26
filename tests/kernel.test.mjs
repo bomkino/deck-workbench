@@ -142,7 +142,7 @@ test('unsupported checkpoint schema rejects explicitly', () => {
   assert.equal(result.error.name, 'UnsupportedSchema')
 })
 
-test('Sections and Slides add and reorder through semantic history using stable IDs', () => {
+test('Story structure edits use semantic history and stable IDs', () => {
   const session = kernel.open(checkpoint())
   const openingSectionId = 'section-00000000-0000-4000-8000-000000000001'
   const openingSlideId = 'slide-00000000-0000-4000-8000-000000000001'
@@ -180,23 +180,38 @@ test('Sections and Slides add and reorder through semantic history using stable 
     afterSlideId: openingSlideId,
   }))
 
-  const story = kernel.query(session, 'story.document', {})
-  assert.equal(story.revision, 4)
-  assert.deepEqual(JSON.parse(JSON.stringify(story.sections.map((section) => section.id))), [
+  const structuralStory = kernel.query(session, 'story.document', {})
+  assert.equal(structuralStory.revision, 4)
+  assert.deepEqual(JSON.parse(JSON.stringify(structuralStory.sections.map((section) => section.id))), [
     secondSectionId,
     openingSectionId,
   ])
-  assert.deepEqual(JSON.parse(JSON.stringify(story.sections[1].slides.map((slide) => slide.id))), [
+  assert.deepEqual(JSON.parse(JSON.stringify(structuralStory.sections[1].slides.map((slide) => slide.id))), [
     openingSlideId,
     secondSlideId,
   ])
 
+  execute(session, structuralCommand(4, 'section.rename', {
+    sectionId: secondSectionId,
+    title: 'Act II',
+  }))
+  execute(session, structuralCommand(5, 'slide.intent.set', {
+    slideId: secondSlideId,
+    intent: 'editorial-body',
+  }))
+  const story = kernel.query(session, 'story.document', {})
+  assert.equal(story.revision, 6)
+  assert.equal(story.sections[0].title, 'Act II')
+  assert.equal(story.sections[1].slides[1].intent, 'editorial-body')
+
   const reopened = kernel.open(kernel.serializeSession(session))
   kernel.commit(reopened, kernel.prepareUndo(reopened))
-  const undone = kernel.query(reopened, 'story.document', {})
-  assert.deepEqual(JSON.parse(JSON.stringify(undone.sections[0].slides.map((slide) => slide.id))), [secondSlideId])
+  assert.equal(kernel.query(reopened, 'story.document', {}).sections[1].slides[1].intent, 'statement')
+  kernel.commit(reopened, kernel.prepareUndo(reopened))
+  assert.equal(kernel.query(reopened, 'story.document', {}).sections[0].title, 'Act Two')
   kernel.commit(reopened, kernel.prepareRedo(reopened))
-  assert.equal(kernel.query(reopened, 'story.document', {}).revision, 6)
+  kernel.commit(reopened, kernel.prepareRedo(reopened))
+  assert.equal(kernel.query(reopened, 'story.document', {}).revision, 10)
 })
 
 test('invalid structural commands reject atomically without consuming identities', () => {
@@ -212,8 +227,13 @@ test('invalid structural commands reject atomically without consuming identities
     title: 'Duplicate',
     afterSectionId: null,
   }, 'duplicate-section'))
+  const emptyRename = kernel.prepare(session, structuralCommand(0, 'section.rename', {
+    sectionId: 'section-00000000-0000-4000-8000-000000000001',
+    title: '',
+  }, 'empty-rename'))
 
   assert.equal(invalidMove.error.name, 'InvalidCommand')
   assert.equal(duplicateSection.error.name, 'InvalidCommand')
+  assert.equal(emptyRename.error.name, 'InvalidCommand')
   assert.equal(JSON.stringify(kernel.serializeSession(session)), before)
 })
