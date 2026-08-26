@@ -15,7 +15,10 @@ fi
 
 test -f "$ZIP"
 test -f "$ZIP.sha256"
-shasum -a 256 -c "$ZIP.sha256"
+(
+  cd "$(dirname "$ZIP")"
+  shasum -a 256 -c "$(basename "$ZIP").sha256"
+)
 unzip -t "$ZIP"
 ditto -x -k "$ZIP" "$EXTRACT_ROOT"
 
@@ -54,6 +57,9 @@ mkdir -p "$REPOSITORY_ROOT/artifacts/evidence"
 cp "$CREATE_RESULT" "$REPOSITORY_ROOT/artifacts/evidence/create-result.json"
 cp "$REOPEN_RESULT" "$REPOSITORY_ROOT/artifacts/evidence/reopen-result.json"
 cp "$PDF" "$REPOSITORY_ROOT/artifacts/evidence/tracer.pdf"
-shasum -a 256 "$PDF" > "$REPOSITORY_ROOT/artifacts/evidence/tracer.pdf.sha256"
+(
+  cd "$REPOSITORY_ROOT/artifacts/evidence"
+  shasum -a 256 tracer.pdf > tracer.pdf.sha256
+)
 
 echo "DW-T00 packaged verification passed at $COMMIT_SHA"

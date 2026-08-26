@@ -150,14 +150,18 @@ final class DeckSessionController: ObservableObject {
         ["interfaceScale": interfaceScale, "artboardZoom": artboardZoom]
     }
 
-    func presentNewDocument() async throws -> [String: Any] {
+    func presentNewDocument(tracerDestination: URL? = nil) async throws -> [String: Any] {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.pitchDeckPackage]
         panel.canCreateDirectories = true
         panel.isExtensionHidden = false
         panel.nameFieldStringValue = "Untitled.pitchdeck"
         panel.title = "Create Deck"
-        guard await response(for: panel) == .OK, let url = panel.url else {
+        if let tracerDestination {
+            panel.directoryURL = tracerDestination.deletingLastPathComponent()
+            panel.nameFieldStringValue = tracerDestination.lastPathComponent
+        }
+        guard await response(for: panel, tracerDestination: tracerDestination) == .OK, let url = panel.url else {
             throw WorkbenchFailure(name: "JobCancelled", message: "Deck creation was cancelled")
         }
         let projection = try createDocument(at: url)
@@ -234,9 +238,18 @@ final class DeckSessionController: ObservableObject {
         ]
     }
 
-    private func response(for panel: NSSavePanel) async -> NSApplication.ModalResponse {
+    private func response(
+        for panel: NSSavePanel,
+        tracerDestination: URL? = nil
+    ) async -> NSApplication.ModalResponse {
         await withCheckedContinuation { continuation in
             panel.begin { continuation.resume(returning: $0) }
+            if tracerDestination != nil {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    panel.makeKeyAndOrderFront(nil)
+                    panel.perform(Selector(("ok:")), with: nil)
+                }
+            }
         }
     }
 

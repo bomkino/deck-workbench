@@ -60,6 +60,9 @@ codesign --verify --deep --strict --verbose=2 "$APP"
 ZIP="$ARTIFACT_ROOT/Deck-Workbench-apple-silicon-${COMMIT_SHA}.app.zip"
 rm -f "$ZIP" "$ZIP.sha256"
 ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
-shasum -a 256 "$ZIP" > "$ZIP.sha256"
+(
+  cd "$ARTIFACT_ROOT"
+  shasum -a 256 "$(basename "$ZIP")" > "$(basename "$ZIP").sha256"
+)
 
 echo "$ZIP"

@@ -62,8 +62,7 @@ enum PackagedTracer {
     ) async throws {
         print("DW-T00 create phase: document")
         fflush(stdout)
-        let initial = try controller.createDocument(at: documentURL, title: "DW-T00 Tracer")
-        try await controller.renderCurrentProjection()
+        let initial = try await controller.presentNewDocument(tracerDestination: documentURL)
         guard initial["revision"] as? Int == 0 else {
             throw WorkbenchFailure(name: "InvalidCommand", message: "New Deck did not start at revision 0")
         }
@@ -108,6 +107,7 @@ enum PackagedTracer {
             "headline": "A hill that refuses to be scenery",
             "interfaceScale": 1.25,
             "artboardZoom": 0.5,
+            "nativeSavePanel": true,
             "document": controller.documentURL?.path ?? documentURL.path,
         ], to: resultURL)
         print("DW-T00 tracer create phase passed")
@@ -143,6 +143,7 @@ enum PackagedTracer {
 
         try await controller.exportPDF(to: pdfURL)
         try controller.save()
+        let negativeResults = try verifyNegativeDocuments(from: documentURL)
         try writeJSON([
             "phase": "reopen",
             "reopenedRevision": 3,
@@ -150,6 +151,8 @@ enum PackagedTracer {
             "undoRevision": 4,
             "undoHeadline": "Untitled Story",
             "pdf": pdfURL.path,
+            "corruptJournalFailure": negativeResults.corruptJournal,
+            "unsupportedSchemaFailure": negativeResults.unsupportedSchema,
         ], to: resultURL)
         print("DW-T00 tracer reopen phase passed")
     }
@@ -157,5 +160,46 @@ enum PackagedTracer {
     private static func writeJSON(_ value: [String: Any], to url: URL) throws {
         let data = try JSONSerialization.data(withJSONObject: value, options: [.prettyPrinted, .sortedKeys])
         try data.write(to: url, options: [.atomic])
+    }
+
+    private static func verifyNegativeDocuments(from documentURL: URL) throws -> (corruptJournal: String, unsupportedSchema: String) {
+        let files = FileManager.default
+        let root = documentURL.deletingLastPathComponent()
+        let unsupportedURL = root.appendingPathComponent("Unsupported.pitchdeck", isDirectory: true)
+        let corruptURL = root.appendingPathComponent("Corrupt.pitchdeck", isDirectory: true)
+        try files.copyItem(at: documentURL, to: unsupportedURL)
+        try files.copyItem(at: documentURL, to: corruptURL)
+
+        let unsupportedManifestURL = unsupportedURL.appendingPathComponent("manifest.json")
+        var unsupportedManifest = try JSONSerialization.jsonObject(with: Data(contentsOf: unsupportedManifestURL)) as! [String: Any]
+        unsupportedManifest["schemaVersion"] = 2
+        try JSONSerialization.data(withJSONObject: unsupportedManifest, options: [.prettyPrinted, .sortedKeys])
+            .write(to: unsupportedManifestURL, options: [.atomic])
+
+        let journalURL = corruptURL.appendingPathComponent("journal.ndjson")
+        var journal = try Data(contentsOf: journalURL)
+        guard let mutationIndex = journal.firstIndex(of: Character("c").asciiValue!) else {
+            throw WorkbenchFailure(name: "JournalCorruption", message: "Negative journal fixture could not mutate")
+        }
+        journal[mutationIndex] = Character("C").asciiValue!
+        try journal.write(to: journalURL, options: [.atomic])
+
+        let unsupportedName = failureName { try PitchDeckDocumentStore.open(at: unsupportedURL) }
+        let corruptName = failureName { try PitchDeckDocumentStore.open(at: corruptURL) }
+        guard unsupportedName == "UnsupportedSchema", corruptName == "JournalCorruption" else {
+            throw WorkbenchFailure(name: "JournalCorruption", message: "Negative document failures were not named correctly")
+        }
+        return (corruptName, unsupportedName)
+    }
+
+    private static func failureName(_ operation: () throws -> Any) -> String {
+        do {
+            _ = try operation()
+            return "UnexpectedSuccess"
+        } catch let failure as WorkbenchFailure {
+            return failure.name
+        } catch {
+            return "UnexpectedFailure"
+        }
     }
 }
