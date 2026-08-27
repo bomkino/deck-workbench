@@ -393,9 +393,10 @@ function restoreStoryFocus(blockId) {
 async function updateContentBlock(blockId, value, options = {}) {
   if (!projection) return
   const { restoreFocus = false, sourceKind = 'ui' } = options
+  const selectedSlideId = projection.slide.id
   setBusy('Validating and writing journal…')
   try {
-    const result = await window.deckBridge.execute({
+    await window.deckBridge.execute({
       command: {
         commandId: crypto.randomUUID(),
         expectedRevision: projection.revision,
@@ -409,7 +410,10 @@ async function updateContentBlock(blockId, value, options = {}) {
         issuedAt: new Date().toISOString(),
       },
     })
-    renderProjection(result.projection)
+    renderProjection(await window.deckBridge.query({
+      name: 'slide.activeProjection',
+      params: { slideId: selectedSlideId },
+    }))
     if (restoreFocus) restoreStoryFocus(blockId)
   } catch (error) {
     elements.saveState.textContent = `${error.name ?? 'Error'}: ${error.message}`
@@ -459,10 +463,20 @@ async function removeContentBlock(blockId) {
 
 async function historyAction(method, restoreFocusBlockId = null) {
   if (!projection) return
+  const selectedSlideId = projection.slide.id
   setBusy(method === 'undo' ? 'Writing undo…' : 'Writing redo…')
   try {
     const result = await window.deckBridge[method]()
-    renderProjection(result.projection)
+    let next = result.projection
+    try {
+      next = await window.deckBridge.query({
+        name: 'slide.activeProjection',
+        params: { slideId: selectedSlideId },
+      })
+    } catch {
+      // The history operation may have removed the selected Slide; use the host fallback.
+    }
+    renderProjection(next)
     if (restoreFocusBlockId) restoreStoryFocus(restoreFocusBlockId)
   } catch (error) {
     elements.saveState.textContent = `${error.name ?? 'Error'}: ${error.message}`

@@ -75,7 +75,7 @@ semantic history. It adds no dependency or privileged renderer capability.
 
 | Severity | Finding | Resolution |
 |---|---|---|
-| Blocking | Replacing a textarea during projection rerender discarded keyboard focus after commit/history. | Reacquire the field by stable Content Block ID after durable acknowledgement, then restore focus and caret. |
+| Blocking | Host acknowledgement projected the first Slide, so editing another Slide changed selection and discarded its textarea. | After acknowledgement, query the selected stable Slide ID; fall back to the host projection only when history removed that Slide. Then reacquire the field by Content Block ID and restore focus/caret. |
 | Material | Capturing Command–Z while a field contains uncommitted text would erase the user's local editing undo seam. | Intercept Deck undo/redo only when the field value equals the acknowledged projection. |
 | Material | Command–Enter during input-method composition could commit an incomplete composition. | Composing keyboard events are ignored and remain uncancelled. |
 | Material | A keyboard handler could masquerade as a separate mutation path. | It dispatches the existing typed `content.update` command and records `source.kind = keyboard`; history still uses bridge undo/redo. |
