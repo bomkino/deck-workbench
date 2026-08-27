@@ -80,3 +80,77 @@ Expected behavior is unchanged except for accessibility semantics, retained erro
 status and assistive discoverability. Regression risk is low: the only interaction
 change is preserving an existing failure message after rerender. Manual acceptance
 is still required before calling R05 accessibility-integrated.
+
+## DW-W01-R05-A source-hardening addendum
+
+### Findings closed in source
+
+| Priority | Finding | Resolution |
+|---|---|---|
+| P1 | Native Undo and Redo were enabled for every open document, even when the projected history said the action was unavailable. A keyboard or Voice Control user could invoke an impossible action and receive an avoidable failure alert. | `DeckSessionController` now publishes `canUndo` and `canRedo` from the acknowledged Slide projection after create, open, execute, undo and redo; close resets both. Native menu items bind to those exact states. |
+| P1 | The durability/error status had an implicit status role but did not require whole-message announcement. | The status is explicitly polite and atomic, so a changing typed name/message is presented as one update. |
+| P2 | Native toolbar names differed from their menu equivalents, and a Sequence Slide relied on concatenated descendant text for its accessible name. | Native toolbar/menu labels now match exactly. Each Slide button exposes `Slide <number>: <headline-or-intent>`, preserving visible words for Voice Control. |
+
+The packaged tracer now queries the bundled WebKit document for the initial
+non-busy state, polite/atomic live status and exact selected-Slide name. Portable
+source tests verify native history-state binding and matching native command names.
+
+### Remaining interactive acceptance gate
+
+- With Full Keyboard Access enabled, traverse the native document controls and the
+  complete WebKit control order using Tab and Shift-Tab. Expected: disabled Undo or
+  Redo is skipped/announced unavailable, no focus trap, and focus remains visible.
+- With VoiceOver enabled, read the Sequence, Story status and selected Slide, then
+  perform one edit, one reorder, Undo and Redo. Expected: `Slide 2: …` is announced
+  current, the durability status is spoken once per completed change, and native
+  history item availability matches the visible state.
+- Dismiss an injected native error alert using keyboard and VoiceOver. Expected:
+  focus returns to a useful control in the same window and the persistent status
+  retains the typed failure.
+- Exercise Voice Control and Switch Control once. Expected: matching visible names
+  activate native controls without ambiguous targets; all required WebKit controls
+  remain reachable in reading order.
+- Repeat at Interface Scale 150% and 175%, Increase Contrast and Reduce
+  Transparency. Expected: essential actions and focus rings remain visible and no
+  state depends on color alone.
+
+These outcomes require an interactive macOS session with the real assistive
+technologies and hardware-key event routing. Source assertions and synthetic DOM
+events deliberately do not close that gate. Regression risk is low: no Deck
+command, bridge authority, journal rule or document schema changed.
+
+## DW-W01-R05-A Interface Scale reflow addendum
+
+### P0 finding closed in source
+
+The prior `70rem` workbench minimum and fixed four-column Editorial Spine scaled to
+approximately 1,960 CSS pixels at Interface Scale 175%, before the column minima
+were considered. Essential Story and Inspector controls therefore could leave a
+representative laptop viewport.
+
+The workbench now has no scaled minimum width. At laptop widths the Editorial Spine
+reflows into Sequence/Story followed by full-width Stage and Inspector rows; at
+narrow widths it becomes one column. Toolbar controls wrap, the Inspector changes
+from four-column chrome to a bounded grid, and the artboard width is viewport
+bounded while retaining its canvas aspect ratio and independent zoom transform.
+
+The packaged WebKit journey applies 175%, waits for layout, and requires the
+document width plus Add Section, Add Slide, Headline, Commit headline and Slide
+intent bounds to remain inside the horizontal viewport. This directly covers
+reachability geometry; the remaining manual gate is visual quality, clipping,
+VoiceOver order and focus-ring visibility with 150%/175%, Increase Contrast and
+Reduce Transparency enabled.
+
+The first reflow draft used only a fixed viewport breakpoint. Review rejected that
+as insufficient because 1,440- and 1,512-pixel laptop viewports can still overflow
+when rem units grow at 150%/175%. The production `workspaceLayoutMode` now compares
+the viewport with the actual scaled rem minima: below the four-column requirement
+it selects two columns; below the two-column requirement it selects one. Portable
+tests and the packaged WebKit contract require two-column mode at both laptop widths
+and both large scale settings.
+
+Interface Scale is also published through the macOS controller. The native document
+command strip derives button font, spacing, padding, divider height and minimum
+height from the same preference; it never reads artboard zoom. The packaged tracer
+requires the bridge-updated value to reach the controller. Visual native clipping
+and AX order remain part of the interactive gate.

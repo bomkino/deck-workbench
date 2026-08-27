@@ -123,7 +123,8 @@ enum PackagedTracer {
               let ui = scaleResult["ui"] as? [String: Any],
               let artboard = scaleResult["artboard"] as? [String: Any],
               ui["interfaceScale"] as? Double == 1.25,
-              artboard["artboardZoom"] as? Double == 0.5
+              artboard["artboardZoom"] as? Double == 0.5,
+              controller.interfaceScale == 1.25
         else {
             throw WorkbenchFailure(name: "InvalidCommand", message: "Interface Scale and artboard zoom did not remain independent")
         }
@@ -131,7 +132,32 @@ enum PackagedTracer {
         guard let durableDocumentURL = controller.documentURL else {
             throw WorkbenchFailure(name: "MissingAttachment", message: "Created Deck URL is unavailable")
         }
+        let failedOpenURL = durableDocumentURL.deletingLastPathComponent()
+            .appendingPathComponent("Failed-Open.pitchdeck", isDirectory: true)
+        try FileManager.default.copyItem(at: durableDocumentURL, to: failedOpenURL)
+        try FileManager.default.removeItem(
+            at: failedOpenURL.appendingPathComponent(PitchDeckDocumentStore.writerLockFile)
+        )
+        let failedManifestURL = failedOpenURL.appendingPathComponent("manifest.json")
+        var failedManifest = try JSONSerialization.jsonObject(with: Data(contentsOf: failedManifestURL)) as! [String: Any]
+        failedManifest["schemaVersion"] = 2
+        try JSONSerialization.data(withJSONObject: failedManifest, options: [.prettyPrinted, .sortedKeys])
+            .write(to: failedManifestURL, options: [.atomic])
+        let failedOpenName = failureName { try controller.openDocument(at: failedOpenURL) }
+        let liveAfterFailedOpen = try controller.query(name: "slide.activeProjection", params: [:])
         let replayController = try DeckSessionController()
+        let busyName = failureName { try replayController.openDocument(at: durableDocumentURL) }
+        let liveAfterBusy = try controller.query(name: "slide.activeProjection", params: [:])
+        guard failedOpenName == "UnsupportedSchema",
+              liveAfterFailedOpen["revision"] as? Int == 3,
+              ((liveAfterFailedOpen["headline"] as? [String: Any])?["plainText"] as? String) == "A hill that refuses to be scenery",
+              busyName == "DocumentBusy",
+              liveAfterBusy["revision"] as? Int == 3,
+              ((liveAfterBusy["headline"] as? [String: Any])?["plainText"] as? String) == "A hill that refuses to be scenery"
+        else {
+            throw WorkbenchFailure(name: "JournalCorruption", message: "Concurrent open displaced or changed the live Deck")
+        }
+        try await controller.closeDocument()
         let replayed = try replayController.openDocument(at: durableDocumentURL)
         guard replayed["revision"] as? Int == 3,
               ((replayed["headline"] as? [String: Any])?["plainText"] as? String) == "A hill that refuses to be scenery"
@@ -139,17 +165,21 @@ enum PackagedTracer {
             throw WorkbenchFailure(name: "JournalCorruption", message: "Journal replay from revision-zero checkpoint failed")
         }
 
-        try controller.save()
+        try await replayController.closeDocument()
         try writeJSON([
             "phase": "create",
             "revision": 3,
             "headline": "A hill that refuses to be scenery",
             "interfaceScale": 1.25,
+            "nativeInterfaceScale": controller.interfaceScale,
             "artboardZoom": 0.5,
             "nativeSavePanel": true,
             "nativeFailurePresented": true,
+            "concurrentWriterFailure": busyName,
+            "failedOpenFailure": failedOpenName,
+            "failedOpenPreservedLiveSession": true,
             "journalReplayRevision": 3,
-            "document": controller.documentURL?.path ?? documentURL.path,
+            "document": durableDocumentURL.path,
         ], to: resultURL)
         print("DW-T00 tracer create phase passed")
     }
@@ -185,6 +215,7 @@ enum PackagedTracer {
         try await controller.exportPDF(to: pdfURL)
         try controller.save()
         let negativeResults = try verifyNegativeDocuments(from: documentURL)
+        try await controller.closeDocument()
         try writeJSON([
             "phase": "reopen",
             "reopenedRevision": 3,
@@ -194,6 +225,10 @@ enum PackagedTracer {
             "pdf": pdfURL.path,
             "corruptJournalFailure": negativeResults.corruptJournal,
             "unsupportedSchemaFailure": negativeResults.unsupportedSchema,
+            "linkedReadFailure": negativeResults.linkedRead,
+            "linkedAppendFailure": negativeResults.linkedAppend,
+            "linkedWriteFailure": negativeResults.linkedWrite,
+            "writerLockReleasedOnClose": true,
         ], to: resultURL)
         print("DW-T00 tracer reopen phase passed")
     }
@@ -346,12 +381,38 @@ enum PackagedTracer {
             const selectedSequenceSlide = document.querySelector('#sequence-list [aria-current="page"]');
             const openingSequenceSection = [...document.querySelectorAll('#sequence-list [data-section-id]')]
               .find((row) => row.dataset.sectionId === openingSectionId);
+            const priorInterfaceScale = interfaceScale;
+            interfaceScale = 1.75;
+            applyScales();
+            await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            const essentialControls = [
+              '#add-section', '#add-slide', '#headline', '#commit-headline', '#slide-intent'
+            ].map((selector) => document.querySelector(selector));
+            const scaleReflowContract = {
+              interfaceScale,
+              viewportWidth: document.documentElement.clientWidth,
+              documentWidth: document.documentElement.scrollWidth,
+              layout1440At150: workspaceLayoutMode({ viewportWidth: 1440, interfaceScale: 1.5 }),
+              layout1440At175: workspaceLayoutMode({ viewportWidth: 1440, interfaceScale: 1.75 }),
+              layout1512At150: workspaceLayoutMode({ viewportWidth: 1512, interfaceScale: 1.5 }),
+              layout1512At175: workspaceLayoutMode({ viewportWidth: 1512, interfaceScale: 1.75 }),
+              essentialControlsInsideViewport: essentialControls.every((element) => {
+                if (!element) return false;
+                const rect = element.getBoundingClientRect();
+                return rect.left >= -1 && rect.right <= document.documentElement.clientWidth + 1;
+              })
+            };
+            interfaceScale = priorInterfaceScale;
+            applyScales();
             const accessibilityContract = {
               workbenchLabel: document.querySelector('main.workbench')?.getAttribute('aria-label'),
               workbenchBusy: document.querySelector('main.workbench')?.getAttribute('aria-busy'),
               statusRole: document.querySelector('#save-state')?.getAttribute('role'),
+              statusLive: document.querySelector('#save-state')?.getAttribute('aria-live'),
+              statusAtomic: document.querySelector('#save-state')?.getAttribute('aria-atomic'),
               artboardZoomLabel: document.querySelector('#artboard-zoom')?.getAttribute('aria-label'),
               selectedSlideId: selectedSequenceSlide?.dataset.slideId,
+              selectedSlideLabel: selectedSequenceSlide?.getAttribute('aria-label'),
               selectedSlideCurrent: selectedSequenceSlide?.getAttribute('aria-current'),
               slideShortcuts: sequenceSlide.getAttribute('aria-keyshortcuts'),
               sectionRole: openingSequenceSection?.getAttribute('role'),
@@ -452,6 +513,7 @@ enum PackagedTracer {
             return {
               committed, undone, redone,
               accessibilityContract,
+              scaleReflowContract,
               sequenceMovedUp, sequenceMovedDown,
               sectionMovedUp, sectionMovedDown,
               controlSlideMovedDown, controlSlideMovedUp,
@@ -510,8 +572,11 @@ enum PackagedTracer {
               accessibility["workbenchLabel"] as? String == "Deck Workbench Editorial Desk",
               accessibility["workbenchBusy"] as? String == "false",
               accessibility["statusRole"] as? String == "status",
+              accessibility["statusLive"] as? String == "polite",
+              accessibility["statusAtomic"] as? String == "true",
               accessibility["artboardZoomLabel"] as? String == "Artboard Zoom",
               accessibility["selectedSlideId"] as? String == secondSlideId,
+              accessibility["selectedSlideLabel"] as? String == "Slide 2: The Work Begins",
               accessibility["selectedSlideCurrent"] as? String == "page",
               accessibility["slideShortcuts"] as? String == "Alt+ArrowUp Alt+ArrowDown",
               accessibility["sectionRole"] as? String == "group",
@@ -519,6 +584,19 @@ enum PackagedTracer {
               accessibility["sectionShortcuts"] as? String == "Alt+ArrowUp Alt+ArrowDown"
         else {
             throw WorkbenchFailure(name: "InvalidCommand", message: "Editorial Spine accessibility contract failed")
+        }
+        guard let scaleReflow = keyboardJourney["scaleReflowContract"] as? [String: Any],
+              scaleReflow["interfaceScale"] as? Double == 1.75,
+              let viewportWidth = (scaleReflow["viewportWidth"] as? NSNumber)?.doubleValue,
+              let documentWidth = (scaleReflow["documentWidth"] as? NSNumber)?.doubleValue,
+              documentWidth <= viewportWidth + 1,
+              scaleReflow["layout1440At150"] as? String == "two-column",
+              scaleReflow["layout1440At175"] as? String == "two-column",
+              scaleReflow["layout1512At150"] as? String == "two-column",
+              scaleReflow["layout1512At175"] as? String == "two-column",
+              scaleReflow["essentialControlsInsideViewport"] as? Bool == true
+        else {
+            throw WorkbenchFailure(name: "InvalidCommand", message: "Interface Scale 175% reflow left essential controls outside the viewport")
         }
         let sequenceMovedUp = try requireStory(keyboardJourney["sequenceMovedUp"], revision: 12)
         try requireStoryOrder(
@@ -654,12 +732,17 @@ enum PackagedTracer {
             throw WorkbenchFailure(name: "MissingAttachment", message: "Created Story Deck URL is unavailable")
         }
         let replayController = try DeckSessionController()
+        let concurrentWriterName = failureName { try replayController.openDocument(at: durableDocumentURL) }
+        guard concurrentWriterName == "DocumentBusy" else {
+            throw WorkbenchFailure(name: "JournalCorruption", message: "Second Story writer was not rejected")
+        }
+        try await controller.closeDocument()
         _ = try replayController.openDocument(at: durableDocumentURL)
         let replayed = try replayController.query(name: "story.document", params: [:])
         _ = try requireStory(replayed, revision: 22)
+        try await replayController.closeDocument()
 
-        let crashRecoveryRevision = try verifyInterruptedManifestRecovery(from: durableDocumentURL, expectedRevision: 22)
-        try await controller.closeDocument()
+        let crashRecoveryRevision = try await verifyInterruptedManifestRecovery(from: durableDocumentURL, expectedRevision: 22)
         guard !controller.hasDocument else {
             throw WorkbenchFailure(name: "InvalidCommand", message: "Explicit close left the Deck session open")
         }
@@ -698,6 +781,7 @@ enum PackagedTracer {
             "removedSlideId": secondSlideId,
             "structuralRemoval": true,
             "crashRecoveryRevision": crashRecoveryRevision,
+            "concurrentWriterFailure": concurrentWriterName,
             "closedBeforeReopen": true,
         ], to: resultURL)
         print("DW-W01 Story create phase passed")
@@ -1055,6 +1139,7 @@ enum PackagedTracer {
             "bodyRemovedAfterRedo": true,
             "structuralRemovalAfterRedo": true,
         ], to: resultURL)
+        try await controller.closeDocument()
         print("DW-W01 Story reopen phase passed")
     }
 
@@ -1104,11 +1189,13 @@ enum PackagedTracer {
         }
     }
 
-    private static func verifyInterruptedManifestRecovery(from documentURL: URL, expectedRevision: Int) throws -> Int {
+    private static func verifyInterruptedManifestRecovery(from documentURL: URL, expectedRevision: Int) async throws -> Int {
         let files = FileManager.default
         let recoveryURL = documentURL.deletingLastPathComponent()
             .appendingPathComponent("Interrupted-\(UUID().uuidString).pitchdeck", isDirectory: true)
         try files.copyItem(at: documentURL, to: recoveryURL)
+        let copiedLock = recoveryURL.appendingPathComponent(PitchDeckDocumentStore.writerLockFile)
+        if files.fileExists(atPath: copiedLock.path) { try files.removeItem(at: copiedLock) }
 
         let journalURL = recoveryURL.appendingPathComponent("journal.ndjson")
         let journalText = try String(contentsOf: journalURL, encoding: .utf8)
@@ -1127,15 +1214,17 @@ enum PackagedTracer {
         try JSONSerialization.data(withJSONObject: manifest, options: [.prettyPrinted, .sortedKeys])
             .write(to: manifestURL, options: [.atomic])
 
-        let (_, loaded) = try PitchDeckDocumentStore.open(at: recoveryURL)
+        let (recoveryStore, loaded) = try PitchDeckDocumentStore.open(at: recoveryURL)
         guard loaded.repairedJournalHead else {
             throw WorkbenchFailure(name: "JournalCorruption", message: "Interrupted manifest head was not repaired")
         }
+        try recoveryStore.close()
         let recoveredController = try DeckSessionController()
         let recovered = try recoveredController.openDocument(at: recoveryURL)
         guard recovered["revision"] as? Int == expectedRevision else {
             throw WorkbenchFailure(name: "JournalCorruption", message: "Crash recovery did not replay the durable journal tail")
         }
+        try await recoveredController.closeDocument()
         return expectedRevision
     }
 
@@ -1151,13 +1240,29 @@ enum PackagedTracer {
         try data.write(to: url, options: [.atomic])
     }
 
-    private static func verifyNegativeDocuments(from documentURL: URL) throws -> (corruptJournal: String, unsupportedSchema: String) {
+    private static func verifyNegativeDocuments(from documentURL: URL) throws -> (
+        corruptJournal: String,
+        unsupportedSchema: String,
+        linkedRead: String,
+        linkedAppend: String,
+        linkedWrite: String
+    ) {
         let files = FileManager.default
         let root = documentURL.deletingLastPathComponent()
         let unsupportedURL = root.appendingPathComponent("Unsupported.pitchdeck", isDirectory: true)
         let corruptURL = root.appendingPathComponent("Corrupt.pitchdeck", isDirectory: true)
+        let linkedReadURL = root.appendingPathComponent("Linked-Read.pitchdeck", isDirectory: true)
+        let linkedAppendURL = root.appendingPathComponent("Linked-Append.pitchdeck", isDirectory: true)
+        let linkedWriteURL = root.appendingPathComponent("Linked-Write.pitchdeck", isDirectory: true)
         try files.copyItem(at: documentURL, to: unsupportedURL)
         try files.copyItem(at: documentURL, to: corruptURL)
+        try files.copyItem(at: documentURL, to: linkedReadURL)
+        try files.copyItem(at: documentURL, to: linkedAppendURL)
+        try files.copyItem(at: documentURL, to: linkedWriteURL)
+        for fixture in [unsupportedURL, corruptURL, linkedReadURL, linkedAppendURL, linkedWriteURL] {
+            let copiedLock = fixture.appendingPathComponent(PitchDeckDocumentStore.writerLockFile)
+            if files.fileExists(atPath: copiedLock.path) { try files.removeItem(at: copiedLock) }
+        }
 
         let unsupportedManifestURL = unsupportedURL.appendingPathComponent("manifest.json")
         var unsupportedManifest = try JSONSerialization.jsonObject(with: Data(contentsOf: unsupportedManifestURL)) as! [String: Any]
@@ -1175,10 +1280,62 @@ enum PackagedTracer {
 
         let unsupportedName = failureName { try PitchDeckDocumentStore.open(at: unsupportedURL) }
         let corruptName = failureName { try PitchDeckDocumentStore.open(at: corruptURL) }
-        guard unsupportedName == "UnsupportedSchema", corruptName == "JournalCorruption" else {
+
+        let readSentinel = root.appendingPathComponent("linked-read-sentinel.json")
+        let appendSentinel = root.appendingPathComponent("linked-append-sentinel.ndjson")
+        let writeSentinel = root.appendingPathComponent("linked-write-sentinel.json")
+        let sentinel = Data("outside-package-sentinel".utf8)
+        try sentinel.write(to: readSentinel)
+        try sentinel.write(to: appendSentinel)
+        try sentinel.write(to: writeSentinel)
+
+        let linkedManifest = linkedReadURL.appendingPathComponent("manifest.json")
+        try files.removeItem(at: linkedManifest)
+        try files.createSymbolicLink(at: linkedManifest, withDestinationURL: readSentinel)
+        let linkedReadName = failureName { try PitchDeckDocumentStore.open(at: linkedReadURL) }
+
+        let (appendStore, _) = try PitchDeckDocumentStore.open(at: linkedAppendURL)
+        let linkedJournal = linkedAppendURL.appendingPathComponent("journal.ndjson")
+        try files.moveItem(
+            at: linkedJournal,
+            to: linkedAppendURL.appendingPathComponent("journal.original.ndjson")
+        )
+        try files.createSymbolicLink(at: linkedJournal, withDestinationURL: appendSentinel)
+        let linkedAppendName = failureName {
+            try appendStore.appendDurably(prepared: [
+                "nextRevision": appendStore.currentRevision + 1,
+                "journalOperation": ["operation": "undo"],
+            ])
+        }
+
+        let (writeStore, _) = try PitchDeckDocumentStore.open(at: linkedWriteURL)
+        let linkedWriteManifest = linkedWriteURL.appendingPathComponent("manifest.json")
+        try files.moveItem(
+            at: linkedWriteManifest,
+            to: linkedWriteURL.appendingPathComponent("manifest.original.json")
+        )
+        try files.createSymbolicLink(at: linkedWriteManifest, withDestinationURL: writeSentinel)
+        let linkedWriteName = failureName {
+            try writeStore.appendDurably(prepared: [
+                "nextRevision": writeStore.currentRevision + 1,
+                "journalOperation": ["operation": "undo"],
+            ])
+        }
+        try appendStore.close()
+        try writeStore.close()
+
+        guard unsupportedName == "UnsupportedSchema",
+              corruptName == "JournalCorruption",
+              linkedReadName == "MissingAttachment",
+              linkedAppendName == "CheckpointWriteFailure",
+              linkedWriteName == "CheckpointWriteFailure",
+              try Data(contentsOf: readSentinel) == sentinel,
+              try Data(contentsOf: appendSentinel) == sentinel,
+              try Data(contentsOf: writeSentinel) == sentinel
+        else {
             throw WorkbenchFailure(name: "JournalCorruption", message: "Negative document failures were not named correctly")
         }
-        return (corruptName, unsupportedName)
+        return (corruptName, unsupportedName, linkedReadName, linkedAppendName, linkedWriteName)
     }
 
     private static func failureName(_ operation: () throws -> Any) -> String {

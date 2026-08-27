@@ -13,7 +13,7 @@
     <script src="workspace.js" defer></script>
   </head>
   <body>
-    <main class="workbench" aria-label="Deck Workbench Editorial Desk">
+    <main class="workbench" aria-label="Deck Workbench Editorial Desk" aria-busy="false">
       <header class="toolbar">
         <div>
           <p class="eyebrow">Deck Workbench</p>
@@ -76,7 +76,7 @@
           </label>
           <div id="additional-content" class="additional-content"></div>
           <div class="story-footer">
-            <p id="save-state" role="status">No document session</p>
+            <p id="save-state" role="status" aria-live="polite" aria-atomic="true">No document session</p>
             <div>
               <button id="add-body" type="button" disabled>+ Body</button>
               <button id="commit-headline" type="button" disabled>Commit headline</button>
@@ -94,8 +94,11 @@
           </div>
           <div class="stage-scroll">
             <article class="artboard" id="artboard" aria-label="Projected Slide">
-              <p class="artboard-kicker" id="artboard-intent">Cover</p>
-              <h3 id="artboard-headline">Untitled Story</h3>
+              <div id="semantic-fallback">
+                <p class="artboard-kicker" id="artboard-intent">Cover</p>
+                <h3 id="artboard-headline">Untitled Story</h3>
+              </div>
+              <div id="composition-layer" aria-label="Active Design Option Composition"></div>
               <p class="artboard-furniture">pitch.dog / Deck Workbench tracer</p>
             </article>
           </div>
@@ -118,6 +121,53 @@
                 <option value="editorial-body">Editorial body</option>
               </select>
             </label>
+          </section>
+          <section aria-labelledby="design-heading">
+            <h2 id="design-heading">Design</h2>
+            <label class="inspector-control">
+              <span>Authored Pattern</span>
+              <select id="pattern-choice" disabled>
+                <option value="cover">Cover</option>
+                <option value="full-bleed-statement">Full-bleed Statement</option>
+                <option value="editorial-body">Editorial Body</option>
+              </select>
+            </label>
+            <label class="inspector-control">
+              <span>Editorial body binding</span>
+              <select id="pattern-body-block" disabled aria-label="Editorial Body Content Block"></select>
+            </label>
+            <button id="apply-pattern" type="button" disabled>Apply as new Design Option</button>
+            <label class="inspector-control">
+              <span>Element</span>
+              <select id="visual-element" disabled aria-label="Composition Element"></select>
+            </label>
+            <div class="align-actions" role="group" aria-label="Align selected Element">
+              <button type="button" data-align="left" disabled>Left</button>
+              <button type="button" data-align="center" disabled>Center</button>
+              <button type="button" data-align="right" disabled>Right</button>
+            </div>
+            <fieldset class="crop-controls" disabled>
+              <legend>Normalized image crop</legend>
+              <label><span>X</span><input id="crop-x" type="number" min="0" max="1" step="0.01" value="0" /></label>
+              <label><span>Y</span><input id="crop-y" type="number" min="0" max="1" step="0.01" value="0" /></label>
+              <label><span>W</span><input id="crop-width" type="number" min="0.01" max="1" step="0.01" value="1" /></label>
+              <label><span>H</span><input id="crop-height" type="number" min="0.01" max="1" step="0.01" value="1" /></label>
+              <button id="apply-crop" type="button">Apply crop</button>
+            </fieldset>
+          </section>
+          <section aria-labelledby="media-heading">
+            <h2 id="media-heading">Media</h2>
+            <label class="inspector-control">
+              <span>Reference label</span>
+              <input id="asset-label" type="text" maxlength="160" placeholder="e.g. Hill at dusk" disabled />
+            </label>
+            <button id="add-asset-reference" type="button" disabled>Add neutral reference</button>
+            <label class="inspector-control">
+              <span>Primary Asset</span>
+              <select id="asset-reference" disabled aria-label="Primary Asset Reference"></select>
+            </label>
+            <button id="assign-primary-asset" type="button" disabled>Assign / replace Primary</button>
+            <p id="asset-resolution-note" class="small">References are semantic placeholders until a native host resolves authorized media bytes.</p>
           </section>
           <section>
             <h2>Canvas</h2>

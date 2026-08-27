@@ -14,7 +14,7 @@ struct DeckWorkbenchApp: App {
     }
 
     var body: some Scene {
-        WindowGroup("Deck Workbench") {
+        Window("Deck Workbench", id: "main") {
             WorkbenchRootView(controller: controller)
                 .frame(minWidth: 1180, minHeight: 700)
         }
@@ -49,7 +49,7 @@ struct DeckWorkbenchApp: App {
                     }
                 }
                 .keyboardShortcut("z")
-                .disabled(!controller.hasDocument)
+                .disabled(!controller.canUndo)
                 Button("Redo") {
                     Task {
                         await controller.perform {
@@ -59,7 +59,7 @@ struct DeckWorkbenchApp: App {
                     }
                 }
                 .keyboardShortcut("z", modifiers: [.command, .shift])
-                .disabled(!controller.hasDocument)
+                .disabled(!controller.canRedo)
             }
             CommandGroup(after: .saveItem) {
                 Divider()
@@ -69,6 +69,31 @@ struct DeckWorkbenchApp: App {
                 .keyboardShortcut("e", modifiers: [.command, .shift])
                 .disabled(!controller.hasDocument)
             }
+            CommandGroup(after: .toolbar) {
+                Divider()
+                Menu("Interface Scale") {
+                    ForEach(DeckSessionController.interfaceScaleSteps, id: \.self) { value in
+                        Button(controller.interfaceScale == value
+                            ? "\(Int(value * 100))% ✓"
+                            : "\(Int(value * 100))%") {
+                            Task { await controller.perform { _ = try controller.setInterfaceScale(value) } }
+                        }
+                    }
+                    Divider()
+                    Button("Decrease Interface Scale") {
+                        Task { await controller.perform { _ = try controller.stepInterfaceScale(-1) } }
+                    }
+                    .keyboardShortcut("-", modifiers: [.command, .option, .shift])
+                    Button("Increase Interface Scale") {
+                        Task { await controller.perform { _ = try controller.stepInterfaceScale(1) } }
+                    }
+                    .keyboardShortcut("=", modifiers: [.command, .option, .shift])
+                    Button("Reset Interface Scale") {
+                        Task { await controller.perform { _ = try controller.setInterfaceScale(1) } }
+                    }
+                    .keyboardShortcut("0", modifiers: [.command, .option, .shift])
+                }
+            }
         }
     }
 }
@@ -76,31 +101,35 @@ struct DeckWorkbenchApp: App {
 struct WorkbenchRootView: View {
     @ObservedObject var controller: DeckSessionController
 
+    private var shellScale: CGFloat { CGFloat(controller.interfaceScale) }
+
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
+            HStack(spacing: 8 * shellScale) {
                 Button("New Deck…") { Task { await controller.perform { _ = try await controller.presentNewDocument() } } }
-                Button("Open…") { Task { await controller.perform { _ = try await controller.presentOpenDocument() } } }
+                Button("Open Deck…") { Task { await controller.perform { _ = try await controller.presentOpenDocument() } } }
                 Button("Save") { Task { await controller.perform { try controller.save() } } }
                     .disabled(!controller.hasDocument)
-                Button("Close") { Task { await controller.perform { try await controller.closeDocument() } } }
+                Button("Close Deck") { Task { await controller.perform { try await controller.closeDocument() } } }
                     .disabled(!controller.hasDocument)
-                Divider().frame(height: 18)
+                Divider().frame(height: 18 * shellScale)
                 Text(controller.documentTitle)
-                    .font(.headline)
+                    .font(.system(size: 13 * shellScale, weight: .semibold))
                     .accessibilityLabel("Document")
                     .accessibilityValue(controller.documentTitle)
                 Spacer()
                 Text(controller.status)
                     .foregroundStyle(.secondary)
-                    .font(.caption)
+                    .font(.system(size: 11 * shellScale))
                     .accessibilityLabel("Document status")
                     .accessibilityValue(controller.status)
-                Button("Export PDF…") { Task { await controller.perform { _ = try await controller.presentPDFExport() } } }
+                Button("Export Review PDF…") { Task { await controller.perform { _ = try await controller.presentPDFExport() } } }
                     .disabled(!controller.hasDocument)
             }
-            .padding(.horizontal, 10)
-            .frame(height: 42)
+            .font(.system(size: 13 * shellScale))
+            .padding(.horizontal, 10 * shellScale)
+            .padding(.vertical, 6 * shellScale)
+            .frame(minHeight: 42 * shellScale)
             .background(.bar)
 
             WorkspaceWebView(controller: controller)

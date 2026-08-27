@@ -20,11 +20,14 @@ final class DeckSessionController: ObservableObject {
     @Published private(set) var documentURL: URL?
     @Published private(set) var status = "Create or open a Deck"
     @Published private(set) var hasDocument = false
+    @Published private(set) var canUndo = false
+    @Published private(set) var canRedo = false
     @Published var presentedFailure: PresentedWorkbenchFailure?
 
-    private(set) var interfaceScale: Double
+    @Published private(set) var interfaceScale: Double
     private(set) var artboardZoom: Double = 0.35
-    private let kernel: DeckKernelHost
+    private let kernelURL: URL
+    private var kernel: DeckKernelHost
     private var store: PitchDeckDocumentStore?
     private weak var workspace: WorkspaceProjectionSink?
 
@@ -32,6 +35,7 @@ final class DeckSessionController: ObservableObject {
         guard let kernelURL = bundle.url(forResource: "deck-kernel", withExtension: "js", subdirectory: "Kernel") else {
             throw WorkbenchFailure(name: "KernelUnavailable", message: "Bundled Deck kernel is missing")
         }
+        self.kernelURL = kernelURL
         kernel = try DeckKernelHost(kernelURL: kernelURL)
         let storedScale = UserDefaults.standard.double(forKey: "interfaceScale")
         interfaceScale = Self.allowedInterfaceScales.contains(storedScale) ? storedScale : 1
@@ -66,6 +70,7 @@ final class DeckSessionController: ObservableObject {
     }
 
     func createDocument(at url: URL, title: String = "Tracer Deck") throws -> [String: Any] {
+        let candidateKernel = try DeckKernelHost(kernelURL: kernelURL)
         let seed: [String: Any] = [
             "deckId": UUID().uuidString.lowercased(),
             "sectionId": UUID().uuidString.lowercased(),
@@ -74,56 +79,79 @@ final class DeckSessionController: ObservableObject {
             "title": title,
             "initialHeadline": "Untitled Story",
         ]
-        let checkpoint = try kernel.createInitialCheckpoint(seed: seed)
+        let checkpoint = try candidateKernel.createInitialCheckpoint(seed: seed)
         let createdStore = try PitchDeckDocumentStore.create(at: url, checkpoint: checkpoint)
-        try kernel.open(checkpoint: checkpoint)
-        store = createdStore
-        documentURL = createdStore.packageURL
-        documentTitle = title
-        hasDocument = true
-        status = "Created \(createdStore.packageURL.lastPathComponent)"
-        return try query(name: "slide.activeProjection", params: [:])
+        do {
+            try candidateKernel.open(checkpoint: checkpoint)
+            let projection = try candidateKernel.query("slide.activeProjection")
+            try activate(
+                kernel: candidateKernel,
+                store: createdStore,
+                title: title,
+                status: "Created \(createdStore.packageURL.lastPathComponent)",
+                projection: projection
+            )
+            return projection
+        } catch {
+            try? createdStore.close()
+            throw error
+        }
     }
 
     func openDocument(at url: URL) throws -> [String: Any] {
+        let candidateKernel = try DeckKernelHost(kernelURL: kernelURL)
         let (openedStore, loaded) = try PitchDeckDocumentStore.open(at: url)
-        try kernel.open(checkpoint: loaded.checkpoint)
-        for record in loaded.replayRecords {
-            try kernel.replay(record)
+        do {
+            try candidateKernel.open(checkpoint: loaded.checkpoint)
+            for record in loaded.replayRecords {
+                try candidateKernel.replay(record)
+            }
+            let summary = try candidateKernel.query("deck.summary")
+            guard summary["revision"] as? Int == openedStore.currentRevision else {
+                throw WorkbenchFailure(name: "JournalCorruption", message: "Kernel replay did not reach durable document revision")
+            }
+            let projection = try candidateKernel.query("slide.activeProjection")
+            let openedStatus: String
+            if loaded.recoveredPreviousCheckpoint {
+                openedStatus = "Recovered prior checkpoint and replayed valid journal"
+            } else if loaded.repairedJournalHead {
+                openedStatus = "Recovered durable journal tail"
+            } else {
+                openedStatus = "Opened revision \(openedStore.currentRevision)"
+            }
+            try activate(
+                kernel: candidateKernel,
+                store: openedStore,
+                title: summary["title"] as? String ?? openedStore.manifest.title,
+                status: openedStatus,
+                projection: projection
+            )
+            return projection
+        } catch {
+            try? openedStore.close()
+            throw error
         }
-        let summary = try kernel.query("deck.summary")
-        guard summary["revision"] as? Int == openedStore.currentRevision else {
-            throw WorkbenchFailure(name: "JournalCorruption", message: "Kernel replay did not reach durable document revision")
-        }
-        store = openedStore
-        documentURL = openedStore.packageURL
-        documentTitle = summary["title"] as? String ?? openedStore.manifest.title
-        hasDocument = true
-        if loaded.recoveredPreviousCheckpoint {
-            status = "Recovered prior checkpoint and replayed valid journal"
-        } else if loaded.repairedJournalHead {
-            status = "Recovered durable journal tail"
-        } else {
-            status = "Opened revision \(openedStore.currentRevision)"
-        }
-        return try query(name: "slide.activeProjection", params: [:])
     }
 
     func execute(command: [String: Any]) throws -> [String: Any] {
         guard let store else { throw WorkbenchFailure(name: "KernelUnavailable", message: "No Deck is open") }
         let prepared = try kernel.prepare(command: command)
         if prepared["duplicate"] as? Bool == true {
+            let projection = try query(name: "slide.activeProjection", params: [:])
+            updateHistoryAvailability(from: projection)
             return [
                 "acknowledgement": prepared["acknowledgement"] as Any,
-                "projection": try query(name: "slide.activeProjection", params: [:]),
+                "projection": projection,
             ]
         }
         _ = try store.appendDurably(prepared: prepared)
         let acknowledgement = try kernel.commit(prepared)
         status = "Revision \(acknowledgement["revision"] as? Int ?? store.currentRevision) durable"
+        let projection = try query(name: "slide.activeProjection", params: [:])
+        updateHistoryAvailability(from: projection)
         return [
             "acknowledgement": acknowledgement,
-            "projection": try query(name: "slide.activeProjection", params: [:]),
+            "projection": projection,
         ]
     }
 
@@ -147,12 +175,15 @@ final class DeckSessionController: ObservableObject {
     }
 
     func closeDocument() async throws {
-        guard hasDocument else { return }
+        guard hasDocument, let store else { return }
         try save()
-        store = nil
+        try store.close()
+        self.store = nil
         documentURL = nil
         documentTitle = "No Deck open"
         hasDocument = false
+        canUndo = false
+        canRedo = false
         status = "Deck closed"
         try await workspace?.clearProjection()
     }
@@ -164,6 +195,14 @@ final class DeckSessionController: ObservableObject {
         interfaceScale = value
         UserDefaults.standard.set(value, forKey: "interfaceScale")
         return preferences()
+    }
+
+    func stepInterfaceScale(_ offset: Int) throws -> [String: Any] {
+        guard let currentIndex = Self.interfaceScaleSteps.firstIndex(of: interfaceScale) else {
+            throw WorkbenchFailure(name: "InvalidPreferences", message: "Stored Interface Scale is unsupported")
+        }
+        let nextIndex = min(max(currentIndex + offset, 0), Self.interfaceScaleSteps.count - 1)
+        return try setInterfaceScale(Self.interfaceScaleSteps[nextIndex])
     }
 
     func setArtboardZoom(_ value: Double) throws -> [String: Any] {
@@ -260,10 +299,42 @@ final class DeckSessionController: ObservableObject {
         guard let store else { throw WorkbenchFailure(name: "KernelUnavailable", message: "No Deck is open") }
         _ = try store.appendDurably(prepared: prepared)
         let acknowledgement = try kernel.commit(prepared)
+        let projection = try query(name: "slide.activeProjection", params: [:])
+        updateHistoryAvailability(from: projection)
         return [
             "acknowledgement": acknowledgement,
-            "projection": try query(name: "slide.activeProjection", params: [:]),
+            "projection": projection,
         ]
+    }
+
+    private func activate(
+        kernel candidateKernel: DeckKernelHost,
+        store candidateStore: PitchDeckDocumentStore,
+        title: String,
+        status candidateStatus: String,
+        projection: [String: Any]
+    ) throws {
+        if let currentStore = store {
+            try currentStore.saveCheckpoint(kernel.serialize())
+            try currentStore.close()
+        }
+        kernel = candidateKernel
+        store = candidateStore
+        documentURL = candidateStore.packageURL
+        documentTitle = title
+        hasDocument = true
+        status = candidateStatus
+        updateHistoryAvailability(from: projection)
+    }
+
+    private func updateHistoryAvailability(from projection: [String: Any]) {
+        guard let history = projection["history"] as? [String: Any] else {
+            canUndo = false
+            canRedo = false
+            return
+        }
+        canUndo = history["canUndo"] as? Bool == true
+        canRedo = history["canRedo"] as? Bool == true
     }
 
     private func response(
@@ -290,5 +361,6 @@ final class DeckSessionController: ObservableObject {
         CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: false)?.post(tap: .cghidEventTap)
     }
 
-    private static let allowedInterfaceScales: Set<Double> = [0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75]
+    static let interfaceScaleSteps: [Double] = [0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75]
+    private static let allowedInterfaceScales = Set(interfaceScaleSteps)
 }

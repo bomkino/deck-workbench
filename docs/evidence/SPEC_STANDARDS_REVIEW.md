@@ -143,3 +143,58 @@ history after reopen.
 
 R07 changes no Deck semantics, persistence ordering, WebView authority, dependency
 or network surface.
+
+## DW-W01-R05-A source-hardening addendum
+
+| Severity | Finding | Resolution |
+|---|---|---|
+| P1 | Native history commands advertised actions that the current semantic history could not perform. | Publish `canUndo` / `canRedo` from acknowledged projections and bind the native menu availability to those values. |
+| P1 | A changing typed failure could be announced as fragments rather than one status update. | Mark the live status polite and atomic. |
+| P2 | Different toolbar/menu wording and inferred Slide text made Voice Control names less predictable. | Match native command labels and provide an explicit visible-word Slide name. |
+| Gate | Synthetic key events and DOM inspection do not exercise macOS Full Keyboard Access, AX traversal, VoiceOver speech, Voice Control or Switch Control. | Keep R05-A source-ready; require the documented interactive checklist on the exact packaged build before an integrated accessibility claim. |
+
+This hardening changes presentation state only. History still enters through the
+same typed bridge and durable journal seam; no renderer capability or dependency is
+added.
+
+## DW-W01-R05-A large-scale reflow addendum
+
+| Severity | Finding | Resolution |
+|---|---|---|
+| P0 | A `70rem` minimum and fixed rem-based four-column grid expanded beyond a representative laptop viewport at 150%/175%. | Remove the scaled page minimum; reflow to two then one column, wrap view controls and bound artboard layout width to the viewport. |
+| Evidence | Static CSS intent alone cannot prove reachability in WebKit. | The packaged tracer applies 175% and measures document width and essential control bounds in the real bundled page. |
+| Gate | Geometry does not prove assistive reading order, clipping quality or focus visibility. | Retain those checks in the R05-A interactive acceptance checklist. |
+
+Artboard zoom and export geometry remain independent; the reflow changes workspace
+layout only.
+
+## DW-T00 package-entry containment addendum
+
+| Severity | Finding | Resolution |
+|---|---|---|
+| P0 | Absolute-path package reads and journal append followed a crafted required-entry symlink outside the selected `.pitchdeck`. | Anchor fixed relative paths to an `O_DIRECTORY | O_NOFOLLOW` package descriptor, traverse with `openat`, and require regular-file descriptors before read/append. |
+| P0 | Durable replacement did not reject an existing linked or non-regular destination before rename. | Reject it, create the temporary entry with `O_EXCL | O_NOFOLLOW`, then `renameat` and fsync within the verified parent descriptor. |
+| Evidence | Source inspection cannot prove Darwin behavior. | Extend the packaged negative journey with linked read, append and manifest-write fixtures; all outside-package sentinel bytes must remain unchanged. |
+
+The detailed threat model and external gate are recorded in
+`DW-T00-PACKAGE-CONTAINMENT-REVIEW.md`.
+
+## macOS scene-ownership addendum
+
+| Severity | Finding | Resolution |
+|---|---|---|
+| P0 | One shared controller under `WindowGroup` allowed multiple scene instances while retaining only the last attached WebView sink. Commands could route a document session to the wrong window. | Declare one intentional SwiftUI `Window("Deck Workbench", id: "main")` for the tracer. |
+| Gate | A future multi-document product may require multiple windows. | Do not restore `WindowGroup` until controller, store and bridge ownership are per scene/document. |
+
+This is an explicit reversible scope boundary for v1, not a claim of multi-window
+support.
+
+## Interface Scale ownership addendum
+
+| Severity | Finding | Resolution |
+|---|---|---|
+| P0 | A viewport-only breakpoint ignored that the same rem grid becomes wider as Interface Scale rises. | Select four/two/one-column layout by comparing viewport width with scaled rem minima; require 1,440 and 1,512 at both 150% and 175% to choose the safe layout. |
+| P1 | The DOM workspace scaled while native SwiftUI document controls remained fixed. | Publish controller Interface Scale and derive native font, spacing, padding and minimum height from it. |
+
+Native shell sizing and workspace layout consume the same UI preference. Neither is
+an input to artboard zoom, Deck geometry or export.

@@ -1,4 +1,94 @@
 const INTERFACE_SCALE_STEPS = Object.freeze([0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75])
+const W02_PATTERN_IDS = Object.freeze(['cover', 'full-bleed-statement', 'editorial-body'])
+
+function patternApplyPlan(activeProjection, patternId, designOptionId, bodyBlockId = null) {
+  if (!activeProjection || !W02_PATTERN_IDS.includes(patternId) || !designOptionId) return null
+  const headline = activeProjection.contentBlocks.find((block) => block.id === activeProjection.headline.id)
+  if (!headline) return null
+  const contentBindings = { headline: headline.id }
+  if (patternId === 'editorial-body') {
+    const body = activeProjection.contentBlocks.find(
+      (block) => block.id === bodyBlockId && block.role === 'body',
+    )
+    if (!body) return null
+    contentBindings.body = body.id
+  }
+  return Object.freeze({
+    slideId: activeProjection.slide.id,
+    designOptionId,
+    patternId,
+    patternVersion: 1,
+    contentBindings: Object.freeze(contentBindings),
+  })
+}
+
+function elementAlignPlan(activeProjection, elementId, alignment) {
+  if (!activeProjection?.composition || !activeProjection.designOption) return null
+  const element = activeProjection.composition.elements.find((candidate) => candidate.id === elementId)
+  if (!element || !['left', 'center', 'right'].includes(alignment)) return null
+  const x = alignment === 'left'
+    ? 0
+    : alignment === 'center'
+      ? (activeProjection.canvas.width - element.frame.width) / 2
+      : activeProjection.canvas.width - element.frame.width
+  return Object.freeze({
+    slideId: activeProjection.slide.id,
+    designOptionId: activeProjection.designOption.id,
+    elementId: element.id,
+    frame: Object.freeze({ ...element.frame, x }),
+  })
+}
+
+function imageCropPlan(activeProjection, elementId, crop) {
+  if (!activeProjection?.composition || !activeProjection.designOption) return null
+  const element = activeProjection.composition.elements.find((candidate) => candidate.id === elementId)
+  if (!element || element.kind !== 'image') return null
+  const normalized = {
+    x: Number(crop.x),
+    y: Number(crop.y),
+    width: Number(crop.width),
+    height: Number(crop.height),
+  }
+  if (Object.values(normalized).some((value) => !Number.isFinite(value))) return null
+  if (
+    normalized.x < 0
+    || normalized.y < 0
+    || normalized.width <= 0
+    || normalized.height <= 0
+    || normalized.x + normalized.width > 1
+    || normalized.y + normalized.height > 1
+  ) return null
+  return Object.freeze({
+    slideId: activeProjection.slide.id,
+    designOptionId: activeProjection.designOption.id,
+    elementId: element.id,
+    crop: Object.freeze(normalized),
+  })
+}
+
+function assetAssignmentPlan(activeProjection, assetReferenceId, newAssignmentId) {
+  if (!activeProjection || !assetReferenceId) return null
+  const current = activeProjection.mediaAssignments?.find((assignment) => assignment.role === 'primary')
+  const mediaAssignmentId = current?.id ?? newAssignmentId
+  if (!mediaAssignmentId) return null
+  return Object.freeze({
+    slideId: activeProjection.slide.id,
+    mediaAssignmentId,
+    role: 'primary',
+    assetReferenceId,
+  })
+}
+
+function workspaceLayoutMode({ viewportWidth: requestedViewportWidth, interfaceScale: requestedInterfaceScale }) {
+  const viewportWidth = Number(requestedViewportWidth)
+  const scale = Number(requestedInterfaceScale)
+  if (!Number.isFinite(viewportWidth) || viewportWidth <= 0) throw new RangeError('Viewport width must be positive')
+  if (!INTERFACE_SCALE_STEPS.includes(scale)) throw new RangeError('Interface Scale must use an allowed step')
+  const remPixels = 16 * scale
+  if (viewportWidth < 30 * remPixels) return 'single-column'
+  if (viewportWidth < 77 * remPixels) return 'two-column'
+  return 'four-column'
+}
 
 function workspaceTransforms({ interfaceScale: requestedInterfaceScale, artboardZoom: requestedZoom, canvas }) {
   const ui = Number(requestedInterfaceScale)
@@ -27,6 +117,8 @@ const elements = {
   addBody: document.querySelector('#add-body'),
   artboardHeadline: document.querySelector('#artboard-headline'),
   artboardIntent: document.querySelector('#artboard-intent'),
+  semanticFallback: document.querySelector('#semantic-fallback'),
+  compositionLayer: document.querySelector('#composition-layer'),
   revision: document.querySelector('#revision'),
   saveState: document.querySelector('#save-state'),
   binding: document.querySelector('#binding'),
@@ -41,12 +133,28 @@ const elements = {
   inspectorInterface: document.querySelector('#inspector-interface'),
   slideIntent: document.querySelector('#slide-intent'),
   artboard: document.querySelector('#artboard'),
+  patternChoice: document.querySelector('#pattern-choice'),
+  patternBodyBlock: document.querySelector('#pattern-body-block'),
+  applyPattern: document.querySelector('#apply-pattern'),
+  visualElement: document.querySelector('#visual-element'),
+  alignActions: document.querySelector('.align-actions'),
+  cropControls: document.querySelector('.crop-controls'),
+  cropX: document.querySelector('#crop-x'),
+  cropY: document.querySelector('#crop-y'),
+  cropWidth: document.querySelector('#crop-width'),
+  cropHeight: document.querySelector('#crop-height'),
+  applyCrop: document.querySelector('#apply-crop'),
+  assetLabel: document.querySelector('#asset-label'),
+  addAssetReference: document.querySelector('#add-asset-reference'),
+  assetReference: document.querySelector('#asset-reference'),
+  assignPrimaryAsset: document.querySelector('#assign-primary-asset'),
 }
 
 let projection = null
 let storyDocument = null
 let interfaceScale = 1
 let artboardZoom = 0.35
+let assetCatalog = []
 
 function richText(value) {
   const normalized = value.replace(/\r\n?/g, '\n')
@@ -132,12 +240,140 @@ function setBusy(label) {
   elements.slideIntent.disabled = true
   elements.renameDeck.disabled = true
   elements.addBody.disabled = true
+  elements.patternChoice.disabled = true
+  elements.patternBodyBlock.disabled = true
+  elements.applyPattern.disabled = true
+  elements.visualElement.disabled = true
+  elements.alignActions.querySelectorAll('button').forEach((button) => { button.disabled = true })
+  elements.cropControls.disabled = true
+  elements.assetLabel.disabled = true
+  elements.addAssetReference.disabled = true
+  elements.assetReference.disabled = true
+  elements.assignPrimaryAsset.disabled = true
   elements.sequenceList.querySelectorAll('button').forEach((button) => { button.disabled = true })
   elements.sequenceList.querySelectorAll('.section-row').forEach((row) => {
     row.tabIndex = -1
     row.setAttribute('aria-disabled', 'true')
   })
   elements.additionalContent.querySelectorAll('button').forEach((button) => { button.disabled = true })
+}
+
+function compositionElementLabel(element) {
+  return element.patternElementKey
+    ? `${element.patternElementKey} · ${element.kind}`
+    : `${element.kind} · ${element.id.slice(0, 8)}`
+}
+
+function renderComposition(next) {
+  elements.compositionLayer.replaceChildren()
+  const composition = next.composition
+  elements.semanticFallback.hidden = Boolean(composition)
+  if (!composition) return
+  composition.elements.forEach((element, index) => {
+    const node = document.createElement('div')
+    node.className = `composition-element composition-${element.kind === 'image' ? 'image-placeholder' : element.kind}`
+    node.dataset.elementId = element.id
+    node.style.left = `${(element.frame.x / next.canvas.width) * 100}%`
+    node.style.top = `${(element.frame.y / next.canvas.height) * 100}%`
+    node.style.width = `${(element.frame.width / next.canvas.width) * 100}%`
+    node.style.height = `${(element.frame.height / next.canvas.height) * 100}%`
+    node.style.zIndex = String(index + 1)
+    if (element.kind === 'text') {
+      const content = next.contentBlocks.find((block) => block.id === element.contentBlockId)
+      node.textContent = content?.plainText ?? `Missing Content Block · ${element.contentBlockId ?? 'unbound'}`
+      node.setAttribute('aria-label', `${compositionElementLabel(element)} from canonical Story`)
+    } else if (element.kind === 'image') {
+      const assignment = next.mediaAssignments?.find((candidate) => candidate.role === element.mediaRole)
+      const assetLabel = assignment?.assetReference?.label ?? 'unassigned Asset'
+      const crop = element.crop ?? { x: 0, y: 0, width: 1, height: 1 }
+      node.textContent = `${element.mediaRole ?? 'Image'} · ${assetLabel}\nCrop ${Math.round(crop.x * 100)}%, ${Math.round(crop.y * 100)}% · ${Math.round(crop.width * 100)}% × ${Math.round(crop.height * 100)}%`
+      node.dataset.assetResolution = 'placeholder'
+      node.setAttribute('aria-label', `${element.mediaRole ?? 'Image'} placeholder: ${assetLabel}`)
+    } else {
+      node.textContent = compositionElementLabel(element)
+      node.setAttribute('aria-label', compositionElementLabel(element))
+    }
+    elements.compositionLayer.append(node)
+  })
+}
+
+function syncVisualControls(next) {
+  elements.patternChoice.disabled = false
+  const previousBodyId = elements.patternBodyBlock.value
+  elements.patternBodyBlock.replaceChildren()
+  next.contentBlocks.filter((block) => block.role === 'body').forEach((block) => {
+    const option = document.createElement('option')
+    option.value = block.id
+    option.textContent = block.semanticKey
+    elements.patternBodyBlock.append(option)
+  })
+  if ([...elements.patternBodyBlock.options].some((option) => option.value === previousBodyId)) {
+    elements.patternBodyBlock.value = previousBodyId
+  }
+  const needsBody = elements.patternChoice.value === 'editorial-body'
+  elements.patternBodyBlock.disabled = !needsBody || elements.patternBodyBlock.options.length === 0
+  elements.applyPattern.disabled = needsBody && elements.patternBodyBlock.options.length === 0
+
+  const previousElementId = elements.visualElement.value
+  elements.visualElement.replaceChildren()
+  ;(next.composition?.elements ?? []).forEach((element) => {
+    const option = document.createElement('option')
+    option.value = element.id
+    option.textContent = compositionElementLabel(element)
+    elements.visualElement.append(option)
+  })
+  if ([...elements.visualElement.options].some((option) => option.value === previousElementId)) {
+    elements.visualElement.value = previousElementId
+  }
+  const selected = next.composition?.elements.find((element) => element.id === elements.visualElement.value)
+  elements.visualElement.disabled = !selected
+  elements.alignActions.querySelectorAll('button').forEach((button) => { button.disabled = !selected })
+  const assignment = selected?.mediaRole
+    ? next.mediaAssignments?.find((candidate) => candidate.role === selected.mediaRole)
+    : null
+  const canCrop = selected?.kind === 'image' && Boolean(assignment)
+  elements.cropControls.disabled = !canCrop
+  const crop = selected?.crop ?? { x: 0, y: 0, width: 1, height: 1 }
+  elements.cropX.value = String(crop.x)
+  elements.cropY.value = String(crop.y)
+  elements.cropWidth.value = String(crop.width)
+  elements.cropHeight.value = String(crop.height)
+
+  elements.assetLabel.disabled = false
+  elements.addAssetReference.disabled = elements.assetLabel.value.trim().length === 0
+  renderAssetCatalog(assetCatalog)
+}
+
+function renderAssetCatalog(assets) {
+  const priorSelection = elements.assetReference.value
+  const assignedAssetId = projection?.mediaAssignments?.find(
+    (assignment) => assignment.role === 'primary',
+  )?.assetReference?.id
+  elements.assetReference.replaceChildren()
+  assets.forEach((asset) => {
+    const option = document.createElement('option')
+    option.value = asset.id
+    option.textContent = `${asset.label} · ${asset.mediaKind}`
+    elements.assetReference.append(option)
+  })
+  const requestedSelection = assignedAssetId ?? priorSelection
+  if ([...elements.assetReference.options].some((option) => option.value === requestedSelection)) {
+    elements.assetReference.value = requestedSelection
+  }
+  const hasAssets = Boolean(projection) && elements.assetReference.options.length > 0
+  elements.assetReference.disabled = !hasAssets
+  elements.assignPrimaryAsset.disabled = !hasAssets
+}
+
+async function refreshAssetCatalog() {
+  try {
+    const result = await window.deckBridge.query({ name: 'asset.catalog', params: {} })
+    assetCatalog = result.assets ?? []
+    renderAssetCatalog(assetCatalog)
+  } catch {
+    assetCatalog = []
+    renderAssetCatalog(assetCatalog)
+  }
 }
 
 function renderProjection(next, options = {}) {
@@ -152,6 +388,8 @@ function renderProjection(next, options = {}) {
   elements.revision.textContent = `Revision ${next.revision}`
   elements.binding.textContent = next.headline.semanticKey
   elements.canvasPreset.textContent = `${next.canvas.width} × ${next.canvas.height}`
+  renderComposition(next)
+  syncVisualControls(next)
   elements.commit.disabled = false
   elements.undo.disabled = !next.history.canUndo
   elements.redo.disabled = !next.history.canRedo
@@ -167,6 +405,7 @@ function renderProjection(next, options = {}) {
     slideId: options.sequenceFocusSlideId ?? null,
     sectionId: options.sequenceFocusSectionId ?? null,
   })
+  void refreshAssetCatalog()
   return next
 }
 
@@ -178,6 +417,8 @@ function clearProjection() {
   elements.headline.value = ''
   elements.headline.disabled = true
   elements.additionalContent.replaceChildren()
+  elements.compositionLayer.replaceChildren()
+  elements.semanticFallback.hidden = false
   elements.artboardHeadline.textContent = 'No Deck open'
   elements.artboardIntent.textContent = '—'
   elements.revision.textContent = 'Revision —'
@@ -190,6 +431,20 @@ function clearProjection() {
   elements.slideIntent.disabled = true
   elements.renameDeck.disabled = true
   elements.addBody.disabled = true
+  elements.patternChoice.disabled = true
+  elements.patternBodyBlock.replaceChildren()
+  elements.patternBodyBlock.disabled = true
+  elements.applyPattern.disabled = true
+  elements.visualElement.replaceChildren()
+  elements.visualElement.disabled = true
+  elements.alignActions.querySelectorAll('button').forEach((button) => { button.disabled = true })
+  elements.cropControls.disabled = true
+  elements.assetLabel.disabled = true
+  elements.addAssetReference.disabled = true
+  elements.assetReference.replaceChildren()
+  elements.assetReference.disabled = true
+  elements.assignPrimaryAsset.disabled = true
+  assetCatalog = []
   elements.saveState.textContent = 'No document session'
   elements.workbench.setAttribute('aria-busy', 'false')
 }
@@ -293,6 +548,7 @@ function renderSequence(next) {
       select.type = 'button'
       select.className = `slide-row${projection?.slide.id === slide.id ? ' selected' : ''}`
       select.dataset.slideId = slide.id
+      select.setAttribute('aria-label', `Slide ${slideNumber}: ${slide.headline?.plainText || slide.intent}`)
       select.setAttribute('aria-keyshortcuts', 'Alt+ArrowUp Alt+ArrowDown')
       if (projection?.slide.id === slide.id) select.setAttribute('aria-current', 'page')
       const number = document.createElement('span')
@@ -366,7 +622,7 @@ async function executeStructural(type, payload, selectedSlideId = projection?.sl
         expectedRevision: projection.revision,
         type,
         payload,
-        source: { kind: options.sourceKind ?? 'ui', label: 'Story document' },
+        source: { kind: options.sourceKind ?? 'ui', label: options.sourceLabel ?? 'Story document' },
         issuedAt: new Date().toISOString(),
       },
     })
@@ -374,14 +630,86 @@ async function executeStructural(type, payload, selectedSlideId = projection?.sl
       name: 'slide.activeProjection',
       params: selectedSlideId ? { slideId: selectedSlideId } : {},
     })
-    renderProjection(next, {
+    return renderProjection(next, {
       sequenceFocusSlideId: options.sequenceFocusSlideId,
       sequenceFocusSectionId: options.sequenceFocusSectionId,
     })
   } catch (error) {
     renderProjection(projection)
     elements.saveState.textContent = `${error.name ?? 'Error'}: ${error.message}`
+    return null
   }
+}
+
+async function applySelectedPattern() {
+  if (!projection) return
+  const payload = patternApplyPlan(
+    projection,
+    elements.patternChoice.value,
+    crypto.randomUUID(),
+    elements.patternBodyBlock.value || null,
+  )
+  if (!payload) {
+    elements.saveState.textContent = 'InvalidCommand: Select the canonical body Content Block for Editorial Body'
+    return
+  }
+  await executeStructural('designOption.applyPattern', payload, projection.slide.id, {
+    sourceLabel: 'Apply authored Pattern',
+  })
+}
+
+async function alignSelectedElement(alignment) {
+  if (!projection) return
+  const payload = elementAlignPlan(projection, elements.visualElement.value, alignment)
+  if (!payload) return
+  await executeStructural('element.frame.update', payload, projection.slide.id, {
+    sourceLabel: `Align Element ${alignment}`,
+  })
+}
+
+async function applySelectedCrop() {
+  if (!projection) return
+  const payload = imageCropPlan(projection, elements.visualElement.value, {
+    x: elements.cropX.value,
+    y: elements.cropY.value,
+    width: elements.cropWidth.value,
+    height: elements.cropHeight.value,
+  })
+  if (!payload) {
+    elements.saveState.textContent = 'InvalidCommand: Crop must stay inside normalized source bounds'
+    return
+  }
+  await executeStructural('element.crop.update', payload, projection.slide.id, {
+    sourceLabel: 'Adjust Image crop',
+  })
+}
+
+async function addNeutralAssetReference() {
+  if (!projection) return
+  const label = elements.assetLabel.value.trim()
+  if (!label) return
+  const result = await executeStructural('asset.reference.add', {
+    assetReferenceId: crypto.randomUUID(),
+    label,
+    mediaKind: 'image',
+  }, projection.slide.id, { sourceLabel: 'Add neutral Asset Reference' })
+  if (result) {
+    elements.assetLabel.value = ''
+    elements.addAssetReference.disabled = true
+  }
+}
+
+async function assignPrimaryAsset() {
+  if (!projection) return
+  const payload = assetAssignmentPlan(
+    projection,
+    elements.assetReference.value,
+    crypto.randomUUID(),
+  )
+  if (!payload) return
+  await executeStructural('asset.assign', payload, projection.slide.id, {
+    sourceLabel: 'Assign Primary Asset',
+  })
 }
 
 async function selectSlide(slideId) {
@@ -488,6 +816,10 @@ function applyScales() {
   const transforms = workspaceTransforms({ interfaceScale, artboardZoom, canvas })
   document.documentElement.style.setProperty('--interface-scale', String(transforms.interfaceScale))
   document.documentElement.style.setProperty('--artboard-zoom', String(artboardZoom))
+  document.documentElement.dataset.workspaceLayout = workspaceLayoutMode({
+    viewportWidth: window.innerWidth,
+    interfaceScale,
+  })
   elements.interfaceScale.value = String(interfaceScale)
   elements.artboardZoom.value = String(artboardZoom)
   const zoomPercent = `${Math.round(artboardZoom * 100)}%`
@@ -625,6 +957,22 @@ elements.headline.addEventListener('keydown', (event) => {
 })
 elements.undo.addEventListener('click', () => historyAction('undo'))
 elements.redo.addEventListener('click', () => historyAction('redo'))
+elements.patternChoice.addEventListener('change', () => {
+  if (projection) syncVisualControls(projection)
+})
+elements.applyPattern.addEventListener('click', applySelectedPattern)
+elements.visualElement.addEventListener('change', () => {
+  if (projection) syncVisualControls(projection)
+})
+elements.alignActions.querySelectorAll('button').forEach((button) => {
+  button.addEventListener('click', () => alignSelectedElement(button.dataset.align))
+})
+elements.applyCrop.addEventListener('click', applySelectedCrop)
+elements.assetLabel.addEventListener('input', () => {
+  elements.addAssetReference.disabled = !projection || elements.assetLabel.value.trim().length === 0
+})
+elements.addAssetReference.addEventListener('click', addNeutralAssetReference)
+elements.assignPrimaryAsset.addEventListener('click', assignPrimaryAsset)
 elements.interfaceScale.addEventListener('change', async () => {
   const requested = Number(elements.interfaceScale.value)
   try {
@@ -652,6 +1000,7 @@ elements.slideIntent.addEventListener('change', async () => {
     intent: elements.slideIntent.value,
   }, projection.slide.id)
 })
+window.addEventListener('resize', applyScales)
 
 async function boot() {
   try {

@@ -8,7 +8,8 @@ const [html, workspace] = await Promise.all([
 ])
 
 test('Editorial Spine exposes selected, shortcut, busy and live-status semantics', () => {
-  assert.match(html, /id="save-state" role="status"/)
+  assert.match(html, /id="save-state" role="status" aria-live="polite" aria-atomic="true"/)
+  assert.match(html, /class="workbench"[^>]+aria-busy="false"/)
   assert.match(html, /id="artboard-zoom"[^>]+aria-label="Artboard Zoom"/)
   assert.match(workspace, /setAttribute\('aria-busy', 'true'\)/)
   assert.match(workspace, /setAttribute\('aria-current', 'page'\)/)
@@ -17,6 +18,7 @@ test('Editorial Spine exposes selected, shortcut, busy and live-status semantics
   assert.match(workspace, /move\.dataset\.direction = 'down'/)
   assert.match(workspace, /Move Slide \$\{slideNumber\} down/)
   assert.match(workspace, /Move \$\{section\.title\} down/)
+  assert.match(workspace, /`Slide \$\{slideNumber\}: \$\{slide\.headline\?\.plainText \|\| slide\.intent\}`/)
   assert.equal(
     workspace.match(/renderProjection\(projection\)\n    elements\.saveState\.textContent = `\$\{error\.name \?\? 'Error'\}: \$\{error\.message\}`/g)?.length,
     3,

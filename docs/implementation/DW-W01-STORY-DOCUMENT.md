@@ -284,3 +284,39 @@ for the UI rather than discarded.
 The packaged controller result plus compiled alert binding support a source-ready
 native error-presentation claim. Interactive wording and focus return after alert
 dismissal remain part of the R05-A macOS accessibility acceptance pass.
+
+## DW-W01-R05-A — Accessibility source hardening
+
+The macOS controller mirrors the current projection's `history.canUndo` and
+`history.canRedo` into native command availability after every session transition.
+This keeps Command-Z, Shift-Command-Z, menu discovery and assistive control state
+aligned with the same semantic history used by the WebKit workspace. Closing a Deck
+clears both states.
+
+The Editorial Spine status is a polite atomic live region, and selected Slide
+buttons have explicit names using the visible Slide number and headline or intent.
+Native toolbar labels exactly match their menu equivalents. The packaged DOM check
+and causal source tests cover these contracts without a new bridge or mutation
+path.
+
+R05-A remains source-ready, not accessibility-integrated, until the exact packaged
+app passes the interactive Full Keyboard Access, VoiceOver, Voice Control, Switch
+Control and large-interface checklist in the evidence audit.
+
+At representative laptop widths, Interface Scale 150% and 175% use a responsive
+Editorial Spine instead of multiplying a fixed page minimum. Sequence and Story
+remain side by side when space permits; Stage and Inspector reflow below them, then
+all panes stack at narrow widths. The packaged WebKit journey measures 175%
+horizontal reachability for the document and essential Story controls. Artboard
+zoom, canvas units, semantic Deck content and export geometry are unchanged.
+
+Layout selection is scale-aware rather than breakpoint-only: the production planner
+compares viewport width with the four- and two-column rem minima after applying the
+chosen Interface Scale. Causal checks cover 1,440 and 1,512 pixels at 150% and 175%.
+The SwiftUI document command strip observes the same published preference for its
+font, spacing, padding and minimum height.
+
+The tracer intentionally owns one SwiftUI `Window`, not a `WindowGroup`. A shared
+controller and bridge sink are therefore single-window by construction. Future
+multi-document work must move controller/store/workspace ownership inside each
+scene before enabling additional windows.

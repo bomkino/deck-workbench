@@ -24,7 +24,7 @@ html, body { min-height: 100%; margin: 0; background: var(--bg); }
 
 button, select, input, textarea { font: inherit; }
 
-button, select {
+button, select, input {
   border: 1px solid var(--rule);
   border-radius: 0.25rem;
   background: var(--panel-raised);
@@ -39,7 +39,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 }
 button:disabled { color: var(--faint); }
 
-.workbench { min-width: 70rem; min-height: 100vh; }
+.workbench { min-width: 0; min-height: 100vh; }
 
 .toolbar {
   height: 4.5rem;
@@ -65,10 +65,15 @@ button:disabled { color: var(--faint); }
 .editorial-spine {
   display: grid;
   grid-template-columns: 11rem minmax(21rem, 0.9fr) minmax(31rem, 1.4fr) 14rem;
+  grid-template-areas: "sequence story stage inspector";
   height: calc(100vh - 4.5rem);
 }
 
 .sequence, .story, .stage, .inspector { min-width: 0; border-right: 1px solid var(--rule); }
+.sequence { grid-area: sequence; }
+.story { grid-area: story; }
+.stage { grid-area: stage; }
+.inspector { grid-area: inspector; }
 .sequence, .story, .inspector { padding: 1rem; background: var(--panel); }
 .stage { padding: 1rem; background: var(--bg); }
 
@@ -125,7 +130,7 @@ button:disabled { color: var(--faint); }
 .stage-scroll { height: calc(100% - 3.2rem); overflow: auto; display: grid; place-items: start center; padding: 3rem; }
 .artboard {
   position: relative;
-  width: 50rem;
+  width: min(50rem, calc(100vw - 6rem));
   aspect-ratio: 2576 / 1080;
   flex: none;
   transform: scale(var(--artboard-zoom));
@@ -142,10 +147,39 @@ button:disabled { color: var(--faint); }
   inset: 1rem;
   border: 1px solid rgb(23 23 19 / 0.18);
   pointer-events: none;
+  z-index: 5;
+}
+#semantic-fallback[hidden] { display: none; }
+#composition-layer { position: absolute; inset: 0; }
+.composition-element { position: absolute; overflow: hidden; }
+.composition-text {
+  display: flex;
+  align-items: center;
+  color: var(--ink);
+  font-family: ui-serif, Georgia, serif;
+  font-size: clamp(0.8rem, 3.4vw, 3.4rem);
+  font-weight: 500;
+  line-height: 0.94;
+  letter-spacing: -0.045em;
+  white-space: pre-wrap;
+}
+.composition-image-placeholder {
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  border: 1px dashed rgb(23 23 19 / 0.38);
+  background:
+    linear-gradient(135deg, rgb(23 23 19 / 0.08) 25%, transparent 25%) 0 0 / 1.2rem 1.2rem,
+    linear-gradient(315deg, rgb(23 23 19 / 0.08) 25%, transparent 25%) 0 0 / 1.2rem 1.2rem,
+    rgb(23 23 19 / 0.06);
+  color: var(--ink);
+  font-size: 0.7rem;
+  line-height: 1.35;
+  text-align: center;
 }
 .artboard-kicker { margin: 0; font-size: 0.75rem; letter-spacing: 0.14em; text-transform: uppercase; }
 .artboard h3 { max-width: 78%; margin: 2rem 0 0; font-family: ui-serif, Georgia, serif; font-size: 3.4rem; font-weight: 500; line-height: 0.94; letter-spacing: -0.045em; }
-.artboard-furniture { position: absolute; left: 3.5rem; bottom: 2.7rem; margin: 0; font-size: 0.65rem; letter-spacing: 0.08em; text-transform: uppercase; }
+.artboard-furniture { position: absolute; left: 3.5rem; bottom: 2.7rem; z-index: 6; margin: 0; font-size: 0.65rem; letter-spacing: 0.08em; text-transform: uppercase; }
 
 .inspector section { border-top: 1px solid var(--rule); margin-top: 1.2rem; padding-top: 0.8rem; }
 .inspector h2 { margin: 0 0 0.75rem; font-size: 0.75rem; font-weight: 600; }
@@ -155,7 +189,76 @@ button:disabled { color: var(--faint); }
 .inspector dd { max-width: 7rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .inspector-control { display: grid; gap: 0.35rem; margin-top: 0.8rem; color: var(--muted); font-size: 0.65rem; }
 .inspector-control select { width: 100%; min-height: 2rem; }
+.inspector-control input { width: 100%; min-height: 2rem; padding: 0.35rem 0.5rem; }
+.inspector section > button { width: 100%; margin-top: 0.5rem; }
+.align-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.25rem; margin-top: 0.45rem; }
+.align-actions button { min-width: 0; padding-inline: 0.2rem; font-size: 0.62rem; }
+.crop-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.35rem; margin: 0.7rem 0 0; padding: 0.55rem; border: 1px solid var(--rule); }
+.crop-controls legend { padding-inline: 0.25rem; color: var(--muted); font-size: 0.62rem; }
+.crop-controls label { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 0.2rem; color: var(--muted); font-size: 0.62rem; }
+.crop-controls input { width: 100%; min-width: 0; padding: 0.25rem; }
+.crop-controls button { grid-column: 1 / -1; }
 .small { color: var(--muted); font-size: 0.68rem; line-height: 1.45; }
+
+:root[data-workspace-layout="two-column"] .toolbar,
+:root[data-workspace-layout="single-column"] .toolbar {
+    height: auto;
+    min-height: 4.5rem;
+    flex-wrap: wrap;
+}
+
+:root[data-workspace-layout="two-column"] .toolbar-actions,
+:root[data-workspace-layout="single-column"] .toolbar-actions { flex-wrap: wrap; }
+
+:root[data-workspace-layout="two-column"] .editorial-spine {
+    grid-template-columns: minmax(10rem, 0.65fr) minmax(20rem, 1.35fr);
+    grid-template-areas:
+      "sequence story"
+      "stage stage"
+      "inspector inspector";
+    height: auto;
+    min-height: calc(100vh - 4.5rem);
+}
+
+:root[data-workspace-layout="two-column"] .sequence,
+:root[data-workspace-layout="two-column"] .story { min-height: 32rem; }
+:root[data-workspace-layout="two-column"] .stage { min-height: 30rem; }
+:root[data-workspace-layout="two-column"] .inspector {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1rem;
+}
+
+:root[data-workspace-layout="two-column"] .inspector > .panel-label { grid-column: 1 / -1; }
+:root[data-workspace-layout="two-column"] .inspector section { margin-top: 0; }
+
+:root[data-workspace-layout="single-column"] .toolbar-actions,
+:root[data-workspace-layout="single-column"] .toolbar-actions label { width: 100%; }
+:root[data-workspace-layout="single-column"] .toolbar-actions label { justify-content: space-between; }
+:root[data-workspace-layout="single-column"] .toolbar-actions select,
+:root[data-workspace-layout="single-column"] .toolbar-actions input { flex: 1; }
+
+:root[data-workspace-layout="single-column"] .editorial-spine {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "sequence"
+      "story"
+      "stage"
+      "inspector";
+    height: auto;
+    min-height: calc(100vh - 4.5rem);
+}
+
+:root[data-workspace-layout="single-column"] .sequence,
+:root[data-workspace-layout="single-column"] .story,
+:root[data-workspace-layout="single-column"] .stage,
+:root[data-workspace-layout="single-column"] .inspector {
+    min-height: 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--rule);
+}
+
+:root[data-workspace-layout="single-column"] .inspector { grid-template-columns: minmax(0, 1fr); }
 
 @media (prefers-reduced-motion: no-preference) {
   .artboard { transition: transform 120ms ease-out; }
