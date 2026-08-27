@@ -1,5 +1,8 @@
 # Deck Workbench
 
+[![DW-T00 macOS arm64](https://github.com/bomkino/deck-workbench/actions/workflows/dw-t00-macos.yml/badge.svg?branch=main)](https://github.com/bomkino/deck-workbench/actions/workflows/dw-t00-macos.yml)
+[![DW-G01 Ubuntu Linux x64](https://github.com/bomkino/deck-workbench/actions/workflows/dw-g01-linux.yml/badge.svg?branch=main)](https://github.com/bomkino/deck-workbench/actions/workflows/dw-g01-linux.yml)
+
 A local-first, story-first application for prototyping, reviewing and handing off cinematic pitch decks on Apple-Silicon macOS and Garuda Linux.
 
 ## Status
