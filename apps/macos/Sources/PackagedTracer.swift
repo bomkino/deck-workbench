@@ -614,12 +614,32 @@ enum PackagedTracer {
         }
         try requireParagraphs(in: restoredProjectedBlocks[1], expected: bodyParagraphs)
 
+        let rawSequenceMoveDownUndone = try await controller.invokeWorkspaceForTracer(
+            "await deckBridge.undo(); return await deckBridge.query({ name: 'story.document', params: {} })"
+        )
+        let sequenceMoveDownUndone = try requireStory(rawSequenceMoveDownUndone, revision: 20)
+        try requireStoryOrder(
+            sequenceMoveDownUndone,
+            sectionIds: [secondSectionId, openingSectionId],
+            slideIdsBySection: [[openingSlideId], [secondSlideId]]
+        )
+
+        let rawSequenceMoveUpUndone = try await controller.invokeWorkspaceForTracer(
+            "await deckBridge.undo(); return await deckBridge.query({ name: 'story.document', params: {} })"
+        )
+        let sequenceMoveUpUndone = try requireStory(rawSequenceMoveUpUndone, revision: 21)
+        try requireStoryOrder(
+            sequenceMoveUpUndone,
+            sectionIds: [secondSectionId, openingSectionId],
+            slideIdsBySection: [[], [openingSlideId, secondSlideId]]
+        )
+
         let rawOriginalBody = try await controller.invokeWorkspaceForTracer(
             "await deckBridge.undo(); return await deckBridge.query({ name: 'slide.activeProjection', params: { slideId: secondSlideId } })",
             arguments: ["secondSlideId": secondSlideId]
         )
         guard let originalBody = rawOriginalBody as? [String: Any],
-              originalBody["revision"] as? Int == 20,
+              originalBody["revision"] as? Int == 22,
               let originalBlocks = originalBody["contentBlocks"] as? [[String: Any]],
               originalBlocks.count == 2,
               originalBlocks[1]["plainText"] as? String == bodyOriginalText
@@ -633,7 +653,7 @@ enum PackagedTracer {
             arguments: ["secondSlideId": secondSlideId]
         )
         guard let paragraphsRedone = rawParagraphsRedone as? [String: Any],
-              paragraphsRedone["revision"] as? Int == 21,
+              paragraphsRedone["revision"] as? Int == 23,
               let redoneParagraphBlocks = paragraphsRedone["contentBlocks"] as? [[String: Any]],
               redoneParagraphBlocks.count == 2,
               redoneParagraphBlocks[1]["plainText"] as? String == bodyText
@@ -642,10 +662,30 @@ enum PackagedTracer {
         }
         try requireParagraphs(in: redoneParagraphBlocks[1], expected: bodyParagraphs)
 
+        let rawSequenceMoveUpRedone = try await controller.invokeWorkspaceForTracer(
+            "await deckBridge.redo(); return await deckBridge.query({ name: 'story.document', params: {} })"
+        )
+        let sequenceMoveUpRedone = try requireStory(rawSequenceMoveUpRedone, revision: 24)
+        try requireStoryOrder(
+            sequenceMoveUpRedone,
+            sectionIds: [secondSectionId, openingSectionId],
+            slideIdsBySection: [[openingSlideId], [secondSlideId]]
+        )
+
+        let rawSequenceMoveDownRedone = try await controller.invokeWorkspaceForTracer(
+            "await deckBridge.redo(); return await deckBridge.query({ name: 'story.document', params: {} })"
+        )
+        let sequenceMoveDownRedone = try requireStory(rawSequenceMoveDownRedone, revision: 25)
+        try requireStoryOrder(
+            sequenceMoveDownRedone,
+            sectionIds: [secondSectionId, openingSectionId],
+            slideIdsBySection: [[], [openingSlideId, secondSlideId]]
+        )
+
         let rawContentRemoved = try await controller.invokeWorkspaceForTracer(
             "await deckBridge.redo(); return await deckBridge.query({ name: 'story.document', params: {} })"
         )
-        let contentRemoved = try requireStory(rawContentRemoved, revision: 22)
+        let contentRemoved = try requireStory(rawContentRemoved, revision: 26)
         guard let redoneContentSections = contentRemoved["sections"] as? [[String: Any]],
               let redoneContentSlides = redoneContentSections[1]["slides"] as? [[String: Any]],
               let redoneContentBlocks = redoneContentSlides[1]["contentBlocks"] as? [[String: Any]],
@@ -657,7 +697,7 @@ enum PackagedTracer {
         let rawSlideRemoved = try await controller.invokeWorkspaceForTracer(
             "await deckBridge.redo(); return await deckBridge.query({ name: 'story.document', params: {} })"
         )
-        let slideRemoved = try requireStory(rawSlideRemoved, revision: 23)
+        let slideRemoved = try requireStory(rawSlideRemoved, revision: 27)
         try requireStoryOrder(
             slideRemoved,
             sectionIds: [secondSectionId, openingSectionId],
@@ -667,7 +707,7 @@ enum PackagedTracer {
         let rawSectionRemoved = try await controller.invokeWorkspaceForTracer(
             "await deckBridge.redo(); return await deckBridge.query({ name: 'story.document', params: {} })"
         )
-        let sectionRemoved = try requireStory(rawSectionRemoved, revision: 24)
+        let sectionRemoved = try requireStory(rawSectionRemoved, revision: 28)
         try requireStoryOrder(sectionRemoved, sectionIds: [openingSectionId], slideIdsBySection: [[openingSlideId]])
         try controller.save()
         try writeJSON([
@@ -676,11 +716,15 @@ enum PackagedTracer {
             "undoSectionRevision": 17,
             "undoSlideRevision": 18,
             "undoContentRevision": 19,
-            "undoParagraphUpdateRevision": 20,
-            "redoParagraphUpdateRevision": 21,
-            "redoContentRevision": 22,
-            "redoSlideRevision": 23,
-            "redoSectionRevision": 24,
+            "undoSequenceMoveDownRevision": 20,
+            "undoSequenceMoveUpRevision": 21,
+            "undoParagraphUpdateRevision": 22,
+            "redoParagraphUpdateRevision": 23,
+            "redoSequenceMoveUpRevision": 24,
+            "redoSequenceMoveDownRevision": 25,
+            "redoContentRevision": 26,
+            "redoSlideRevision": 27,
+            "redoSectionRevision": 28,
             "sectionIds": [secondSectionId, openingSectionId],
             "openingSlideIds": [openingSlideId, secondSlideId],
             "deckTitle": "The Hill",

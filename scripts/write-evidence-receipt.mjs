@@ -148,7 +148,7 @@ The extracted macOS app creates and reorders a second Section and Slide, uses Co
 | Kernel | Story add/move/rename/intent, paragraph-preserving \`content.update\`, explicit removals, prepare/commit and atomic rejection | Pass |
 | Story projection | Ordered Sections/Slides plus exact rich-text value and LF-joined plain text | Pass |
 | Typed bridge | Keyboard \`content.update\` and \`slide.move\`, queries and history plus all structural commands from WebView | Pass |
-| Journal/replay | Fourteen commands, five undos and five redos in one hash chain; restart replay at revision ${storyCreateResult.journalReplayRevision} | Pass |
+| Journal/replay | Fourteen commands, seven undos and seven redos in one hash chain; restart replay at revision ${storyCreateResult.journalReplayRevision} | Pass |
 | Crash recovery | Stale manifest head with valid durable journal tail | Pass: repaired and replayed to revision ${storyCreateResult.crashRecoveryRevision} |
 | Session lifecycle | Checkpoint, host close, cleared projection, new-process reopen | Pass |
 | Packaged app | Native create → keyboard paragraph commit/history → cross-Section keyboard reorder/focus → removals → save/quit → reopen → exact semantic history proof | Pass |

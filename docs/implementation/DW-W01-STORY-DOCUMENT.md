@@ -197,7 +197,9 @@ focus the first Slide in the later Section
 → retain focus by stable Slide ID
 → Option–Down moves it back to the later Section's start
 → retain focus and original order
-→ save, close, reopen and replay both durable slide.move records
+→ save, close and reopen
+→ undo both moves to their intermediate and original orders
+→ redo both moves to the same intermediate and final orders
 ```
 
 Drag-and-drop, multi-selection and broad Sequence navigation remain deferred.

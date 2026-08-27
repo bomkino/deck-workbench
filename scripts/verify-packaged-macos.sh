@@ -64,7 +64,7 @@ test -f "$STORY_DOCUMENT/journal.ndjson"
 test "$(wc -l < "$STORY_DOCUMENT/journal.ndjson" | tr -d ' ')" = "16"
 
 "$BINARY" --tracer-story-reopen "$STORY_DOCUMENT" "$STORY_CREATE_RESULT" "$STORY_REOPEN_RESULT"
-test "$(wc -l < "$STORY_DOCUMENT/journal.ndjson" | tr -d ' ')" = "24"
+test "$(wc -l < "$STORY_DOCUMENT/journal.ndjson" | tr -d ' ')" = "28"
 node "$REPOSITORY_ROOT/scripts/verify-story-tracer-output.mjs" \
   "$STORY_DOCUMENT" "$STORY_CREATE_RESULT" "$STORY_REOPEN_RESULT"
 

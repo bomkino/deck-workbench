@@ -14,15 +14,15 @@ const records = journalText.trim().split('\n').map(JSON.parse)
 assert.equal(manifest.format, 'pitchdog.deck-package')
 assert.equal(manifest.schemaVersion, 1)
 assert.equal(checkpoint.format, 'pitchdog.deck-checkpoint')
-assert.equal(checkpoint.revision, 24)
-assert.equal(records.length, 24)
-assert.deepEqual(records.map((record) => record.revision), Array.from({ length: 24 }, (_, index) => index + 1))
+assert.equal(checkpoint.revision, 28)
+assert.equal(records.length, 28)
+assert.deepEqual(records.map((record) => record.revision), Array.from({ length: 28 }, (_, index) => index + 1))
 assert.deepEqual(records.map((record) => record.operation), [
   ...Array(9).fill('command'),
   'undo', 'redo',
   ...Array(5).fill('command'),
-  'undo', 'undo', 'undo', 'undo',
-  'redo', 'redo', 'redo', 'redo',
+  ...Array(6).fill('undo'),
+  ...Array(6).fill('redo'),
 ])
 const commandRecords = records.filter((record) => record.operation === 'command')
 assert.deepEqual(commandRecords.map((record) => record.command.type), [
@@ -80,11 +80,15 @@ assert.equal(reopenResult.reopenedRevision, 16)
 assert.equal(reopenResult.undoSectionRevision, 17)
 assert.equal(reopenResult.undoSlideRevision, 18)
 assert.equal(reopenResult.undoContentRevision, 19)
-assert.equal(reopenResult.undoParagraphUpdateRevision, 20)
-assert.equal(reopenResult.redoParagraphUpdateRevision, 21)
-assert.equal(reopenResult.redoContentRevision, 22)
-assert.equal(reopenResult.redoSlideRevision, 23)
-assert.equal(reopenResult.redoSectionRevision, 24)
+assert.equal(reopenResult.undoSequenceMoveDownRevision, 20)
+assert.equal(reopenResult.undoSequenceMoveUpRevision, 21)
+assert.equal(reopenResult.undoParagraphUpdateRevision, 22)
+assert.equal(reopenResult.redoParagraphUpdateRevision, 23)
+assert.equal(reopenResult.redoSequenceMoveUpRevision, 24)
+assert.equal(reopenResult.redoSequenceMoveDownRevision, 25)
+assert.equal(reopenResult.redoContentRevision, 26)
+assert.equal(reopenResult.redoSlideRevision, 27)
+assert.equal(reopenResult.redoSectionRevision, 28)
 assert.equal(reopenResult.deckTitle, 'The Hill')
 assert.equal(reopenResult.renamedSectionTitle, 'Act II')
 assert.equal(reopenResult.slideIntent, 'editorial-body')
