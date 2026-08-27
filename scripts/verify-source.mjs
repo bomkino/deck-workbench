@@ -44,5 +44,19 @@ assert.match(kernel, /'content\.remove'/)
 assert.match(workspaceJavaScript, /executeStructural\('content\.remove'/)
 assert.match(workspaceJavaScript, /executeStructural\('section\.remove'/)
 assert.match(workspaceJavaScript, /executeStructural\('slide\.remove'/)
+assert.match(workspaceJavaScript, /normalized\.split\('\\n'\)\.map/)
+assert.match(workspaceJavaScript, /text\.length > 0 \? \[\{ type: 'text', text \}\] : \[\]/)
+const mapperStart = workspaceJavaScript.indexOf('function richText(value)')
+const mapperEnd = workspaceJavaScript.indexOf('\nfunction setBusy', mapperStart)
+assert.ok(mapperStart >= 0 && mapperEnd > mapperStart)
+const richText = Function(`"use strict"; ${workspaceJavaScript.slice(mapperStart, mapperEnd)}; return richText`)()
+assert.deepEqual(richText('First\r\n\rThird'), {
+  type: 'doc',
+  content: [
+    { type: 'paragraph', content: [{ type: 'text', text: 'First' }] },
+    { type: 'paragraph', content: [] },
+    { type: 'paragraph', content: [{ type: 'text', text: 'Third' }] },
+  ],
+})
 
 console.log('Source contract verification passed')

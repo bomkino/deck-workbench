@@ -128,3 +128,30 @@ remove body Content Block
 
 Invalid non-empty Section removal and last-Section/last-Slide removal are atomic
 no-ops with explicit errors. Cascading deletion stays outside DW-W01.
+
+## DW-W01-R01 — Paragraph-preserving Story fields
+
+The dependency-free textarea caller maps normalized line endings to canonical
+semantic paragraphs before `content.update`:
+
+- every LF-delimited line becomes one `paragraph`;
+- a blank line becomes an empty `paragraph` and is not collapsed;
+- `plainText` joins paragraphs with LF, so edit and projection are symmetric;
+- undo retains the complete prior rich-text value and redo retains the complete
+  multiline value through the existing `content.set` history operation.
+
+Exact packaged extension:
+
+```text
+add one single-paragraph body
+→ update it through the real workspace converter to three paragraphs, including an empty middle paragraph
+→ remove Content, Slide and empty Section
+→ save, close and reopen
+→ undo the three removals and verify exact paragraph JSON
+→ undo the paragraph update and recover the original single paragraph
+→ redo the paragraph update and recover all three paragraph boundaries
+→ redo all three removals
+```
+
+This slice does not add marks, lists, headings, HTML, structured paste, editor
+dependencies or a second mutation path.

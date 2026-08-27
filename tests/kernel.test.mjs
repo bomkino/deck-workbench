@@ -73,6 +73,37 @@ test('content.update prepares privately, commits atomically, and preserves Slide
   assert.equal(projection(session).slide.id, 'slide-00000000-0000-4000-8000-000000000001')
 })
 
+test('multi-paragraph content preserves empty paragraph boundaries through reopen and history', () => {
+  const session = kernel.open(checkpoint())
+  const paragraphValue = {
+    type: 'doc',
+    content: [
+      { type: 'paragraph', content: [{ type: 'text', text: 'First paragraph.' }] },
+      { type: 'paragraph', content: [] },
+      { type: 'paragraph', content: [{ type: 'text', text: 'Third paragraph.' }] },
+    ],
+  }
+  const update = command(0, 'ignored', 'multi-paragraph-update')
+  update.payload.value = paragraphValue
+  execute(session, update)
+
+  let active = projection(session)
+  assert.equal(active.headline.plainText, 'First paragraph.\n\nThird paragraph.')
+  assert.deepEqual(JSON.parse(JSON.stringify(active.headline.value)), paragraphValue)
+
+  const reopened = kernel.open(kernel.serializeSession(session))
+  kernel.commit(reopened, kernel.prepareUndo(reopened))
+  active = projection(reopened)
+  assert.equal(active.headline.plainText, 'Untitled Story')
+  assert.equal(active.headline.value.content.length, 1)
+
+  kernel.commit(reopened, kernel.prepareRedo(reopened))
+  active = projection(reopened)
+  assert.equal(active.revision, 3)
+  assert.equal(active.headline.plainText, 'First paragraph.\n\nThird paragraph.')
+  assert.deepEqual(JSON.parse(JSON.stringify(active.headline.value)), paragraphValue)
+})
+
 test('invalid and stale commands reject without partial mutation or history entries', () => {
   const session = kernel.open(checkpoint())
   const before = JSON.stringify(kernel.serializeSession(session))

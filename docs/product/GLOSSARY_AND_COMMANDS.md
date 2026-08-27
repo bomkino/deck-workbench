@@ -135,3 +135,11 @@ stable predecessor anchor.
 `section.remove` accepts one stable `sectionId`. It is rejected unless the Section
 is empty, and it may not remove the Deck's final Section. Its inverse retains the
 complete empty Section and stable predecessor anchor. Neither command cascades.
+
+## Plain-text Story field mapping
+
+The minimal DOM editor maps normalized LF-delimited textarea input to canonical
+rich-text JSON before dispatching `content.update`. Every line becomes one
+`paragraph`; a blank line becomes an empty `paragraph`. The projection joins those
+paragraphs with LF for textarea display. This is a lossless paragraph boundary
+mapping, not a claim of broad rich-editor behavior.

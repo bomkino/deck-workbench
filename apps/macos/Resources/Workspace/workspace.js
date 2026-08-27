@@ -48,9 +48,13 @@ let interfaceScale = 1
 let artboardZoom = 0.35
 
 function richText(value) {
+  const normalized = value.replace(/\r\n?/g, '\n')
   return {
     type: 'doc',
-    content: [{ type: 'paragraph', content: [{ type: 'text', text: value }] }],
+    content: normalized.split('\n').map((text) => ({
+      type: 'paragraph',
+      content: text.length > 0 ? [{ type: 'text', text }] : [],
+    })),
   }
 }
 

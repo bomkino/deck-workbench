@@ -59,7 +59,7 @@ ${commits}
 
 | Seam | Scenario | Independent expectation | Result |
 |---|---|---|---|
-| Deck kernel | prepare/commit/query/undo/redo plus stale and invalid rejection | Prepare is private; rejection is atomic; history is semantic | Pass: 17 portable scenario tests |
+| Deck kernel | prepare/commit/query/undo/redo plus stale and invalid rejection | Prepare is private; rejection is atomic; history is semantic | Pass: 18 portable scenario tests |
 | Document store | append/fsync/hash/replay/checkpoint plus corrupt/unsupported probes | Acknowledgement follows durable append; replay is deterministic | Pass: restart replay reached revision ${createResult.journalReplayRevision} |
 | Typed bridge | generated Swift/JavaScript parity and malformed method | Only named methods cross the WebView boundary | Pass |
 | Scale model | Interface Scale 1.25 and artboard zoom 0.5 | Chrome scale does not alter slide/export geometry | Pass |
@@ -69,7 +69,7 @@ ${commits}
 
 | Command | Exit | Key result / artifact |
 |---|---:|---|
-| \`npm test\` | 0 | 17/17 causal tests passed |
+| \`npm test\` | 0 | 18/18 causal tests passed |
 | \`node scripts/verify-source.mjs\` | 0 | Source contract passed |
 | \`scripts/build-macos.sh\` | 0 | arm64 app built and ad-hoc signed |
 | \`scripts/verify-packaged-macos.sh\` | 0 | ZIP extracted; signature, architecture and exact journey passed |
@@ -119,14 +119,14 @@ No third-party production runtime dependency is present.
 
 ## Next dispatchable ticket
 
-- Ticket: \`DW-W01-R01 — Paragraph-preserving Story fields\`
-- Exact user journey: edit a multiline body field, save/close/reopen, preserve paragraph boundaries, then undo/redo through the same command seam
-- Dependency/gate: safe reversible kernel/workspace extension; no editor dependency, Garuda or export expansion required
+- Ticket: \`DW-W01-R02 — Story field keyboard semantics\`
+- Exact user journey: edit and commit a Story field without leaving the keyboard, retain focus after durable acknowledgement, then undo/redo from the same field
+- Dependency/gate: safe reversible workspace behavior; no editor dependency, Garuda or export expansion required
 `
 
 writeFileSync(join(evidence, 'DW-T00-EVIDENCE-RECEIPT.md'), receipt)
 
-const storyReceipt = `# DW-W01 Story structure slice evidence receipt
+const storyReceipt = `# DW-W01 Story document slice evidence receipt
 
 ## Identity
 
@@ -134,24 +134,24 @@ const storyReceipt = `# DW-W01 Story structure slice evidence receipt
 - Branch: \`${branch}\`
 - DW-T00 baseline SHA: \`0e434c508088a5150b20c2d8aef92d830fa17b7c\`
 - Ending SHA: \`${endingSHA}\`
-- Slice: Deck/Section/Slide structure, ordering and explicit reversible Story removal
+- Slice: Deck/Section/Slide structure, explicit reversible removal and paragraph-preserving Story fields
 - Date: ${new Date().toISOString()}
 
 ## User-observable slice
 
-The extracted macOS app creates and reorders a second Section and Slide, adds then removes a role-keyed Content Block, removes one Slide and its now-empty Section, repairs an injected stale manifest head, explicitly closes, reopens with one Section/Slide, undoes all three removals to restore exact identities/order/content, redoes all three, and checkpoints revision ${storyReopenResult.redoSectionRevision}.
+The extracted macOS app creates and reorders a second Section and Slide, updates a body through the real textarea converter to three semantic paragraphs including an empty middle paragraph, removes the Content/Slide/empty Section, repairs an injected stale manifest head, explicitly closes, reopens, undoes the removals, verifies exact paragraph JSON, undoes/redoes the paragraph update, redoes the removals, and checkpoints revision ${storyReopenResult.redoSectionRevision}.
 
 ## Public seams exercised
 
 | Seam | Scenario | Result |
 |---|---|---|
-| Kernel | Story add/move/rename/intent plus \`content.remove\`, \`slide.remove\` and empty-only \`section.remove\` prepare/commit and atomic rejection | Pass |
-| Story projection | Ordered Sections/Slides and canonical headline summaries | Pass |
-| Typed bridge | Eleven packaged Story commands plus query/undo/redo from WebView | Pass |
-| Journal/replay | Eleven commands, three undos and three redos in one hash chain; restart replay at revision ${storyCreateResult.journalReplayRevision} | Pass |
+| Kernel | Story add/move/rename/intent, paragraph-preserving \`content.update\`, explicit removals, prepare/commit and atomic rejection | Pass |
+| Story projection | Ordered Sections/Slides plus exact rich-text value and LF-joined plain text | Pass |
+| Typed bridge | Twelve packaged Story commands plus query/four undo/four redo operations from WebView | Pass |
+| Journal/replay | Twelve commands, four undos and four redos in one hash chain; restart replay at revision ${storyCreateResult.journalReplayRevision} | Pass |
 | Crash recovery | Stale manifest head with valid durable journal tail | Pass: repaired and replayed to revision ${storyCreateResult.crashRecoveryRevision} |
 | Session lifecycle | Checkpoint, host close, cleared projection, new-process reopen | Pass |
-| Packaged app | Native create → Content/Slide/empty-Section removal → save/quit → reopen → three undos restore exact identity/order → three redos | Pass |
+| Packaged app | Native create → multiline paragraph edit → removals → save/quit → reopen → exact paragraph and four-undo/four-redo proof | Pass |
 
 ## Packaged artifact
 
@@ -161,20 +161,20 @@ The extracted macOS app creates and reorders a second Section and Slide, adds th
 - Embedded commit: \`${endingSHA}\`
 - Code-sign, ZIP and extracted verification: pass
 - Create revision: ${storyCreateResult.revision}
-- Reopen / final undo / final redo revisions: ${storyReopenResult.reopenedRevision} / ${storyReopenResult.undoContentRevision} / ${storyReopenResult.redoSectionRevision}
+- Reopen / paragraph undo / final redo revisions: ${storyReopenResult.reopenedRevision} / ${storyReopenResult.undoParagraphUpdateRevision} / ${storyReopenResult.redoSectionRevision}
 
 ## Honest status
 
 - Status: **Packaged macOS DW-W01 structural slice**, not full integrated DW-W01
-- Supported claims: native Story structure creation; stable-ID ordering; Deck/Section rename; Slide intent; role-keyed Content add/update/remove; explicit one-Slide and empty-Section removal UI; last-Slide/last-Section and non-empty-Section rejection; stable identity/order restoration after reopen; durable replay and stale-head repair
-- Unsupported claims: cascading deletion, multi-paragraph rich editor behavior, broader crash-injection matrix, Garuda parity, production editor behavior
+- Supported claims: native Story structure creation; stable-ID ordering; Deck/Section rename; Slide intent; role-keyed Content add/update/remove; lossless textarea-to-paragraph mapping including blank paragraphs; explicit one-Slide and empty-Section removal UI; stable identity/order/value restoration after reopen; durable replay and stale-head repair
+- Unsupported claims: cascading deletion, marks/lists/headings/structured paste, broader crash-injection matrix, Garuda parity, production rich-editor behavior
 - Scope boundary: no Garuda shell, editor dependency or export expansion was introduced
 
 ## Next dispatchable ticket
 
-- Ticket: \`DW-W01-R01 — Paragraph-preserving Story fields\`
-- Exact user journey: edit a multiline body field, save/close/reopen, preserve paragraph boundaries, then undo/redo through the same command seam.
-- Gate: safe reversible extension. No editor dependency, Garuda or export expansion is needed.
+- Ticket: \`DW-W01-R02 — Story field keyboard semantics\`
+- Exact user journey: edit and commit a Story field without leaving the keyboard, retain focus after durable acknowledgement, then undo/redo from the same field.
+- Gate: safe reversible workspace extension. No editor dependency, Garuda or export expansion is needed.
 `
 
 writeFileSync(join(evidence, 'DW-W01-STORY-SLICE-RECEIPT.md'), storyReceipt)

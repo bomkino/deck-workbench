@@ -58,3 +58,15 @@ filesystem power, generic IPC, AI, telemetry or network path enters this slice.
 
 No second mutation path or new dependency enters D01-B. Clean Linux and macOS jobs
 remain required before packaged status.
+
+## DW-W01-R01 addendum
+
+| Severity | Finding | Resolution |
+|---|---|---|
+| Material | The textarea caller previously wrapped embedded newlines inside one text node, losing semantic paragraph boundaries. | Normalize CRLF/CR to LF and emit one canonical paragraph per line; preserve blank lines as empty paragraphs. |
+| Material | Plain-text equality alone could hide a changed rich-text tree. | Kernel and packaged assertions compare the exact paragraph array, including the empty middle paragraph. |
+| Material | Reopen plus removal undo would not prove the `content.update` history entry itself. | The packaged journey performs a fourth undo/redo around the paragraph update and verifies both original and multiline values. |
+| Advisory | Full rich-editor schemas create dependency and normalization policy surface. | Keep R01 to paragraph/text nodes; marks, lists, structured paste and editor dependencies remain unsupported. |
+
+R01 reuses `content.update`, typed bridge, append/fsync-before-acknowledgement and
+semantic history. It adds no dependency or privileged renderer capability.
