@@ -13,6 +13,10 @@ test('Editorial Spine exposes selected, shortcut, busy and live-status semantics
   assert.match(workspace, /setAttribute\('aria-busy', 'true'\)/)
   assert.match(workspace, /setAttribute\('aria-current', 'page'\)/)
   assert.equal(workspace.match(/setAttribute\('aria-keyshortcuts', 'Alt\+ArrowUp Alt\+ArrowDown'\)/g)?.length, 2)
+  assert.match(workspace, /move\.dataset\.direction = 'up'/)
+  assert.match(workspace, /move\.dataset\.direction = 'down'/)
+  assert.match(workspace, /Move Slide \$\{slideNumber\} down/)
+  assert.match(workspace, /Move \$\{section\.title\} down/)
   assert.equal(
     workspace.match(/renderProjection\(projection\)\n    elements\.saveState\.textContent = `\$\{error\.name \?\? 'Error'\}: \$\{error\.message\}`/g)?.length,
     3,

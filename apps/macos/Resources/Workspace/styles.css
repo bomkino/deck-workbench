@@ -87,7 +87,7 @@ button:disabled { color: var(--faint); }
 .slide-row span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .slide-row.selected { border-color: var(--accent); }
 .slide-number { color: var(--faint); font-variant-numeric: tabular-nums; }
-.move-up { min-height: 2rem; padding-inline: 0.45rem; color: var(--muted); }
+.move-sequence { min-height: 2rem; padding-inline: 0.45rem; color: var(--muted); }
 .remove-structure { min-height: 2rem; padding-inline: 0.45rem; color: var(--muted); }
 
 .panel-heading { display: flex; justify-content: space-between; align-items: start; gap: 1rem; min-height: 3.2rem; }

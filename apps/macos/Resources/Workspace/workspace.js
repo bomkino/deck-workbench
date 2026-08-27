@@ -114,6 +114,13 @@ function sectionMovePlan(story, sectionId, direction) {
   return { sectionId, afterSectionId: story.sections[index + 1].id }
 }
 
+function sequenceControlPlans(story, sectionId, slideId = null) {
+  const plan = slideId
+    ? (direction) => slideMovePlan(story, sectionId, slideId, direction)
+    : (direction) => sectionMovePlan(story, sectionId, direction)
+  return Object.freeze({ up: plan('up'), down: plan('down') })
+}
+
 function setBusy(label) {
   elements.workbench.setAttribute('aria-busy', 'true')
   elements.saveState.textContent = label
@@ -225,7 +232,7 @@ function renderSequence(next) {
   storyDocument = next
   elements.sequenceList.replaceChildren()
   let slideNumber = 1
-  next.sections.forEach((section, sectionIndex) => {
+  next.sections.forEach((section) => {
     const sectionRow = document.createElement('div')
     sectionRow.className = 'section-row'
     sectionRow.tabIndex = 0
@@ -246,13 +253,25 @@ function renderSequence(next) {
     rename.setAttribute('aria-label', `Rename ${section.title}`)
     rename.addEventListener('click', () => renameSection(section.id, section.title))
     tools.append(rename)
-    if (sectionIndex > 0) {
+    const sectionPlans = sequenceControlPlans(next, section.id)
+    if (sectionPlans.up) {
       const move = document.createElement('button')
       move.type = 'button'
-      move.className = 'move-up'
+      move.className = 'move-sequence'
       move.textContent = '↑'
+      move.dataset.direction = 'up'
       move.setAttribute('aria-label', `Move ${section.title} up`)
-      move.addEventListener('click', () => moveSectionUp(section.id))
+      move.addEventListener('click', () => moveSection(section.id, 'up'))
+      tools.append(move)
+    }
+    if (sectionPlans.down) {
+      const move = document.createElement('button')
+      move.type = 'button'
+      move.className = 'move-sequence'
+      move.textContent = '↓'
+      move.dataset.direction = 'down'
+      move.setAttribute('aria-label', `Move ${section.title} down`)
+      move.addEventListener('click', () => moveSection(section.id, 'down'))
       tools.append(move)
     }
     if (section.slides.length === 0 && next.sections.length > 1) {
@@ -267,7 +286,7 @@ function renderSequence(next) {
     sectionRow.append(tools)
     elements.sequenceList.append(sectionRow)
 
-    section.slides.forEach((slide, slideIndex) => {
+    section.slides.forEach((slide) => {
       const entry = document.createElement('div')
       entry.className = 'slide-entry'
       const select = document.createElement('button')
@@ -287,13 +306,25 @@ function renderSequence(next) {
       entry.append(select)
       const slideTools = document.createElement('span')
       slideTools.className = 'slide-tools'
-      if (slideIndex > 0) {
+      const slidePlans = sequenceControlPlans(next, section.id, slide.id)
+      if (slidePlans.up) {
         const move = document.createElement('button')
         move.type = 'button'
-        move.className = 'move-up'
+        move.className = 'move-sequence'
         move.textContent = '↑'
+        move.dataset.direction = 'up'
         move.setAttribute('aria-label', `Move Slide ${slideNumber} up`)
-        move.addEventListener('click', () => moveSlideUp(section.id, slide.id))
+        move.addEventListener('click', () => moveSlide(section.id, slide.id, 'up'))
+        slideTools.append(move)
+      }
+      if (slidePlans.down) {
+        const move = document.createElement('button')
+        move.type = 'button'
+        move.className = 'move-sequence'
+        move.textContent = '↓'
+        move.dataset.direction = 'down'
+        move.setAttribute('aria-label', `Move Slide ${slideNumber} down`)
+        move.addEventListener('click', () => moveSlide(section.id, slide.id, 'down'))
         slideTools.append(move)
       }
       const totalSlides = next.sections.reduce((sum, candidate) => sum + candidate.slides.length, 0)
@@ -385,13 +416,12 @@ async function addSlide() {
   }, slideId)
 }
 
-async function moveSectionUp(sectionId) {
+async function moveSection(sectionId, direction) {
   if (!storyDocument) return
-  const index = storyDocument.sections.findIndex((section) => section.id === sectionId)
-  if (index <= 0) return
-  await executeStructural('section.move', {
-    sectionId,
-    afterSectionId: index > 1 ? storyDocument.sections[index - 2].id : null,
+  const payload = sectionMovePlan(storyDocument, sectionId, direction)
+  if (!payload) return
+  await executeStructural('section.move', payload, projection?.slide.id, {
+    sequenceFocusSectionId: sectionId,
   })
 }
 
@@ -420,16 +450,13 @@ async function removeSection(sectionId) {
   await executeStructural('section.remove', { sectionId }, projection.slide.id)
 }
 
-async function moveSlideUp(sectionId, slideId) {
+async function moveSlide(sectionId, slideId, direction) {
   if (!storyDocument) return
-  const section = storyDocument.sections.find((candidate) => candidate.id === sectionId)
-  const index = section?.slides.findIndex((slide) => slide.id === slideId) ?? -1
-  if (index <= 0) return
-  await executeStructural('slide.move', {
-    slideId,
-    targetSectionId: sectionId,
-    afterSlideId: index > 1 ? section.slides[index - 2].id : null,
-  }, slideId)
+  const payload = slideMovePlan(storyDocument, sectionId, slideId, direction)
+  if (!payload) return
+  await executeStructural('slide.move', payload, projection?.slide.id, {
+    sequenceFocusSlideId: slideId,
+  })
 }
 
 function moveSlideByKeyboard(event, sectionId, slideId) {

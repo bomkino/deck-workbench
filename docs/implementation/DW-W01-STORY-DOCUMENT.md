@@ -243,3 +243,28 @@ The packaged tracer verifies the actual bundled DOM attributes. This supports a
 VoiceOver announcements, Voice Control, Switch Control, Increase Contrast and
 large-scale clipping remain an interactive macOS acceptance gate documented in
 `docs/evidence/DW-W01-R05-ACCESSIBILITY-AUDIT.md`.
+
+## DW-W01-R06 — Bidirectional Sequence controls
+
+Visible Sequence controls now expose every valid Up and Down move for Sections and
+Slides. They call the same stable-ID movement planners and dispatch the existing
+`section.move` / `slide.move` commands; no DOM index crosses the bridge and no
+pointer-only mutation path exists.
+
+At a Section boundary, a Slide control moves to the preceding Section's end or the
+following Section's start exactly like Option–Arrow. Boundary directions with no
+valid move are omitted. After acknowledgement and Sequence rerender, focus moves to
+the same Section or Slide identity while the selected Slide projection is preserved.
+
+Exact packaged extension:
+
+```text
+click Slide Down, then Up
+→ verify stable Slide order and focus after each durable acknowledgement
+click Section Down, then Up
+→ verify stable Section order and focus after each durable acknowledgement
+save, close and reopen
+→ undo and redo all four visible-control moves through the same history seam
+```
+
+Drag-and-drop, multi-selection and arbitrary pointer geometry remain deferred.

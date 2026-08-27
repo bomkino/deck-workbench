@@ -59,7 +59,7 @@ ${commits}
 
 | Seam | Scenario | Independent expectation | Result |
 |---|---|---|---|
-| Deck kernel/workspace | semantic commands plus Story/Sequence shortcut and accessibility policy, stale and invalid rejection | Prepare is private; keyboard shares commands; rejection is atomic | Pass: 24 portable scenario tests |
+| Deck kernel/workspace | semantic commands plus Story/Sequence keyboard and visible-control policy, stale and invalid rejection | Prepare is private; all callers share commands; rejection is atomic | Pass: 25 portable scenario tests |
 | Document store | append/fsync/hash/replay/checkpoint plus corrupt/unsupported probes | Acknowledgement follows durable append; replay is deterministic | Pass: restart replay reached revision ${createResult.journalReplayRevision} |
 | Typed bridge | generated Swift/JavaScript parity and malformed method | Only named methods cross the WebView boundary | Pass |
 | Scale model | Interface Scale 1.25 and artboard zoom 0.5 | Chrome scale does not alter slide/export geometry | Pass |
@@ -69,7 +69,7 @@ ${commits}
 
 | Command | Exit | Key result / artifact |
 |---|---:|---|
-| \`npm test\` | 0 | 24/24 causal tests passed |
+| \`npm test\` | 0 | 25/25 causal tests passed |
 | \`node scripts/verify-source.mjs\` | 0 | Source contract passed |
 | \`scripts/build-macos.sh\` | 0 | arm64 app built and ad-hoc signed |
 | \`scripts/verify-packaged-macos.sh\` | 0 | ZIP extracted; signature, architecture and exact journey passed |
@@ -139,7 +139,7 @@ const storyReceipt = `# DW-W01 Story document slice evidence receipt
 
 ## User-observable slice
 
-The extracted macOS app creates and reorders a second Section and Slide, uses Command–Enter on the real body textarea to commit three semantic paragraphs including an empty middle paragraph, preserves focus, leaves IME composition and dirty local undo untouched, routes clean-field keyboard undo/redo through durable history, moves focused Slides across Section boundaries and focused Sections through Sequence with Option–Arrow, removes the Content/Slide/empty Section, repairs an injected stale manifest head, closes/reopens, repeats every semantic undo/redo in exact order, and checkpoints revision ${storyReopenResult.redoSectionRevision}.
+The extracted macOS app creates and reorders a second Section and Slide, uses Command–Enter on the real body textarea to commit three semantic paragraphs including an empty middle paragraph, preserves focus, leaves IME composition and dirty local undo untouched, routes clean-field keyboard undo/redo through durable history, moves focused Slides and Sections with both Option–Arrow and visible bidirectional controls, removes the Content/Slide/empty Section, repairs an injected stale manifest head, closes/reopens, repeats every semantic undo/redo in exact order, and checkpoints revision ${storyReopenResult.redoSectionRevision}.
 
 ## Public seams exercised
 
@@ -148,10 +148,10 @@ The extracted macOS app creates and reorders a second Section and Slide, uses Co
 | Kernel | Story add/move/rename/intent, paragraph-preserving \`content.update\`, explicit removals, prepare/commit and atomic rejection | Pass |
 | Story projection | Ordered Sections/Slides plus exact rich-text value and LF-joined plain text | Pass |
 | Typed bridge | Keyboard \`content.update\`, \`slide.move\` and \`section.move\`, queries and history plus all structural commands from WebView | Pass |
-| Journal/replay | Sixteen commands, nine undos and nine redos in one hash chain; restart replay at revision ${storyCreateResult.journalReplayRevision} | Pass |
+| Journal/replay | Twenty commands, thirteen undos and thirteen redos in one hash chain; restart replay at revision ${storyCreateResult.journalReplayRevision} | Pass |
 | Crash recovery | Stale manifest head with valid durable journal tail | Pass: repaired and replayed to revision ${storyCreateResult.crashRecoveryRevision} |
 | Session lifecycle | Checkpoint, host close, cleared projection, new-process reopen | Pass |
-| Packaged app | Native create → keyboard paragraph commit/history → Slide/Section keyboard reorder/focus → removals → save/quit → reopen → exact semantic history proof | Pass |
+| Packaged app | Native create → keyboard paragraph commit/history → keyboard and visible-control Slide/Section reorder/focus → removals → save/quit → reopen → exact semantic history proof | Pass |
 | Accessibility semantics | Current Slide, reorder shortcut, busy state, live status and concrete labels in bundled DOM/shell | Pass: source and packaged DOM; interactive assistive-technology acceptance gated |
 
 ## Packaged artifact
@@ -167,7 +167,7 @@ The extracted macOS app creates and reorders a second Section and Slide, uses Co
 ## Honest status
 
 - Status: **Packaged macOS DW-W01 structural slice with source-ready accessibility semantics**, not full integrated DW-W01
-- Supported claims: native Story structure creation; stable-ID ordering; Deck/Section rename; Slide intent; role-keyed Content add/update/remove; lossless textarea-to-paragraph mapping; IME-safe keyboard commit policy; clean-field durable keyboard undo/redo; stable-ID Story and Sequence focus restoration; Option–Arrow Slide and Section reorder; packaged current/shortcut/busy/live-status accessibility semantics; explicit removal UI; semantic restoration after reopen; durable replay and stale-head repair
+- Supported claims: native Story structure creation; stable-ID ordering; Deck/Section rename; Slide intent; role-keyed Content add/update/remove; lossless textarea-to-paragraph mapping; IME-safe keyboard commit policy; clean-field durable keyboard undo/redo; stable-ID Story and Sequence focus restoration; Option–Arrow and visible bidirectional Slide/Section reorder; packaged current/shortcut/busy/live-status accessibility semantics; explicit removal UI; semantic restoration after reopen; durable replay and stale-head repair
 - Unsupported claims: hardware keyboard acceptance, VoiceOver, cascading deletion, marks/lists/headings/structured paste, broader crash-injection matrix, Garuda parity, production rich-editor behavior
 - Scope boundary: no Garuda shell, editor dependency or export expansion was introduced
 

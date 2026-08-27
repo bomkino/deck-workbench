@@ -118,3 +118,16 @@ R04 changes no command vocabulary, dependency, bridge authority or deletion poli
 
 The packaged tracer queries the real bundled WebKit DOM. No accessibility-only
 mutation path, bridge method or production dependency is introduced.
+
+## DW-W01-R06 addendum
+
+| Severity | Finding | Resolution |
+|---|---|---|
+| Material | Pointer users could move a Section or Slide only upward, while the keyboard path supported both directions and cross-Section movement. | Render visible Up and Down controls for every valid planner result. |
+| Material | Reimplementing button movement from DOM order would create a divergent identity seam. | Both visible controls and Option–Arrow call the same stable-ID `sectionMovePlan` / `slideMovePlan` functions. |
+| Material | Replacing Sequence after a click could strand focus or change the selected Slide merely because a reorder tool was used. | Requery projections, preserve selected Slide ID and restore Sequence focus by the moved entity ID. |
+| Gate | Visible directional controls are not drag-and-drop or a multi-selection model. | Keep both explicitly deferred; R06 proves only complete single-item directional control. |
+
+R06 adds no command, bridge method, dependency, renderer authority or document
+schema. The packaged journey must click all four controls and replay their durable
+history after reopen.
