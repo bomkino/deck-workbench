@@ -1,0 +1,41 @@
+name: Workbench execute finalizer
+
+on:
+  push:
+    branches:
+      - codex/workbench-fix
+
+permissions:
+  contents: write
+
+concurrency:
+  group: workbench-execute-finalizer
+  cancel-in-progress: true
+
+jobs:
+  finalize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          ref: codex/workbench-fix
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Apply and stage the final tree
+        run: |
+          python3 scripts/apply-workbench-fix-v7.py
+          git add -A
+          git diff --cached --check
+          test -n "$(git diff --cached --name-only)"
+      - name: Prove the final staged tree
+        run: npm run verify
+      - name: Publish the proven tree
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m "fix: harden Workbench integrity and repository gates"
+          git push origin HEAD:codex/workbench-fix
