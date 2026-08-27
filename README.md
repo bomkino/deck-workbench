@@ -62,7 +62,8 @@ The bounded local CLI and privacy-safe support report adapters are documented in
 
 - Apple-Silicon macOS 26+ app using SwiftUI and WebKit.
 - Garuda/Arch/KDE Linux app using Electron; Ubuntu/X11 package journey automated,
-  target Garuda acceptance still required.
+  while target Garuda acceptance remains unverified and outside the `main`
+  promotion gate.
 
 ## Documentation
 
