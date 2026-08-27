@@ -155,3 +155,24 @@ add one single-paragraph body
 
 This slice does not add marks, lists, headings, HTML, structured paste, editor
 dependencies or a second mutation path.
+
+## DW-W01-R02 — Story field keyboard semantics
+
+Story fields use macOS primary-modifier conventions without stealing local text
+editing:
+
+- Command–Enter commits the focused Story field through `content.update` with
+  `source.kind = keyboard`;
+- Control–Enter provides parity for the shared workspace without changing Mac
+  semantics;
+- composing input never commits;
+- Command–Z on a dirty field remains browser-native text undo;
+- Command–Z / Command–Shift–Z on a clean field use durable Deck undo/redo;
+- after acknowledgement and projection rerender, focus returns to the field found
+  by stable Content Block identity, not to a discarded DOM node.
+
+The packaged journey dispatches actual cancelable `KeyboardEvent` instances to the
+body textarea, proves composition and dirty-undo are not intercepted, commits the
+multiline value, undoes/redoes it, and verifies focus after all three durable
+operations. Button and keyboard callers still share the same typed bridge and
+kernel history seam.

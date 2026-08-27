@@ -58,6 +58,13 @@ function richText(value) {
   }
 }
 
+function storyShortcut(event, dirty) {
+  if (event.isComposing || event.altKey || !(event.metaKey || event.ctrlKey)) return null
+  if (event.key === 'Enter') return 'commit'
+  if (event.key.toLowerCase() !== 'z' || dirty) return null
+  return event.shiftKey ? 'redo' : 'undo'
+}
+
 function setBusy(label) {
   elements.saveState.textContent = label
   elements.commit.disabled = true
@@ -131,6 +138,9 @@ function renderAdditionalContent(blocks) {
     const textarea = document.createElement('textarea')
     textarea.value = block.plainText
     textarea.rows = 4
+    textarea.dataset.blockId = block.id
+    textarea.setAttribute('aria-describedby', 'save-state')
+    textarea.addEventListener('keydown', (event) => handleStoryFieldKeydown(event, block.id, textarea))
     const footer = document.createElement('footer')
     const key = document.createElement('span')
     key.textContent = block.semanticKey
@@ -362,8 +372,27 @@ async function commitHeadline() {
   await updateContentBlock(projection.headline.id, elements.headline.value)
 }
 
-async function updateContentBlock(blockId, value) {
+function storyField(blockId) {
+  if (projection?.headline.id === blockId) return elements.headline
+  return [...elements.additionalContent.querySelectorAll('textarea')]
+    .find((textarea) => textarea.dataset.blockId === blockId)
+}
+
+function projectedPlainText(blockId) {
+  return projection?.contentBlocks.find((block) => block.id === blockId)?.plainText
+}
+
+function restoreStoryFocus(blockId) {
+  const field = storyField(blockId)
+  if (!field) return false
+  field.focus()
+  field.setSelectionRange(field.value.length, field.value.length)
+  return document.activeElement === field
+}
+
+async function updateContentBlock(blockId, value, options = {}) {
   if (!projection) return
+  const { restoreFocus = false, sourceKind = 'ui' } = options
   setBusy('Validating and writing journal…')
   try {
     const result = await window.deckBridge.execute({
@@ -376,14 +405,27 @@ async function updateContentBlock(blockId, value) {
           blockId,
           value: richText(value),
         },
-        source: { kind: 'ui', label: 'Story content' },
+        source: { kind: sourceKind, label: 'Story content' },
         issuedAt: new Date().toISOString(),
       },
     })
     renderProjection(result.projection)
+    if (restoreFocus) restoreStoryFocus(blockId)
   } catch (error) {
     elements.saveState.textContent = `${error.name ?? 'Error'}: ${error.message}`
     renderProjection(projection)
+    if (restoreFocus) restoreStoryFocus(blockId)
+  }
+}
+
+function handleStoryFieldKeydown(event, blockId, field) {
+  const action = storyShortcut(event, field.value !== projectedPlainText(blockId))
+  if (!action) return
+  event.preventDefault()
+  if (action === 'commit') {
+    void updateContentBlock(blockId, field.value, { restoreFocus: true, sourceKind: 'keyboard' })
+  } else {
+    void historyAction(action, blockId)
   }
 }
 
@@ -415,15 +457,17 @@ async function removeContentBlock(blockId) {
   }, projection.slide.id)
 }
 
-async function historyAction(method) {
+async function historyAction(method, restoreFocusBlockId = null) {
   if (!projection) return
   setBusy(method === 'undo' ? 'Writing undo…' : 'Writing redo…')
   try {
     const result = await window.deckBridge[method]()
     renderProjection(result.projection)
+    if (restoreFocusBlockId) restoreStoryFocus(restoreFocusBlockId)
   } catch (error) {
     elements.saveState.textContent = `${error.name ?? 'Error'}: ${error.message}`
     renderProjection(projection)
+    if (restoreFocusBlockId) restoreStoryFocus(restoreFocusBlockId)
   }
 }
 
@@ -433,7 +477,8 @@ elements.addBody.addEventListener('click', addBody)
 elements.addSection.addEventListener('click', addSection)
 elements.addSlide.addEventListener('click', addSlide)
 elements.headline.addEventListener('keydown', (event) => {
-  if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') commitHeadline()
+  if (!projection) return
+  handleStoryFieldKeydown(event, projection.headline.id, elements.headline)
 })
 elements.undo.addEventListener('click', () => historyAction('undo'))
 elements.redo.addEventListener('click', () => historyAction('redo'))

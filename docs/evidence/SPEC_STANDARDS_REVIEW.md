@@ -70,3 +70,15 @@ remain required before packaged status.
 
 R01 reuses `content.update`, typed bridge, append/fsync-before-acknowledgement and
 semantic history. It adds no dependency or privileged renderer capability.
+
+## DW-W01-R02 addendum
+
+| Severity | Finding | Resolution |
+|---|---|---|
+| Blocking | Replacing a textarea during projection rerender discarded keyboard focus after commit/history. | Reacquire the field by stable Content Block ID after durable acknowledgement, then restore focus and caret. |
+| Material | Capturing Command–Z while a field contains uncommitted text would erase the user's local editing undo seam. | Intercept Deck undo/redo only when the field value equals the acknowledged projection. |
+| Material | Command–Enter during input-method composition could commit an incomplete composition. | Composing keyboard events are ignored and remain uncancelled. |
+| Material | A keyboard handler could masquerade as a separate mutation path. | It dispatches the existing typed `content.update` command and records `source.kind = keyboard`; history still uses bridge undo/redo. |
+
+The packaged WebKit journey checks cancelation, revision, source kind, content and
+focus. Hardware key routing and VoiceOver remain later acceptance surfaces.

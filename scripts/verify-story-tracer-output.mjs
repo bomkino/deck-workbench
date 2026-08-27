@@ -14,15 +14,18 @@ const records = journalText.trim().split('\n').map(JSON.parse)
 assert.equal(manifest.format, 'pitchdog.deck-package')
 assert.equal(manifest.schemaVersion, 1)
 assert.equal(checkpoint.format, 'pitchdog.deck-checkpoint')
-assert.equal(checkpoint.revision, 20)
-assert.equal(records.length, 20)
-assert.deepEqual(records.map((record) => record.revision), Array.from({ length: 20 }, (_, index) => index + 1))
+assert.equal(checkpoint.revision, 22)
+assert.equal(records.length, 22)
+assert.deepEqual(records.map((record) => record.revision), Array.from({ length: 22 }, (_, index) => index + 1))
 assert.deepEqual(records.map((record) => record.operation), [
-  ...Array(12).fill('command'),
+  ...Array(9).fill('command'),
+  'undo', 'redo',
+  ...Array(3).fill('command'),
   'undo', 'undo', 'undo', 'undo',
   'redo', 'redo', 'redo', 'redo',
 ])
-assert.deepEqual(records.slice(0, 12).map((record) => record.command.type), [
+const commandRecords = records.filter((record) => record.operation === 'command')
+assert.deepEqual(commandRecords.map((record) => record.command.type), [
   'section.add',
   'slide.add',
   'section.move',
@@ -36,36 +39,45 @@ assert.deepEqual(records.slice(0, 12).map((record) => record.command.type), [
   'slide.remove',
   'section.remove',
 ])
+assert.equal(commandRecords[8].command.source.kind, 'keyboard')
+assert.equal(records[9].operation, 'undo')
+assert.equal(records[10].operation, 'redo')
 assert.equal(records[0].previousHash, '0'.repeat(64))
 for (let index = 1; index < records.length; index += 1) {
   assert.equal(records[index].previousHash, records[index - 1].recordHash)
 }
 assert.equal(manifest.journalHeadHash, records.at(-1).recordHash)
-assert.equal(createResult.revision, 12)
-assert.equal(createResult.journalReplayRevision, 12)
+assert.equal(createResult.revision, 14)
+assert.equal(createResult.journalReplayRevision, 14)
 assert.equal(createResult.deckTitle, 'The Hill')
 assert.equal(createResult.renamedSectionTitle, 'Act II')
 assert.equal(createResult.slideIntent, 'editorial-body')
 assert.equal(createResult.bodyOriginalText, 'A body block that survives design.')
 assert.equal(createResult.bodyText, 'A body block.\n\nThat survives design.')
 assert.deepEqual(createResult.bodyParagraphs, ['A body block.', '', 'That survives design.'])
+assert.equal(createResult.keyboardCommitRevision, 9)
+assert.equal(createResult.keyboardUndoRevision, 10)
+assert.equal(createResult.keyboardRedoRevision, 11)
+assert.equal(createResult.keyboardFocusRetained, true)
+assert.equal(createResult.compositionCommitIgnored, true)
+assert.equal(createResult.dirtyUndoReservedForText, true)
 assert.equal(createResult.bodyRemoved, true)
 assert.equal(createResult.structuralRemoval, true)
 assert.equal(createResult.removedSectionId, createResult.sectionIds[0])
 assert.equal(createResult.removedSlideId, createResult.openingSlideIds[1])
-assert.equal(createResult.crashRecoveryRevision, 12)
+assert.equal(createResult.crashRecoveryRevision, 14)
 assert.equal(createResult.closedBeforeReopen, true)
 assert.equal(createResult.sectionIds.length, 2)
 assert.equal(createResult.openingSlideIds.length, 2)
-assert.equal(reopenResult.reopenedRevision, 12)
-assert.equal(reopenResult.undoSectionRevision, 13)
-assert.equal(reopenResult.undoSlideRevision, 14)
-assert.equal(reopenResult.undoContentRevision, 15)
-assert.equal(reopenResult.undoParagraphUpdateRevision, 16)
-assert.equal(reopenResult.redoParagraphUpdateRevision, 17)
-assert.equal(reopenResult.redoContentRevision, 18)
-assert.equal(reopenResult.redoSlideRevision, 19)
-assert.equal(reopenResult.redoSectionRevision, 20)
+assert.equal(reopenResult.reopenedRevision, 14)
+assert.equal(reopenResult.undoSectionRevision, 15)
+assert.equal(reopenResult.undoSlideRevision, 16)
+assert.equal(reopenResult.undoContentRevision, 17)
+assert.equal(reopenResult.undoParagraphUpdateRevision, 18)
+assert.equal(reopenResult.redoParagraphUpdateRevision, 19)
+assert.equal(reopenResult.redoContentRevision, 20)
+assert.equal(reopenResult.redoSlideRevision, 21)
+assert.equal(reopenResult.redoSectionRevision, 22)
 assert.equal(reopenResult.deckTitle, 'The Hill')
 assert.equal(reopenResult.renamedSectionTitle, 'Act II')
 assert.equal(reopenResult.slideIntent, 'editorial-body')
@@ -73,6 +85,7 @@ assert.equal(reopenResult.bodyOriginalText, createResult.bodyOriginalText)
 assert.equal(reopenResult.bodyText, createResult.bodyText)
 assert.deepEqual(reopenResult.bodyParagraphs, createResult.bodyParagraphs)
 assert.equal(reopenResult.paragraphsPreservedAfterReopen, true)
+assert.equal(reopenResult.keyboardFocusRetained, true)
 assert.equal(reopenResult.bodyBlockId, createResult.bodyBlockId)
 assert.equal(reopenResult.bodyRemovedAfterRedo, true)
 assert.equal(reopenResult.structuralRemovalAfterRedo, true)
@@ -117,4 +130,4 @@ assert.deepEqual(
   [createResult.bodyOriginalText],
 )
 
-console.log('Paragraph-preserving Story edit, explicit removal, replay and stable undo/redo verified')
+console.log('Keyboard-complete paragraph Story edit, explicit removal, replay and stable undo/redo verified')

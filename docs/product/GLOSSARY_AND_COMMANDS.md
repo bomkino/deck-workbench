@@ -143,3 +143,8 @@ rich-text JSON before dispatching `content.update`. Every line becomes one
 `paragraph`; a blank line becomes an empty `paragraph`. The projection joins those
 paragraphs with LF for textarea display. This is a lossless paragraph boundary
 mapping, not a claim of broad rich-editor behavior.
+
+Keyboard commits use the same `content.update` envelope with
+`source.kind = keyboard`. Keyboard undo/redo remains the same durable history
+operation; no keyboard-only mutation vocabulary exists. Local uncommitted text undo
+stays inside the focused editor until its value matches the acknowledged projection.
