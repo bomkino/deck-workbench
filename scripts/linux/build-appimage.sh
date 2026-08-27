@@ -7,12 +7,13 @@ SOURCE_DATE_EPOCH="$(git -C "$REPOSITORY_ROOT" show -s --format=%ct "$COMMIT_SHA
 SHORT_SHA="${COMMIT_SHA:0:12}"
 BUNDLE="${1:-$REPOSITORY_ROOT/build/linux-x64/Deck-Workbench-linux-x64}"
 APPDIR="$REPOSITORY_ROOT/build/linux-x64/Deck-Workbench.AppDir"
+REPRODUCIBILITY_APPDIR="$REPOSITORY_ROOT/build/linux-x64/Deck-Workbench.reproducibility.AppDir"
 TOOLS_ROOT="$REPOSITORY_ROOT/build/appimage-tools"
 APPIMAGETOOL="$TOOLS_ROOT/appimagetool-x86_64.AppImage"
 RUNTIME="$TOOLS_ROOT/runtime-x86_64"
 ARTIFACT_ROOT="$REPOSITORY_ROOT/artifacts"
 APPIMAGE="$ARTIFACT_ROOT/Deck-Workbench-0.0.0.r${SHORT_SHA}-x86_64.AppImage"
-REPRODUCIBILITY_COPY="$REPOSITORY_ROOT/build/linux-x64/Deck-Workbench-reproducibility-check.AppImage"
+REPRODUCIBILITY_COPY="$ARTIFACT_ROOT/.Deck-Workbench-reproducibility-check-${SHORT_SHA}.AppImage"
 
 APPIMAGETOOL_SHA256="ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0"
 RUNTIME_SHA256="2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d"
@@ -50,31 +51,38 @@ if [[ "$BUNDLE_COMMIT" != "$COMMIT_SHA" ]]; then
   exit 2
 fi
 
-rm -rf "$APPDIR"
-mkdir -p \
-  "$APPDIR/usr/lib" \
-  "$APPDIR/usr/bin" \
-  "$APPDIR/usr/share/applications" \
-  "$APPDIR/usr/share/icons/hicolor/scalable/apps" \
-  "$ARTIFACT_ROOT"
+prepare_appdir() {
+  local appdir="$1"
+  rm -rf "$appdir"
+  mkdir -p \
+    "$appdir/usr/lib" \
+    "$appdir/usr/bin" \
+    "$appdir/usr/share/applications" \
+    "$appdir/usr/share/icons/hicolor/scalable/apps" \
+    "$ARTIFACT_ROOT"
 
-cp -a "$BUNDLE" "$APPDIR/usr/lib/deck-workbench"
-ln -s ../lib/deck-workbench/deck-workbench "$APPDIR/usr/bin/deck-workbench"
-cp "$REPOSITORY_ROOT/scripts/linux/AppRun" "$APPDIR/AppRun"
-cp "$REPOSITORY_ROOT/scripts/linux/deck-workbench-appimage.desktop" "$APPDIR/deck-workbench.desktop"
-cp "$REPOSITORY_ROOT/scripts/linux/deck-workbench.svg" "$APPDIR/deck-workbench.svg"
-cp "$REPOSITORY_ROOT/scripts/linux/deck-workbench-appimage.desktop" "$APPDIR/usr/share/applications/deck-workbench.desktop"
-cp "$REPOSITORY_ROOT/scripts/linux/deck-workbench.svg" "$APPDIR/usr/share/icons/hicolor/scalable/apps/deck-workbench.svg"
-cp "$REPOSITORY_ROOT/scripts/linux/legal/appimage-type2-runtime-LICENSE" \
-  "$APPDIR/usr/lib/deck-workbench/resources/app/legal/AppImage-type2-runtime-LICENSE"
-chmod 0755 "$APPDIR/AppRun"
+  cp -a "$BUNDLE" "$appdir/usr/lib/deck-workbench"
+  ln -s ../lib/deck-workbench/deck-workbench "$appdir/usr/bin/deck-workbench"
+  cp "$REPOSITORY_ROOT/scripts/linux/AppRun" "$appdir/AppRun"
+  cp "$REPOSITORY_ROOT/scripts/linux/deck-workbench-appimage.desktop" "$appdir/deck-workbench.desktop"
+  cp "$REPOSITORY_ROOT/scripts/linux/deck-workbench.svg" "$appdir/deck-workbench.svg"
+  cp "$REPOSITORY_ROOT/scripts/linux/deck-workbench-appimage.desktop" "$appdir/usr/share/applications/deck-workbench.desktop"
+  cp "$REPOSITORY_ROOT/scripts/linux/deck-workbench.svg" "$appdir/usr/share/icons/hicolor/scalable/apps/deck-workbench.svg"
+  cp "$REPOSITORY_ROOT/scripts/linux/legal/appimage-type2-runtime-LICENSE" \
+    "$appdir/usr/lib/deck-workbench/resources/app/legal/AppImage-type2-runtime-LICENSE"
+  chmod 0755 "$appdir/AppRun"
 
-# Clamp every AppDir timestamp before mksquashfs sees it. SOURCE_DATE_EPOCH is
-# the exact source commit time, not the wall clock of the CI worker.
-find "$APPDIR" -exec touch -h --date="@$SOURCE_DATE_EPOCH" {} +
+  # appimagetool mutates its source AppDir while adding .DirIcon and version
+  # metadata. Each comparison build therefore receives its own pristine tree.
+  find "$appdir" -exec touch -h --date="@$SOURCE_DATE_EPOCH" {} +
+}
+
+prepare_appdir "$APPDIR"
+prepare_appdir "$REPRODUCIBILITY_APPDIR"
 
 build_appimage() {
-  local output="$1"
+  local appdir="$1"
+  local output="$2"
   rm -f "$output"
   ARCH=x86_64 \
     VERSION="0.0.0.r${SHORT_SHA}" \
@@ -83,13 +91,15 @@ build_appimage() {
     "$APPIMAGETOOL" \
       --no-appstream \
       --runtime-file "$RUNTIME" \
-      "$APPDIR" \
+      --mksquashfs-opt=-processors \
+      --mksquashfs-opt=1 \
+      "$appdir" \
       "$output"
   chmod 0755 "$output"
 }
 
-build_appimage "$APPIMAGE"
-build_appimage "$REPRODUCIBILITY_COPY"
+build_appimage "$APPDIR" "$APPIMAGE"
+build_appimage "$REPRODUCIBILITY_APPDIR" "$REPRODUCIBILITY_COPY"
 if ! cmp --silent "$APPIMAGE" "$REPRODUCIBILITY_COPY"; then
   echo "ReproducibilityGate: repeated AppImage builds differ" >&2
   exit 1

@@ -66,7 +66,12 @@ test('AppImage tool and embedded runtime have immutable content pins and shipped
 test('AppImage packaging is normalized, reproducibility-checked and preserves sandboxing', () => {
   assert.match(appImageBuildScript, /SOURCE_DATE_EPOCH/)
   assert.match(appImageBuildScript, /--runtime-file "\$RUNTIME"/)
-  assert.match(appImageBuildScript, /find "\$APPDIR" -exec touch -h/)
+  assert.match(appImageBuildScript, /--mksquashfs-opt=-processors/)
+  assert.match(appImageBuildScript, /--mksquashfs-opt=1/)
+  assert.match(appImageBuildScript, /prepare_appdir "\$APPDIR"/)
+  assert.match(appImageBuildScript, /prepare_appdir "\$REPRODUCIBILITY_APPDIR"/)
+  assert.match(appImageBuildScript, /appimagetool mutates its source AppDir/)
+  assert.match(appImageBuildScript, /find "\$appdir" -exec touch -h/)
   assert.match(appImageBuildScript, /cmp --silent "\$APPIMAGE" "\$REPRODUCIBILITY_COPY"/)
   assert.match(appImageBuildScript, /exact-SHA AppImage packaging requires a clean working tree/)
   assert.equal(appImageBuildScript.includes('--no-sandbox'), false)
