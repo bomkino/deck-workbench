@@ -273,7 +273,7 @@ enum PackagedTracer {
               .find((field) => field.dataset.blockId === bodyBlockId);
             const waitForRevision = async (expected) => {
               for (let attempt = 0; attempt < 100; attempt += 1) {
-                const next = await deckBridge.query({ name: 'slide.activeProjection', params: { slideId: secondSlideId } });
+                const next = deckWorkbench.projection();
                 if (next.revision === expected) return next;
                 await new Promise((resolve) => setTimeout(resolve, 10));
               }
