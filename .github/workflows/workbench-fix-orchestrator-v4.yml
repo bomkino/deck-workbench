@@ -1,0 +1,135 @@
+name: Workbench fix orchestrator v4
+
+on:
+  push:
+    branches:
+      - codex/workbench-fix
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: workbench-fix-orchestrator-v4
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      patch: ${{ steps.patch.outputs.patch }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          ref: codex/workbench-fix
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: python3 scripts/apply-workbench-fix-v4.py
+      - run: npm ci --ignore-scripts
+      - run: npm run verify
+      - run: git diff --check
+      - id: patch
+        shell: bash
+        run: |
+          git diff --binary --full-index > /tmp/workbench-fix.patch
+          test -s /tmp/workbench-fix.patch
+          printf 'patch=' >> "$GITHUB_OUTPUT"
+          gzip -9c /tmp/workbench-fix.patch | base64 -w0 >> "$GITHUB_OUTPUT"
+          printf '\n' >> "$GITHUB_OUTPUT"
+
+  ubuntu-package:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          ref: codex/workbench-fix
+      - env:
+          WORKBENCH_PATCH: ${{ needs.prepare.outputs.patch }}
+        run: |
+          printf '%s' "$WORKBENCH_PATCH" | base64 -d | gzip -d > /tmp/workbench-fix.patch
+          git apply --index /tmp/workbench-fix.patch
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: |
+          sudo apt-get update
+          sudo apt-get install --yes file libasound2t64 libatspi2.0-0 libdrm2 libgbm1 libgtk-3-0 libnss3 libxss1 poppler-utils xdg-utils xvfb zstd
+          if sysctl -N kernel.apparmor_restrict_unprivileged_userns >/dev/null 2>&1; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+      - run: npm ci
+      - run: npm run install:electron
+      - run: scripts/linux/fetch-appimage-tools.sh
+      - run: npm run verify
+      - run: npm run build:linux
+      - run: npm run verify:linux
+
+  macos-package:
+    needs: prepare
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          ref: codex/workbench-fix
+      - env:
+          WORKBENCH_PATCH: ${{ needs.prepare.outputs.patch }}
+        run: |
+          printf '%s' "$WORKBENCH_PATCH" | base64 -d | gzip -d > /tmp/workbench-fix.patch
+          git apply --index /tmp/workbench-fix.patch
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: |
+          test "$(uname -m)" = "arm64"
+          test "$(sw_vers -productVersion | cut -d. -f1)" -ge 26
+      - run: npm ci --ignore-scripts
+      - run: npm run verify
+      - run: scripts/build-macos.sh
+      - run: scripts/verify-packaged-macos.sh
+      - run: node scripts/write-evidence-receipt.mjs
+
+  publish:
+    needs:
+      - prepare
+      - ubuntu-package
+      - macos-package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          ref: codex/workbench-fix
+      - env:
+          WORKBENCH_PATCH: ${{ needs.prepare.outputs.patch }}
+        run: |
+          printf '%s' "$WORKBENCH_PATCH" | base64 -d | gzip -d > /tmp/workbench-fix.patch
+          git apply --index /tmp/workbench-fix.patch
+          printf '\n- Orchestration proof: `%s/%s/actions/runs/%s`\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> docs/evidence/WORKBENCH-FIX-2026-08-27.md
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run verify
+      - run: git diff --check
+      - run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "fix: harden Workbench integrity and repository gates"
+          git push origin HEAD:codex/workbench-fix
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr ready 2 --repo "$GITHUB_REPOSITORY"
