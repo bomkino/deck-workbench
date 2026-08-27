@@ -266,6 +266,9 @@ enum PackagedTracer {
 
         let rawKeyboardJourney = try await controller.invokeWorkspaceForTracer(
             """
+            deckWorkbench.renderProjection(
+              await deckBridge.query({ name: 'slide.activeProjection', params: { slideId: secondSlideId } })
+            );
             const findBody = () => [...document.querySelectorAll('#additional-content textarea')]
               .find((field) => field.dataset.blockId === bodyBlockId);
             const waitForRevision = async (expected) => {
