@@ -21,6 +21,8 @@ Portable command and contract checks:
 npm run verify
 ```
 
+This single gate regenerates contracts, runs the full test suite, checks the source contract, validates JavaScript and shell syntax, verifies relative documentation links, enforces full-SHA GitHub Action pins, reconciles dependency notices and rejects tracked build clutter.
+
 On Apple-Silicon macOS 26 or newer:
 
 ```sh

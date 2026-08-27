@@ -17,12 +17,12 @@ import { bridgeChannel, readBridgeContract } from './bridge-contract.mjs'
 import { performNativeAction } from './native-action.mjs'
 import { SerialOperationQueue } from './serial-operation-queue.mjs'
 import { UtilityKernelClient } from './utility-client.mjs'
+import { defaultPreferences, interfaceScaleSteps, loadPreferencesFile } from './preferences.mjs'
 
 const repositoryRoot = resolve(import.meta.dirname, '../..')
 const sharedWorkspaceRoot = resolve(repositoryRoot, 'apps/macos/Resources/Workspace')
 const preloadPath = resolve(import.meta.dirname, 'preload.cjs')
 const kernelUtilityPath = resolve(import.meta.dirname, 'kernel-utility.mjs')
-const interfaceScaleSteps = Object.freeze([0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75])
 const allowedWorkspaceFiles = new Map([
   ['/', 'index.html'],
   ['/index.html', 'index.html'],
@@ -47,7 +47,7 @@ protocol.registerSchemesAsPrivileged([
 let mainWindow = null
 let utility = null
 let activePackagePath = null
-let preferences = { interfaceScale: 1, artboardZoom: 0.35 }
+let preferences = { ...defaultPreferences }
 const preferencesQueue = new SerialOperationQueue()
 const processInstanceId = randomUUID()
 const packagedStoryIds = Object.freeze({
@@ -176,23 +176,10 @@ function preferencesPath() {
 }
 
 async function loadPreferences() {
-  let value
-  try {
-    value = JSON.parse(await readFile(preferencesPath(), 'utf8'))
-  } catch (error) {
-    if (error.code === 'ENOENT') return
-    throw namedError('InvalidPreferences', `Preferences could not be read: ${error.message}`)
-  }
-  if (
-    value?.schemaVersion !== 1
-    || !interfaceScaleSteps.includes(value.interfaceScale)
-    || !Number.isFinite(value.artboardZoom)
-    || value.artboardZoom < 0.1
-    || value.artboardZoom > 4
-  ) {
-    throw namedError('InvalidPreferences', 'Preferences are invalid or unsupported')
-  }
-  preferences = { interfaceScale: value.interfaceScale, artboardZoom: value.artboardZoom }
+  const loaded = await loadPreferencesFile(preferencesPath())
+  preferences = loaded.preferences
+  if (loaded.warning) process.stderr.write(`InvalidPreferences: ${loaded.warning}
+`)
 }
 
 async function persistPreferences(next) {
@@ -223,7 +210,7 @@ async function exportOnePagePDF(destination) {
       margins: { top: 0, bottom: 0, left: 0, right: 0 },
       preferCSSPageSize: true,
     })
-    await writeDurably(destination, pdf)
+    await writeAtomically(destination, pdf)
     return { bytes: pdf.byteLength, sha256: createHash('sha256').update(pdf).digest('hex') }
   } finally {
     await mainWindow.webContents.removeInsertedCSS(cssKey)

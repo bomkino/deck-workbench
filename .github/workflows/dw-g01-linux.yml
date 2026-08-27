@@ -29,8 +29,7 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci --ignore-scripts
-      - run: npm test
-      - run: node scripts/verify-source.mjs
+      - run: npm run verify
 
   packaged-linux-x64:
     runs-on: ubuntu-24.04
@@ -53,8 +52,7 @@ jobs:
       - run: npm ci
       - run: npm run install:electron
       - run: scripts/linux/fetch-appimage-tools.sh
-      - run: npm test
-      - run: node scripts/verify-source.mjs
+      - run: npm run verify
       - run: npm run build:linux
       - run: npm run verify:linux
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

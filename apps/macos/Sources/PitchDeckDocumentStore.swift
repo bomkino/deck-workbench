@@ -322,7 +322,14 @@ final class PitchDeckDocumentStore {
         guard data.last == 0x0A, let text = String(data: data, encoding: .utf8) else {
             throw WorkbenchFailure(name: "JournalCorruption", message: "Journal has a partial or non-UTF-8 record")
         }
-        let lines = text.split(separator: "\n", omittingEmptySubsequences: true)
+        let recordText = text.dropLast()
+        guard !recordText.isEmpty else {
+            throw WorkbenchFailure(name: "JournalCorruption", message: "Journal contains a blank record")
+        }
+        let lines = recordText.split(separator: "\n", omittingEmptySubsequences: false)
+        guard lines.allSatisfy({ !$0.isEmpty }) else {
+            throw WorkbenchFailure(name: "JournalCorruption", message: "Journal contains a blank record")
+        }
         var previousHash = zeroHash
         var hashes: Set<String> = [zeroHash]
         var records: [[String: Any]] = []
