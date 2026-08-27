@@ -59,8 +59,9 @@ ${commits}
 
 | Seam | Scenario | Independent expectation | Result |
 |---|---|---|---|
-| Deck kernel/workspace | semantic commands plus Story/Sequence keyboard and visible-control policy, stale and invalid rejection | Prepare is private; all callers share commands; rejection is atomic | Pass: 25 portable scenario tests |
+| Deck kernel/workspace | semantic commands plus Story/Sequence keyboard and visible-control policy, stale and invalid rejection | Prepare is private; all callers share commands; rejection is atomic | Pass: 26 portable scenario tests |
 | Document store | append/fsync/hash/replay/checkpoint plus corrupt/unsupported probes | Acknowledgement follows durable append; replay is deterministic | Pass: restart replay reached revision ${createResult.journalReplayRevision} |
+| Native shell | missing-document open through user-command presentation seam | Typed failure reaches persistent status and alert state | Pass: ${createResult.nativeFailurePresented ? 'MissingAttachment presented' : 'failed'} |
 | Typed bridge | generated Swift/JavaScript parity and malformed method | Only named methods cross the WebView boundary | Pass |
 | Scale model | Interface Scale 1.25 and artboard zoom 0.5 | Chrome scale does not alter slide/export geometry | Pass |
 | Packaged journey | extracted arm64 app create/reopen/undo/PDF | Exact user journey runs at ending SHA | Pass |
@@ -69,7 +70,7 @@ ${commits}
 
 | Command | Exit | Key result / artifact |
 |---|---:|---|
-| \`npm test\` | 0 | 25/25 causal tests passed |
+| \`npm test\` | 0 | 26/26 causal tests passed |
 | \`node scripts/verify-source.mjs\` | 0 | Source contract passed |
 | \`scripts/build-macos.sh\` | 0 | arm64 app built and ad-hoc signed |
 | \`scripts/verify-packaged-macos.sh\` | 0 | ZIP extracted; signature, architecture and exact journey passed |
@@ -88,7 +89,7 @@ ${commits}
 
 ## Exact packaged journey
 
-\`create → native save panel → edit → journal durable → undo/redo → Interface Scale/artboard zoom → save/quit → reopen → undo after reopen → one-page PDF\`
+\`typed missing-open failure → create → native save panel → edit → journal durable → undo/redo → Interface Scale/artboard zoom → save/quit → reopen → undo after reopen → one-page PDF\`
 
 Result: pass. Create revision ${createResult.revision}; reopen revision ${reopenResult.reopenedRevision}; post-reopen undo revision ${reopenResult.undoRevision}.
 
@@ -112,7 +113,7 @@ No third-party production runtime dependency is present.
 ## Honest status
 
 - Planned / source-ready / packaged / integrated / release-ready: **Integrated DW-T00**, not release-ready
-- Supported claims: exact packaged journey at ending SHA; native save flow; durable typed Story edit; semantic reopen/undo; arm64-only ad-hoc-signed ZIP; one-page PDF
+- Supported claims: exact packaged journey at ending SHA; native save flow; typed native failure retention; durable typed Story edit; semantic reopen/undo; arm64-only ad-hoc-signed ZIP; one-page PDF
 - Unsupported claims: notarization, release distribution, final typography/PDF fidelity, PPTX, Garuda parity, broad editor behavior, production suitability
 - External gates: none for DW-T00 verification
 - Known limitations: one Section, one Slide, one headline field; full journal retained; tracer-only system event accepts the native save panel during automation
@@ -151,6 +152,7 @@ The extracted macOS app creates and reorders a second Section and Slide, uses Co
 | Journal/replay | Twenty commands, thirteen undos and thirteen redos in one hash chain; restart replay at revision ${storyCreateResult.journalReplayRevision} | Pass |
 | Crash recovery | Stale manifest head with valid durable journal tail | Pass: repaired and replayed to revision ${storyCreateResult.crashRecoveryRevision} |
 | Session lifecycle | Checkpoint, host close, cleared projection, new-process reopen | Pass |
+| Native failure presentation | Missing document through the shared command wrapper plus compiled SwiftUI alert binding | Pass: controller status and presented failure retained; interactive alert acceptance gated |
 | Packaged app | Native create → keyboard paragraph commit/history → keyboard and visible-control Slide/Section reorder/focus → removals → save/quit → reopen → exact semantic history proof | Pass |
 | Accessibility semantics | Current Slide, reorder shortcut, busy state, live status and concrete labels in bundled DOM/shell | Pass: source and packaged DOM; interactive assistive-technology acceptance gated |
 
@@ -167,7 +169,7 @@ The extracted macOS app creates and reorders a second Section and Slide, uses Co
 ## Honest status
 
 - Status: **Packaged macOS DW-W01 structural slice with source-ready accessibility semantics**, not full integrated DW-W01
-- Supported claims: native Story structure creation; stable-ID ordering; Deck/Section rename; Slide intent; role-keyed Content add/update/remove; lossless textarea-to-paragraph mapping; IME-safe keyboard commit policy; clean-field durable keyboard undo/redo; stable-ID Story and Sequence focus restoration; Option–Arrow and visible bidirectional Slide/Section reorder; packaged current/shortcut/busy/live-status accessibility semantics; explicit removal UI; semantic restoration after reopen; durable replay and stale-head repair
+- Supported claims: native Story structure creation; stable-ID ordering; Deck/Section rename; Slide intent; role-keyed Content add/update/remove; lossless textarea-to-paragraph mapping; IME-safe keyboard commit policy; clean-field durable keyboard undo/redo; stable-ID Story and Sequence focus restoration; Option–Arrow and visible bidirectional Slide/Section reorder; typed native failure retention and compiled alert binding; packaged current/shortcut/busy/live-status accessibility semantics; explicit removal UI; semantic restoration after reopen; durable replay and stale-head repair
 - Unsupported claims: hardware keyboard acceptance, VoiceOver, cascading deletion, marks/lists/headings/structured paste, broader crash-injection matrix, Garuda parity, production rich-editor behavior
 - Scope boundary: no Garuda shell, editor dependency or export expansion was introduced
 

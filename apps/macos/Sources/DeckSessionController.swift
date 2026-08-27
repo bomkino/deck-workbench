@@ -20,6 +20,7 @@ final class DeckSessionController: ObservableObject {
     @Published private(set) var documentURL: URL?
     @Published private(set) var status = "Create or open a Deck"
     @Published private(set) var hasDocument = false
+    @Published var presentedFailure: PresentedWorkbenchFailure?
 
     private(set) var interfaceScale: Double
     private(set) var artboardZoom: Double = 0.35
@@ -38,6 +39,21 @@ final class DeckSessionController: ObservableObject {
 
     func attachWorkspace(_ sink: WorkspaceProjectionSink) {
         workspace = sink
+    }
+
+    func perform(_ operation: () async throws -> Void) async {
+        do {
+            try await operation()
+        } catch {
+            let failure = WorkbenchFailure.unexpected(error)
+            guard failure.name != "JobCancelled" else { return }
+            status = failure.errorDescription ?? "The action failed"
+            presentedFailure = PresentedWorkbenchFailure(failure: failure)
+        }
+    }
+
+    func dismissPresentedFailure() {
+        presentedFailure = nil
     }
 
     func workspaceBecameReady() async {

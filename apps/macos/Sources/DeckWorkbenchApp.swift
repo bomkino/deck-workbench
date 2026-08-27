@@ -22,29 +22,29 @@ struct DeckWorkbenchApp: App {
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("New Deck…") {
-                    Task { _ = try? await controller.presentNewDocument() }
+                    Task { await controller.perform { _ = try await controller.presentNewDocument() } }
                 }
                 .keyboardShortcut("n")
                 Button("Open Deck…") {
-                    Task { _ = try? await controller.presentOpenDocument() }
+                    Task { await controller.perform { _ = try await controller.presentOpenDocument() } }
                 }
                 .keyboardShortcut("o")
-                Button("Save") { try? controller.save() }
+                Button("Save") {
+                    Task { await controller.perform { try controller.save() } }
+                }
                     .keyboardShortcut("s")
                     .disabled(!controller.hasDocument)
                 Button("Close Deck") {
-                    Task { try? await controller.closeDocument() }
+                    Task { await controller.perform { try await controller.closeDocument() } }
                 }
                 .disabled(!controller.hasDocument)
             }
             CommandGroup(replacing: .undoRedo) {
                 Button("Undo") {
                     Task {
-                        if let result = try? controller.undo(),
-                           let projection = result["projection"] as? [String: Any]
-                        {
-                            try? await controller.renderCurrentProjection()
-                            _ = projection
+                        await controller.perform {
+                            _ = try controller.undo()
+                            try await controller.renderCurrentProjection()
                         }
                     }
                 }
@@ -52,8 +52,10 @@ struct DeckWorkbenchApp: App {
                 .disabled(!controller.hasDocument)
                 Button("Redo") {
                     Task {
-                        _ = try? controller.redo()
-                        try? await controller.renderCurrentProjection()
+                        await controller.perform {
+                            _ = try controller.redo()
+                            try await controller.renderCurrentProjection()
+                        }
                     }
                 }
                 .keyboardShortcut("z", modifiers: [.command, .shift])
@@ -62,7 +64,7 @@ struct DeckWorkbenchApp: App {
             CommandGroup(after: .saveItem) {
                 Divider()
                 Button("Export Review PDF…") {
-                    Task { _ = try? await controller.presentPDFExport() }
+                    Task { await controller.perform { _ = try await controller.presentPDFExport() } }
                 }
                 .keyboardShortcut("e", modifiers: [.command, .shift])
                 .disabled(!controller.hasDocument)
@@ -77,11 +79,11 @@ struct WorkbenchRootView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                Button("New Deck…") { Task { _ = try? await controller.presentNewDocument() } }
-                Button("Open…") { Task { _ = try? await controller.presentOpenDocument() } }
-                Button("Save") { try? controller.save() }
+                Button("New Deck…") { Task { await controller.perform { _ = try await controller.presentNewDocument() } } }
+                Button("Open…") { Task { await controller.perform { _ = try await controller.presentOpenDocument() } } }
+                Button("Save") { Task { await controller.perform { try controller.save() } } }
                     .disabled(!controller.hasDocument)
-                Button("Close") { Task { try? await controller.closeDocument() } }
+                Button("Close") { Task { await controller.perform { try await controller.closeDocument() } } }
                     .disabled(!controller.hasDocument)
                 Divider().frame(height: 18)
                 Text(controller.documentTitle)
@@ -94,7 +96,7 @@ struct WorkbenchRootView: View {
                     .font(.caption)
                     .accessibilityLabel("Document status")
                     .accessibilityValue(controller.status)
-                Button("Export PDF…") { Task { _ = try? await controller.presentPDFExport() } }
+                Button("Export PDF…") { Task { await controller.perform { _ = try await controller.presentPDFExport() } } }
                     .disabled(!controller.hasDocument)
             }
             .padding(.horizontal, 10)
@@ -102,6 +104,13 @@ struct WorkbenchRootView: View {
             .background(.bar)
 
             WorkspaceWebView(controller: controller)
+        }
+        .alert(item: $controller.presentedFailure) { presented in
+            Alert(
+                title: Text("Deck Workbench couldn’t complete the action"),
+                message: Text(presented.failure.errorDescription ?? "An unexpected error occurred"),
+                dismissButton: .default(Text("OK"))
+            )
         }
     }
 }

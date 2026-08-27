@@ -131,3 +131,15 @@ mutation path, bridge method or production dependency is introduced.
 R06 adds no command, bridge method, dependency, renderer authority or document
 schema. The packaged journey must click all four controls and replay their durable
 history after reopen.
+
+## DW-W01-R07 addendum
+
+| Severity | Finding | Resolution |
+|---|---|---|
+| Material | Native New/Open/Save/Close/Undo/Redo/Export callers used `try?`, so failures were invisible even when the typed controller preserved them. | Route every caller through one `DeckSessionController.perform` seam. |
+| Material | A transient alert alone would make the failure unavailable after dismissal. | Write the same typed name/message into persistent document status before presenting the alert. |
+| Advisory | Treating a cancelled picker as an error would create noisy, misleading alerts. | `JobCancelled` returns without changing status or presenting an alert. |
+| Gate | A compiled SwiftUI alert binding does not prove VoiceOver wording or post-dismiss focus. | Keep interactive alert acceptance inside R05-A. |
+
+R07 changes no Deck semantics, persistence ordering, WebView authority, dependency
+or network surface.

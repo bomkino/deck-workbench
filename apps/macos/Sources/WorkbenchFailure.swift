@@ -11,3 +11,8 @@ struct WorkbenchFailure: LocalizedError, Codable {
         return WorkbenchFailure(name: "UnexpectedFailure", message: error.localizedDescription)
     }
 }
+
+struct PresentedWorkbenchFailure: Identifiable {
+    let id = UUID()
+    let failure: WorkbenchFailure
+}

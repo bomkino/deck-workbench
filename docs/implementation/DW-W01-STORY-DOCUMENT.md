@@ -268,3 +268,19 @@ save, close and reopen
 ```
 
 Drag-and-drop, multi-selection and arbitrary pointer geometry remain deferred.
+
+## DW-W01-R07 — Native command failure presentation
+
+Every user-triggered native document action—New, Open, Save, Close, Undo, Redo and
+PDF export—runs through one shell-owned presentation seam. A non-cancellation
+failure updates the persistent document status and presents a native SwiftUI alert
+with the typed failure name and message. User cancellation remains quiet.
+
+This changes no document command, bridge method or durability rule. The packaged
+tracer injects a missing-document open through the same presentation seam before
+the normal native create journey and requires `MissingAttachment` to be retained
+for the UI rather than discarded.
+
+The packaged controller result plus compiled alert binding support a source-ready
+native error-presentation claim. Interactive wording and focus return after alert
+dismissal remain part of the R05-A macOS accessibility acceptance pass.

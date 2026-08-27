@@ -82,6 +82,14 @@ enum PackagedTracer {
     ) async throws {
         print("DW-T00 create phase: document")
         fflush(stdout)
+        let missingDocument = documentURL.deletingLastPathComponent().appendingPathComponent("Missing.pitchdeck")
+        await controller.perform { _ = try controller.openDocument(at: missingDocument) }
+        guard controller.presentedFailure?.failure.name == "MissingAttachment",
+              controller.status.contains("MissingAttachment")
+        else {
+            throw WorkbenchFailure(name: "InvalidCommand", message: "Native document failure was not presented")
+        }
+        controller.dismissPresentedFailure()
         let initial = try await controller.presentNewDocument(tracerDestination: documentURL)
         guard initial["revision"] as? Int == 0 else {
             throw WorkbenchFailure(name: "InvalidCommand", message: "New Deck did not start at revision 0")
@@ -139,6 +147,7 @@ enum PackagedTracer {
             "interfaceScale": 1.25,
             "artboardZoom": 0.5,
             "nativeSavePanel": true,
+            "nativeFailurePresented": true,
             "journalReplayRevision": 3,
             "document": controller.documentURL?.path ?? documentURL.path,
         ], to: resultURL)
