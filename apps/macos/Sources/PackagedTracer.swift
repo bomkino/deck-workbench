@@ -284,8 +284,9 @@ enum PackagedTracer {
             original.focus();
 
             const composing = new KeyboardEvent('keydown', {
-              key: 'Enter', metaKey: true, isComposing: true, bubbles: true, cancelable: true
+              key: 'Enter', metaKey: true, bubbles: true, cancelable: true
             });
+            Object.defineProperty(composing, 'isComposing', { value: true });
             original.dispatchEvent(composing);
             const afterComposition = await deckBridge.query({ name: 'slide.activeProjection', params: { slideId: secondSlideId } });
 

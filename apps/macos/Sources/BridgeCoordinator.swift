@@ -107,7 +107,15 @@ final class BridgeCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDel
 
     func invokeForTracer(_ body: String, arguments: [String: Any] = [:]) async throws -> Any? {
         guard let webView else { throw WorkbenchFailure(name: "WorkspaceUnavailable", message: "WebView is unavailable") }
-        return try await webView.callAsyncJavaScript(body, arguments: arguments, in: nil, contentWorld: .page)
+        do {
+            return try await webView.callAsyncJavaScript(body, arguments: arguments, in: nil, contentWorld: .page)
+        } catch {
+            let failure = error as NSError
+            let message = failure.userInfo["WKJavaScriptExceptionMessage"] as? String
+                ?? failure.userInfo[NSLocalizedDescriptionKey] as? String
+                ?? error.localizedDescription
+            throw WorkbenchFailure(name: "WorkspaceUnavailable", message: "Tracer JavaScript failed: \(message)")
+        }
     }
 
     private func receive(_ message: WKScriptMessage) async {
