@@ -1,0 +1,47 @@
+name: Workbench fix quiesce
+
+on:
+  push:
+    branches:
+      - codex/workbench-fix
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: workbench-fix-quiesce
+  cancel-in-progress: true
+
+jobs:
+  quiesce:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Cancel and disable every obsolete repair workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          current_workflow_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq '.workflow_id')"
+          collect() {
+            for status in queued in_progress requested waiting; do
+              gh api --paginate \
+                "repos/$GITHUB_REPOSITORY/actions/runs?branch=codex/workbench-fix&status=$status&per_page=100" \
+                --jq '.workflow_runs[] | select((.name == "Source snapshot") or (.name | startswith("Workbench fix"))) | [.id, .workflow_id] | @tsv'
+            done
+          }
+          for pass in 1 2 3; do
+            collect | sort -u | while IFS=$'\t' read -r run_id workflow_id; do
+              test -n "$run_id" || continue
+              if test "$run_id" != "$GITHUB_RUN_ID"; then
+                gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/cancel" >/dev/null 2>&1 || true
+              fi
+              if test "$workflow_id" != "$current_workflow_id"; then
+                gh api -X PUT "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow_id/disable" >/dev/null 2>&1 || true
+              fi
+            done
+            sleep 10
+          done
+          gh api -X PUT "repos/$GITHUB_REPOSITORY/actions/workflows/$current_workflow_id/disable" >/dev/null 2>&1 || true
