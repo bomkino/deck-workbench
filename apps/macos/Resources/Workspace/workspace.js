@@ -16,6 +16,7 @@ function workspaceTransforms({ interfaceScale: requestedInterfaceScale, artboard
 }
 
 const elements = {
+  workbench: document.querySelector('.workbench'),
   deckTitle: document.querySelector('#deck-title'),
   renameDeck: document.querySelector('#rename-deck'),
   sequenceList: document.querySelector('#sequence-list'),
@@ -114,6 +115,7 @@ function sectionMovePlan(story, sectionId, direction) {
 }
 
 function setBusy(label) {
+  elements.workbench.setAttribute('aria-busy', 'true')
   elements.saveState.textContent = label
   elements.commit.disabled = true
   elements.undo.disabled = true
@@ -152,6 +154,7 @@ function renderProjection(next, options = {}) {
   elements.renameDeck.disabled = false
   elements.addBody.disabled = false
   elements.saveState.textContent = 'Durable and projected'
+  elements.workbench.setAttribute('aria-busy', 'false')
   applyScales()
   void refreshSequence({
     slideId: options.sequenceFocusSlideId ?? null,
@@ -181,6 +184,7 @@ function clearProjection() {
   elements.renameDeck.disabled = true
   elements.addBody.disabled = true
   elements.saveState.textContent = 'No document session'
+  elements.workbench.setAttribute('aria-busy', 'false')
 }
 
 function renderAdditionalContent(blocks) {
@@ -228,6 +232,7 @@ function renderSequence(next) {
     sectionRow.dataset.sectionId = section.id
     sectionRow.setAttribute('role', 'group')
     sectionRow.setAttribute('aria-label', `${section.title} Section`)
+    sectionRow.setAttribute('aria-keyshortcuts', 'Alt+ArrowUp Alt+ArrowDown')
     sectionRow.addEventListener('keydown', (event) => moveSectionByKeyboard(event, section.id))
     const title = document.createElement('strong')
     title.textContent = section.title
@@ -269,6 +274,8 @@ function renderSequence(next) {
       select.type = 'button'
       select.className = `slide-row${projection?.slide.id === slide.id ? ' selected' : ''}`
       select.dataset.slideId = slide.id
+      select.setAttribute('aria-keyshortcuts', 'Alt+ArrowUp Alt+ArrowDown')
+      if (projection?.slide.id === slide.id) select.setAttribute('aria-current', 'page')
       const number = document.createElement('span')
       number.className = 'slide-number'
       number.textContent = String(slideNumber).padStart(2, '0')
@@ -341,8 +348,8 @@ async function executeStructural(type, payload, selectedSlideId = projection?.sl
       sequenceFocusSectionId: options.sequenceFocusSectionId,
     })
   } catch (error) {
-    elements.saveState.textContent = `${error.name ?? 'Error'}: ${error.message}`
     renderProjection(projection)
+    elements.saveState.textContent = `${error.name ?? 'Error'}: ${error.message}`
   }
 }
 
@@ -511,8 +518,8 @@ async function updateContentBlock(blockId, value, options = {}) {
     }))
     if (restoreFocus) restoreStoryFocus(blockId)
   } catch (error) {
-    elements.saveState.textContent = `${error.name ?? 'Error'}: ${error.message}`
     renderProjection(projection)
+    elements.saveState.textContent = `${error.name ?? 'Error'}: ${error.message}`
     if (restoreFocus) restoreStoryFocus(blockId)
   }
 }
@@ -574,8 +581,8 @@ async function historyAction(method, restoreFocusBlockId = null) {
     renderProjection(next)
     if (restoreFocusBlockId) restoreStoryFocus(restoreFocusBlockId)
   } catch (error) {
-    elements.saveState.textContent = `${error.name ?? 'Error'}: ${error.message}`
     renderProjection(projection)
+    elements.saveState.textContent = `${error.name ?? 'Error'}: ${error.message}`
     if (restoreFocusBlockId) restoreStoryFocus(restoreFocusBlockId)
   }
 }

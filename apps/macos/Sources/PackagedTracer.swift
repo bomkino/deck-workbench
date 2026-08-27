@@ -334,6 +334,21 @@ enum PackagedTracer {
             }
             const sequenceSlide = findSequenceSlide();
             if (!sequenceSlide) throw new Error('Sequence Slide is unavailable');
+            const selectedSequenceSlide = document.querySelector('#sequence-list [aria-current="page"]');
+            const openingSequenceSection = [...document.querySelectorAll('#sequence-list [data-section-id]')]
+              .find((row) => row.dataset.sectionId === openingSectionId);
+            const accessibilityContract = {
+              workbenchLabel: document.querySelector('main.workbench')?.getAttribute('aria-label'),
+              workbenchBusy: document.querySelector('main.workbench')?.getAttribute('aria-busy'),
+              statusRole: document.querySelector('#save-state')?.getAttribute('role'),
+              artboardZoomLabel: document.querySelector('#artboard-zoom')?.getAttribute('aria-label'),
+              selectedSlideId: selectedSequenceSlide?.dataset.slideId,
+              selectedSlideCurrent: selectedSequenceSlide?.getAttribute('aria-current'),
+              slideShortcuts: sequenceSlide.getAttribute('aria-keyshortcuts'),
+              sectionRole: openingSequenceSection?.getAttribute('role'),
+              sectionLabel: openingSequenceSection?.getAttribute('aria-label'),
+              sectionShortcuts: openingSequenceSection?.getAttribute('aria-keyshortcuts')
+            };
             sequenceSlide.focus();
             const moveUp = new KeyboardEvent('keydown', {
               key: 'ArrowUp', altKey: true, bubbles: true, cancelable: true
@@ -382,6 +397,7 @@ enum PackagedTracer {
 
             return {
               committed, undone, redone,
+              accessibilityContract,
               sequenceMovedUp, sequenceMovedDown,
               sectionMovedUp, sectionMovedDown,
               focusAfterCommit, focusAfterUndo, focusAfterRedo,
@@ -430,6 +446,20 @@ enum PackagedTracer {
               keyboardJourney["afterDirtyUndoRevision"] as? Int == 8
         else {
             throw WorkbenchFailure(name: "InvalidCommand", message: "Story keyboard commit, history or focus contract failed")
+        }
+        guard let accessibility = keyboardJourney["accessibilityContract"] as? [String: Any],
+              accessibility["workbenchLabel"] as? String == "Deck Workbench Editorial Desk",
+              accessibility["workbenchBusy"] as? String == "false",
+              accessibility["statusRole"] as? String == "status",
+              accessibility["artboardZoomLabel"] as? String == "Artboard Zoom",
+              accessibility["selectedSlideId"] as? String == secondSlideId,
+              accessibility["selectedSlideCurrent"] as? String == "page",
+              accessibility["slideShortcuts"] as? String == "Alt+ArrowUp Alt+ArrowDown",
+              accessibility["sectionRole"] as? String == "group",
+              accessibility["sectionLabel"] as? String == "Opening Section",
+              accessibility["sectionShortcuts"] as? String == "Alt+ArrowUp Alt+ArrowDown"
+        else {
+            throw WorkbenchFailure(name: "InvalidCommand", message: "Editorial Spine accessibility contract failed")
         }
         let sequenceMovedUp = try requireStory(keyboardJourney["sequenceMovedUp"], revision: 12)
         try requireStoryOrder(

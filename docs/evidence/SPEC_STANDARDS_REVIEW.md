@@ -105,3 +105,16 @@ checks order, revision, cancellation, focus, replay and journal source metadata.
 | Material | Section keyboard movement could bypass the existing history path. | It dispatches typed `section.move` with `source.kind = keyboard`; packaged reopen undoes/redoes both moves in exact stack order. |
 
 R04 changes no command vocabulary, dependency, bridge authority or deletion policy.
+
+## DW-W01-R05 addendum
+
+| Severity | Finding | Resolution |
+|---|---|---|
+| P1 | Selected Slide state was conveyed by accent border without an assistive selected/current value. | The selected Slide button exposes `aria-current=page`. |
+| P1 | Option–Arrow reorder behavior was not exposed as a shortcut. | Slide buttons and Section groups expose both keys through `aria-keyshortcuts`. |
+| P1 | Pending durable work had visible text but no container busy state. | The Editorial Spine root exposes `aria-busy` across prepare/append/project. |
+| P1 | Error catches wrote a live message and immediately overwrote it during rerender. | Rerender first, then retain the error in `role=status`. |
+| Gate | DOM attributes do not prove VoiceOver wording or hardware focus order. | Keep R05 at source-ready until the manual checklist passes in an interactive macOS session. |
+
+The packaged tracer queries the real bundled WebKit DOM. No accessibility-only
+mutation path, bridge method or production dependency is introduced.

@@ -230,3 +230,16 @@ focus the later Section
 ```
 
 This adds no Section-selection model, drag behavior or alternate structural seam.
+
+## DW-W01-R05 — Story accessibility source pass
+
+The packaged WebKit DOM now exposes current Slide state, reorder shortcuts, root
+busy state and a retained live error message. The SwiftUI shell exposes explicit
+Document and Document status label/value pairs. These changes do not alter Deck
+semantics, revisions or bridge authority.
+
+The packaged tracer verifies the actual bundled DOM attributes. This supports a
+**source-ready accessibility** claim only. Full Keyboard Access focus order,
+VoiceOver announcements, Voice Control, Switch Control, Increase Contrast and
+large-scale clipping remain an interactive macOS acceptance gate documented in
+`docs/evidence/DW-W01-R05-ACCESSIBILITY-AUDIT.md`.

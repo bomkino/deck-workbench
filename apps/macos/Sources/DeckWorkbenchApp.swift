@@ -84,9 +84,16 @@ struct WorkbenchRootView: View {
                 Button("Close") { Task { try? await controller.closeDocument() } }
                     .disabled(!controller.hasDocument)
                 Divider().frame(height: 18)
-                Text(controller.documentTitle).font(.headline)
+                Text(controller.documentTitle)
+                    .font(.headline)
+                    .accessibilityLabel("Document")
+                    .accessibilityValue(controller.documentTitle)
                 Spacer()
-                Text(controller.status).foregroundStyle(.secondary).font(.caption)
+                Text(controller.status)
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+                    .accessibilityLabel("Document status")
+                    .accessibilityValue(controller.status)
                 Button("Export PDF…") { Task { _ = try? await controller.presentPDFExport() } }
                     .disabled(!controller.hasDocument)
             }

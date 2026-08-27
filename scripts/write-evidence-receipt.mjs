@@ -59,7 +59,7 @@ ${commits}
 
 | Seam | Scenario | Independent expectation | Result |
 |---|---|---|---|
-| Deck kernel/workspace | semantic commands plus Story/Sequence shortcut policy, stale and invalid rejection | Prepare is private; keyboard shares commands; rejection is atomic | Pass: 23 portable scenario tests |
+| Deck kernel/workspace | semantic commands plus Story/Sequence shortcut and accessibility policy, stale and invalid rejection | Prepare is private; keyboard shares commands; rejection is atomic | Pass: 24 portable scenario tests |
 | Document store | append/fsync/hash/replay/checkpoint plus corrupt/unsupported probes | Acknowledgement follows durable append; replay is deterministic | Pass: restart replay reached revision ${createResult.journalReplayRevision} |
 | Typed bridge | generated Swift/JavaScript parity and malformed method | Only named methods cross the WebView boundary | Pass |
 | Scale model | Interface Scale 1.25 and artboard zoom 0.5 | Chrome scale does not alter slide/export geometry | Pass |
@@ -69,7 +69,7 @@ ${commits}
 
 | Command | Exit | Key result / artifact |
 |---|---:|---|
-| \`npm test\` | 0 | 23/23 causal tests passed |
+| \`npm test\` | 0 | 24/24 causal tests passed |
 | \`node scripts/verify-source.mjs\` | 0 | Source contract passed |
 | \`scripts/build-macos.sh\` | 0 | arm64 app built and ad-hoc signed |
 | \`scripts/verify-packaged-macos.sh\` | 0 | ZIP extracted; signature, architecture and exact journey passed |
@@ -119,9 +119,9 @@ No third-party production runtime dependency is present.
 
 ## Next dispatchable ticket
 
-- Ticket: \`DW-W01-R05 — Story accessibility acceptance\`
+- Ticket: \`DW-W01-R05-A — Interactive accessibility acceptance\`
 - Exact user journey: traverse the packaged Editorial Spine by hardware keyboard and verify names, roles, focus order and VoiceOver announcements
-- Dependency/gate: macOS accessibility acceptance only; no editor dependency, Garuda or export expansion required
+- Dependency/gate: interactive macOS accessibility session; no editor dependency, Garuda or export expansion required
 `
 
 writeFileSync(join(evidence, 'DW-T00-EVIDENCE-RECEIPT.md'), receipt)
@@ -152,6 +152,7 @@ The extracted macOS app creates and reorders a second Section and Slide, uses Co
 | Crash recovery | Stale manifest head with valid durable journal tail | Pass: repaired and replayed to revision ${storyCreateResult.crashRecoveryRevision} |
 | Session lifecycle | Checkpoint, host close, cleared projection, new-process reopen | Pass |
 | Packaged app | Native create → keyboard paragraph commit/history → Slide/Section keyboard reorder/focus → removals → save/quit → reopen → exact semantic history proof | Pass |
+| Accessibility semantics | Current Slide, reorder shortcut, busy state, live status and concrete labels in bundled DOM/shell | Pass: source and packaged DOM; interactive assistive-technology acceptance gated |
 
 ## Packaged artifact
 
@@ -165,14 +166,14 @@ The extracted macOS app creates and reorders a second Section and Slide, uses Co
 
 ## Honest status
 
-- Status: **Packaged macOS DW-W01 structural slice**, not full integrated DW-W01
-- Supported claims: native Story structure creation; stable-ID ordering; Deck/Section rename; Slide intent; role-keyed Content add/update/remove; lossless textarea-to-paragraph mapping; IME-safe keyboard commit policy; clean-field durable keyboard undo/redo; stable-ID Story and Sequence focus restoration; Option–Arrow Slide and Section reorder; explicit removal UI; semantic restoration after reopen; durable replay and stale-head repair
+- Status: **Packaged macOS DW-W01 structural slice with source-ready accessibility semantics**, not full integrated DW-W01
+- Supported claims: native Story structure creation; stable-ID ordering; Deck/Section rename; Slide intent; role-keyed Content add/update/remove; lossless textarea-to-paragraph mapping; IME-safe keyboard commit policy; clean-field durable keyboard undo/redo; stable-ID Story and Sequence focus restoration; Option–Arrow Slide and Section reorder; packaged current/shortcut/busy/live-status accessibility semantics; explicit removal UI; semantic restoration after reopen; durable replay and stale-head repair
 - Unsupported claims: hardware keyboard acceptance, VoiceOver, cascading deletion, marks/lists/headings/structured paste, broader crash-injection matrix, Garuda parity, production rich-editor behavior
 - Scope boundary: no Garuda shell, editor dependency or export expansion was introduced
 
 ## Next dispatchable ticket
 
-- Ticket: \`DW-W01-R05 — Story accessibility acceptance\`
+- Ticket: \`DW-W01-R05-A — Interactive accessibility acceptance\`
 - Exact user journey: traverse the packaged Editorial Spine by hardware keyboard and verify names, roles, focus order and VoiceOver announcements.
 - Gate: macOS accessibility acceptance only. No editor dependency, Garuda or export expansion is needed.
 `
