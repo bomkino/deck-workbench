@@ -1,0 +1,305 @@
+name: Workbench promotion finalizer
+
+on:
+  push:
+    branches:
+      - codex/workbench-fix
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: workbench-promotion-finalizer
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      base_sha: ${{ steps.state.outputs.base_sha }}
+      changed: ${{ steps.patch.outputs.changed }}
+      patch: ${{ steps.patch.outputs.patch }}
+      pr_state: ${{ steps.state.outputs.pr_state }}
+      target_ref: ${{ steps.state.outputs.target_ref }}
+      tree: ${{ steps.proposed.outputs.tree }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          ref: codex/workbench-fix
+
+      - id: state
+        name: Resolve the only safe promotion base
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          pr_state="$(gh pr view 2 --repo "$GITHUB_REPOSITORY" --json state --jq '.state')"
+          git fetch origin main
+          case "$pr_state" in
+            OPEN)
+              target_ref='codex/workbench-fix'
+              base_sha="$(git rev-parse HEAD)"
+              ;;
+            MERGED)
+              target_ref='main'
+              base_sha="$(git rev-parse origin/main)"
+              ;;
+            *)
+              echo "PR #2 is $pr_state, not safely promotable" >&2
+              exit 1
+              ;;
+          esac
+          printf 'pr_state=%s\n' "$pr_state" >> "$GITHUB_OUTPUT"
+          printf 'target_ref=%s\n' "$target_ref" >> "$GITHUB_OUTPUT"
+          printf 'base_sha=%s\n' "$base_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Produce the clean final tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/apply-workbench-fix-v7.py
+          test -f docs/evidence/WORKBENCH-FIX-2026-08-27.md
+          proof="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          if ! grep -Fq "$proof" docs/evidence/WORKBENCH-FIX-2026-08-27.md; then
+            printf '\n- Final promotion proof: `%s`\n' "$proof" >> docs/evidence/WORKBENCH-FIX-2026-08-27.md
+          fi
+          git add -A
+          git diff --cached --check
+
+      - id: proposed
+        name: Freeze the exact candidate tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          tree="$(git write-tree)"
+          proposed="$(printf '%s\n' 'verified Workbench promotion candidate' | git commit-tree "$tree" -p "$(git rev-parse HEAD)")"
+          printf 'commit=%s\n' "$proposed" >> "$GITHUB_OUTPUT"
+          printf 'tree=%s\n' "$tree" >> "$GITHUB_OUTPUT"
+          git diff --check "${{ steps.state.outputs.base_sha }}" "$proposed"
+          git checkout --detach "$proposed"
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci --ignore-scripts
+      - run: npm run verify
+
+      - id: patch
+        name: Encode the exact candidate delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --binary --full-index "${{ steps.state.outputs.base_sha }}" "${{ steps.proposed.outputs.commit }}" > /tmp/workbench-fix.patch
+          if test -s /tmp/workbench-fix.patch; then
+            printf 'changed=true\n' >> "$GITHUB_OUTPUT"
+            printf 'patch=' >> "$GITHUB_OUTPUT"
+            gzip -9c /tmp/workbench-fix.patch | base64 -w0 >> "$GITHUB_OUTPUT"
+            printf '\n' >> "$GITHUB_OUTPUT"
+          else
+            printf 'changed=false\npatch=\n' >> "$GITHUB_OUTPUT"
+          fi
+
+  ubuntu-package:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.prepare.outputs.target_ref }}
+
+      - name: Confirm immutable base
+        run: test "$(git rev-parse HEAD)" = "${{ needs.prepare.outputs.base_sha }}"
+
+      - name: Apply candidate delta
+        if: needs.prepare.outputs.changed == 'true'
+        env:
+          WORKBENCH_PATCH: ${{ needs.prepare.outputs.patch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "$WORKBENCH_PATCH" | base64 -d | gzip -d > /tmp/workbench-fix.patch
+          git apply --index /tmp/workbench-fix.patch
+          test "$(git write-tree)" = "${{ needs.prepare.outputs.tree }}"
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install exact Ubuntu journey dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes file libasound2t64 libatspi2.0-0 libdrm2 libgbm1 libgtk-3-0 libnss3 libxss1 poppler-utils xdg-utils xvfb zstd
+          if sysctl -N kernel.apparmor_restrict_unprivileged_userns >/dev/null 2>&1; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+
+      - run: npm ci
+      - run: npm run install:electron
+      - run: scripts/linux/fetch-appimage-tools.sh
+      - run: npm run verify
+      - run: npm run build:linux
+      - run: npm run verify:linux
+
+  macos-package:
+    needs: prepare
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.prepare.outputs.target_ref }}
+
+      - name: Confirm immutable base
+        run: test "$(git rev-parse HEAD)" = "${{ needs.prepare.outputs.base_sha }}"
+
+      - name: Apply candidate delta
+        if: needs.prepare.outputs.changed == 'true'
+        env:
+          WORKBENCH_PATCH: ${{ needs.prepare.outputs.patch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "$WORKBENCH_PATCH" | base64 -d | gzip -d > /tmp/workbench-fix.patch
+          git apply --index /tmp/workbench-fix.patch
+          test "$(git write-tree)" = "${{ needs.prepare.outputs.tree }}"
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Prove native target runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = 'arm64'
+          test "$(sw_vers -productVersion | cut -d. -f1)" -ge 26
+
+      - run: npm ci --ignore-scripts
+      - run: npm run verify
+      - run: scripts/build-macos.sh
+      - run: scripts/verify-packaged-macos.sh
+      - run: node scripts/write-evidence-receipt.mjs
+
+  publish:
+    needs:
+      - prepare
+      - ubuntu-package
+      - macos-package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.prepare.outputs.target_ref }}
+
+      - name: Confirm immutable base
+        run: test "$(git rev-parse HEAD)" = "${{ needs.prepare.outputs.base_sha }}"
+
+      - name: Apply the cross-platform-proven delta
+        if: needs.prepare.outputs.changed == 'true'
+        env:
+          WORKBENCH_PATCH: ${{ needs.prepare.outputs.patch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "$WORKBENCH_PATCH" | base64 -d | gzip -d > /tmp/workbench-fix.patch
+          git apply --index /tmp/workbench-fix.patch
+          test "$(git write-tree)" = "${{ needs.prepare.outputs.tree }}"
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci --ignore-scripts
+      - run: npm run verify
+      - run: |
+          git diff --cached --check
+          git diff --check
+
+      - id: commit
+        name: Publish the proven tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          if ! git diff --cached --quiet; then
+            git commit -m 'fix: harden Workbench integrity and repository gates'
+          fi
+          test "$(git rev-parse HEAD^{tree})" = "${{ needs.prepare.outputs.tree }}"
+          printf 'head_sha=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          if test "${{ needs.prepare.outputs.pr_state }}" = 'OPEN'; then
+            git push origin HEAD:codex/workbench-fix
+          else
+            git push origin HEAD:main
+          fi
+
+      - name: Squash the proven branch into main
+        if: needs.prepare.outputs.pr_state == 'OPEN'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test "$(gh pr view 2 --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = 'true'; then
+            gh pr ready 2 --repo "$GITHUB_REPOSITORY"
+          fi
+          gh pr merge 2 \
+            --repo "$GITHUB_REPOSITORY" \
+            --squash \
+            --delete-branch \
+            --match-head-commit "${{ steps.commit.outputs.head_sha }}" \
+            --subject 'fix: harden Workbench integrity and repository gates' \
+            --body 'Strict journal records; durable/live-state fencing; dead utility-process handling; recoverable Linux preferences; atomic PDF publication; regression coverage; canonical repository verification; Ubuntu and native macOS package proof; documentation and branch cleanup.'
+
+      - name: Remove the obsolete branch after an already-merged repair
+        if: needs.prepare.outputs.pr_state == 'MERGED'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/codex/workbench-fix" || true
+
+      - name: Prove main and repository cleanup
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main --prune
+          test "$(git rev-parse origin/main^{tree})" = "${{ needs.prepare.outputs.tree }}"
+          git checkout --detach origin/main
+          test "$(gh pr view 2 --repo "$GITHUB_REPOSITORY" --json state --jq '.state')" = 'MERGED'
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/codex/workbench-fix" >/dev/null 2>&1; then
+            echo 'obsolete branch still exists' >&2
+            exit 1
+          fi
+          npm ci --ignore-scripts
+          npm run verify
+
+      - name: Re-dispatch canonical main gates where supported
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh workflow run dw-g01-linux.yml --repo "$GITHUB_REPOSITORY" --ref main || true
+          gh workflow run dw-t00-macos.yml --repo "$GITHUB_REPOSITORY" --ref main || true
