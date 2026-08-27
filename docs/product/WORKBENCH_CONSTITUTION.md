@@ -62,9 +62,11 @@ Commands use stable domain verbs rather than UI implementation names.
 deck.rename
 section.add
 section.rename
+section.remove
 slide.add
 slide.move
 slide.intent.set
+slide.remove
 content.add
 content.update
 content.remove

@@ -86,6 +86,10 @@ type SectionRenamePayload = {
   title: string
 }
 
+type SectionRemovePayload = {
+  sectionId: string
+}
+
 type SlideAddPayload = {
   sectionId: string
   slideId: string
@@ -106,10 +110,14 @@ type SlideIntentPayload = {
   intent: string
 }
 
+type SlideRemovePayload = {
+  slideId: string
+}
+
 type CommandEnvelope = {
   commandId: string
   expectedRevision: number
-  type: 'deck.rename' | 'content.add' | 'content.update' | 'content.remove' | 'section.add' | 'section.rename' | 'section.move' | 'slide.add' | 'slide.move' | 'slide.intent.set'
+  type: 'deck.rename' | 'content.add' | 'content.update' | 'content.remove' | 'section.add' | 'section.rename' | 'section.move' | 'section.remove' | 'slide.add' | 'slide.move' | 'slide.intent.set' | 'slide.remove'
   payload: JsonObject
   source: {
     kind: 'ui' | 'keyboard' | 'cli' | 'mcp' | 'migration'
@@ -124,11 +132,11 @@ type HistoryOperation =
   | { type: 'content.insert'; payload: { slideId: string; block: ContentBlock; afterBlockId: string | null } }
   | { type: 'content.remove'; payload: ContentRemovePayload }
   | { type: 'section.insert'; payload: { section: Section; afterSectionId: string | null } }
-  | { type: 'section.remove'; payload: { sectionId: string } }
+  | { type: 'section.remove'; payload: SectionRemovePayload }
   | { type: 'section.rename'; payload: SectionRenamePayload }
   | { type: 'section.move'; payload: SectionMovePayload }
   | { type: 'slide.insert'; payload: { sectionId: string; slide: Slide; afterSlideId: string | null } }
-  | { type: 'slide.remove'; payload: { slideId: string } }
+  | { type: 'slide.remove'; payload: SlideRemovePayload }
   | { type: 'slide.move'; payload: SlideMovePayload }
   | { type: 'slide.intent.set'; payload: SlideIntentPayload }
 
@@ -649,6 +657,18 @@ function prepare(session: KernelSession, command: CommandEnvelope): PrepareResul
       inverse = { type: 'section.move', payload: { sectionId, afterSectionId: previousAfterSectionId } }
       label = 'Move Section'
       projectionHints = ['story', 'sequence', 'history']
+    } else if (command.type === 'section.remove') {
+      const sectionId = assertString(command.payload.sectionId, 'sectionId')
+      const sectionIndex = session.checkpoint.deck.sections.findIndex((section) => section.id === sectionId)
+      if (sectionIndex < 0) throw new Error('Section does not exist')
+      if (session.checkpoint.deck.sections.length <= 1) throw new Error('Deck must retain at least one Section')
+      const section = session.checkpoint.deck.sections[sectionIndex]
+      if (section.slides.length > 0) throw new Error('Section must be empty before removal')
+      const afterSectionId = sectionIndex > 0 ? session.checkpoint.deck.sections[sectionIndex - 1].id : null
+      forward = { type: 'section.remove', payload: { sectionId } }
+      inverse = { type: 'section.insert', payload: { section: clone(section), afterSectionId } }
+      label = `Remove Section: ${section.title}`
+      projectionHints = ['story', 'sequence', 'history']
     } else if (command.type === 'slide.add') {
       const sectionId = assertString(command.payload.sectionId, 'sectionId')
       const section = session.checkpoint.deck.sections.find((candidate) => candidate.id === sectionId)
@@ -705,6 +725,19 @@ function prepare(session: KernelSession, command: CommandEnvelope): PrepareResul
       forward = { type: 'slide.intent.set', payload: { slideId, intent } }
       inverse = { type: 'slide.intent.set', payload: { slideId, intent: currentIntent } }
       label = `Set Slide intent: ${intent}`
+      projectionHints = ['story', 'sequence', 'slide.activeProjection', 'history']
+    } else if (command.type === 'slide.remove') {
+      const slideId = assertString(command.payload.slideId, 'slideId')
+      const location = findSlideLocation(session.checkpoint.deck, slideId)
+      if (!location) throw new Error('Slide does not exist')
+      const slideCount = session.checkpoint.deck.sections.reduce((sum, section) => sum + section.slides.length, 0)
+      if (slideCount <= 1) throw new Error('Deck must retain at least one Slide')
+      const section = session.checkpoint.deck.sections[location.sectionIndex]
+      const slide = section.slides[location.slideIndex]
+      const afterSlideId = location.slideIndex > 0 ? section.slides[location.slideIndex - 1].id : null
+      forward = { type: 'slide.remove', payload: { slideId } }
+      inverse = { type: 'slide.insert', payload: { sectionId: section.id, slide: clone(slide), afterSlideId } }
+      label = 'Remove Slide'
       projectionHints = ['story', 'sequence', 'slide.activeProjection', 'history']
     } else {
       return failure('InvalidCommand', `Unsupported command type: ${String(command.type)}`)

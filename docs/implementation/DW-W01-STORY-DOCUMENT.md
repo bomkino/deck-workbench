@@ -25,9 +25,11 @@ native create
 - `section.add`
 - `section.move`
 - `section.rename`
+- `section.remove` (D01-B empty-only)
 - `slide.add`
 - `slide.move`
 - `slide.intent.set`
+- `slide.remove` (D01-B explicit-only)
 - `deck.rename`
 - `content.add`
 - `content.update`
@@ -55,7 +57,7 @@ All Story commands use the existing command envelope, non-mutating prepare, appe
 
 ## Explicitly deferred
 
-- Section/Slide removal and rich-editor schema breadth;
+- cascading Section/Slide removal and rich-editor schema breadth;
 - drag-and-drop interaction;
 - crash-injection matrix beyond the recovery behavior already proven;
 - Garuda parity, editor dependencies and export breadth.
@@ -96,3 +98,33 @@ revisions atomically. Internal history operations remain capable of removing a
 newly-added headline while undoing `content.add`; command policy does not leak into
 history replay. Section/Slide cascading and last-item rules stay deferred to
 `DW-W01-D01-B`.
+
+### D01-B selection — explicit only
+
+The recommended conservative policy is now binding:
+
+- `slide.remove` removes exactly one stable Slide and rejects removal of the Deck's
+  final Slide;
+- removing the final Slide inside one Section is allowed when another Deck Slide
+  remains, leaving that Section empty;
+- `section.remove` removes only an empty Section and rejects removal of the Deck's
+  final Section;
+- neither command cascades;
+- undo retains the complete entity, owning Section identity and stable predecessor
+  anchor so identity and order survive save/close/reopen.
+
+Exact packaged journey:
+
+```text
+remove body Content Block
+→ remove one Slide
+→ remove one now-empty Section
+→ save and close
+→ reopen with one Section and one Slide
+→ undo Section, Slide and Content removals
+→ verify original identities/order/content
+→ redo all three removals
+```
+
+Invalid non-empty Section removal and last-Section/last-Slide removal are atomic
+no-ops with explicit errors. Cascading deletion stays outside DW-W01.

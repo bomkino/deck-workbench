@@ -288,31 +288,57 @@ enum PackagedTracer {
             throw WorkbenchFailure(name: "InvalidCommand", message: "Content removal did not reach the Story projection")
         }
 
+        let rawStructurallyRemoved = try await controller.invokeWorkspaceForTracer(
+            """
+            const execute = async (type, payload) => {
+              const story = await deckBridge.query({ name: 'story.document', params: {} });
+              await deckBridge.execute({ command: {
+                commandId: crypto.randomUUID(), expectedRevision: story.revision, type, payload,
+                source: { kind: 'ui', label: 'DW-W01-D01-B packaged structural removal' },
+                issuedAt: new Date().toISOString()
+              }});
+            };
+            await execute('slide.remove', { slideId: secondSlideId });
+            await execute('section.remove', { sectionId: secondSectionId });
+            return await deckBridge.query({ name: 'story.document', params: {} });
+            """,
+            arguments: ["secondSectionId": secondSectionId, "secondSlideId": secondSlideId]
+        )
+        let structurallyRemoved = try requireStory(rawStructurallyRemoved, revision: 11)
+        try requireStoryOrder(
+            structurallyRemoved,
+            sectionIds: [openingSectionId],
+            slideIdsBySection: [[openingSlideId]]
+        )
+
         guard let durableDocumentURL = controller.documentURL else {
             throw WorkbenchFailure(name: "MissingAttachment", message: "Created Story Deck URL is unavailable")
         }
         let replayController = try DeckSessionController()
         _ = try replayController.openDocument(at: durableDocumentURL)
         let replayed = try replayController.query(name: "story.document", params: [:])
-        _ = try requireStory(replayed, revision: 9)
+        _ = try requireStory(replayed, revision: 11)
 
-        let crashRecoveryRevision = try verifyInterruptedManifestRecovery(from: durableDocumentURL, expectedRevision: 9)
+        let crashRecoveryRevision = try verifyInterruptedManifestRecovery(from: durableDocumentURL, expectedRevision: 11)
         try await controller.closeDocument()
         guard !controller.hasDocument else {
             throw WorkbenchFailure(name: "InvalidCommand", message: "Explicit close left the Deck session open")
         }
         try writeJSON([
             "phase": "story-create",
-            "revision": 9,
+            "revision": 11,
             "sectionIds": [secondSectionId, openingSectionId],
             "openingSlideIds": [openingSlideId, secondSlideId],
-            "journalReplayRevision": 9,
+            "journalReplayRevision": 11,
             "deckTitle": "The Hill",
             "renamedSectionTitle": "Act II",
             "slideIntent": "editorial-body",
             "bodyBlockId": bodyBlockId,
             "bodyText": "A body block that survives design.",
             "bodyRemoved": true,
+            "removedSectionId": secondSectionId,
+            "removedSlideId": secondSlideId,
+            "structuralRemoval": true,
             "crashRecoveryRevision": crashRecoveryRevision,
             "closedBeforeReopen": true,
         ], to: resultURL)
@@ -329,79 +355,109 @@ enum PackagedTracer {
         fflush(stdout)
         let createResult = try readJSON(from: createResultURL)
         guard let bodyBlockId = createResult["bodyBlockId"] as? String,
-              let bodyText = createResult["bodyText"] as? String
+              let bodyText = createResult["bodyText"] as? String,
+              let sectionIds = createResult["sectionIds"] as? [String],
+              sectionIds.count == 2,
+              let openingSlideIds = createResult["openingSlideIds"] as? [String],
+              openingSlideIds.count == 2
         else {
-            throw WorkbenchFailure(name: "InvalidCommand", message: "Story create receipt lacks Content Block identity")
+            throw WorkbenchFailure(name: "InvalidCommand", message: "Story create receipt lacks stable structural identities")
         }
+        let secondSectionId = sectionIds[0]
+        let openingSectionId = sectionIds[1]
+        let openingSlideId = openingSlideIds[0]
+        let secondSlideId = openingSlideIds[1]
         _ = try controller.openDocument(at: documentURL)
         try await controller.renderCurrentProjection()
         let rawReopened = try await controller.invokeWorkspaceForTracer(
             "return await deckBridge.query({ name: 'story.document', params: {} })"
         )
-        let reopened = try requireStory(rawReopened, revision: 9)
-        guard let sections = reopened["sections"] as? [[String: Any]],
-              sections.count == 2,
-              let secondSectionId = sections[0]["id"] as? String,
-              let openingSectionId = sections[1]["id"] as? String,
-              let openingSlides = sections[1]["slides"] as? [[String: Any]],
-              openingSlides.count == 2,
-              let openingSlideId = openingSlides[0]["id"] as? String,
-              let secondSlideId = openingSlides[1]["id"] as? String
-        else {
-            throw WorkbenchFailure(name: "JournalCorruption", message: "Story ordering did not survive reopen")
-        }
-        guard reopened["deckTitle"] as? String == "The Hill",
-              sections[0]["title"] as? String == "Act II",
-              openingSlides[1]["intent"] as? String == "editorial-body",
-              let contentBlocks = openingSlides[1]["contentBlocks"] as? [[String: Any]],
-              contentBlocks.count == 1,
-              contentBlocks.allSatisfy({ $0["id"] as? String != bodyBlockId })
-        else {
-            throw WorkbenchFailure(name: "JournalCorruption", message: "Story metadata or Content removal did not survive reopen")
+        let reopened = try requireStory(rawReopened, revision: 11)
+        try requireStoryOrder(reopened, sectionIds: [openingSectionId], slideIdsBySection: [[openingSlideId]])
+        guard reopened["deckTitle"] as? String == "The Hill" else {
+            throw WorkbenchFailure(name: "JournalCorruption", message: "Deck metadata did not survive structural removal")
         }
 
-        let rawUndone = try await controller.invokeWorkspaceForTracer(
+        let rawSectionRestored = try await controller.invokeWorkspaceForTracer(
             "await deckBridge.undo(); return await deckBridge.query({ name: 'story.document', params: {} })"
         )
-        let undone = try requireStory(rawUndone, revision: 10)
+        let sectionRestored = try requireStory(rawSectionRestored, revision: 12)
         try requireStoryOrder(
-            undone,
+            sectionRestored,
+            sectionIds: [secondSectionId, openingSectionId],
+            slideIdsBySection: [[], [openingSlideId]]
+        )
+
+        let rawSlideRestored = try await controller.invokeWorkspaceForTracer(
+            "await deckBridge.undo(); return await deckBridge.query({ name: 'story.document', params: {} })"
+        )
+        let slideRestored = try requireStory(rawSlideRestored, revision: 13)
+        try requireStoryOrder(
+            slideRestored,
             sectionIds: [secondSectionId, openingSectionId],
             slideIdsBySection: [[], [openingSlideId, secondSlideId]]
         )
-        guard let undoneSections = undone["sections"] as? [[String: Any]],
-              let undoneSlides = undoneSections[1]["slides"] as? [[String: Any]],
-              let undoneBlocks = undoneSlides[1]["contentBlocks"] as? [[String: Any]],
-              undoneBlocks.count == 2,
-              undoneBlocks[1]["id"] as? String == bodyBlockId,
-              undoneBlocks[1]["plainText"] as? String == bodyText
+        guard let slideSections = slideRestored["sections"] as? [[String: Any]],
+              slideSections[0]["title"] as? String == "Act II",
+              let restoredSlides = slideSections[1]["slides"] as? [[String: Any]],
+              restoredSlides[1]["intent"] as? String == "editorial-body",
+              let blocksBeforeContentUndo = restoredSlides[1]["contentBlocks"] as? [[String: Any]],
+              blocksBeforeContentUndo.count == 1
         else {
-            throw WorkbenchFailure(name: "InvalidCommand", message: "Undo did not restore removed Content Block identity and order")
+            throw WorkbenchFailure(name: "InvalidCommand", message: "Undo did not restore Section and Slide identity and metadata")
         }
 
-        let rawRedone = try await controller.invokeWorkspaceForTracer(
+        let rawContentRestored = try await controller.invokeWorkspaceForTracer(
+            "await deckBridge.undo(); return await deckBridge.query({ name: 'story.document', params: {} })"
+        )
+        let contentRestored = try requireStory(rawContentRestored, revision: 14)
+        guard let contentSections = contentRestored["sections"] as? [[String: Any]],
+              let contentSlides = contentSections[1]["slides"] as? [[String: Any]],
+              let restoredBlocks = contentSlides[1]["contentBlocks"] as? [[String: Any]],
+              restoredBlocks.count == 2,
+              restoredBlocks[1]["id"] as? String == bodyBlockId,
+              restoredBlocks[1]["plainText"] as? String == bodyText
+        else {
+            throw WorkbenchFailure(name: "InvalidCommand", message: "Undo did not restore Content Block identity and order")
+        }
+
+        let rawContentRemoved = try await controller.invokeWorkspaceForTracer(
             "await deckBridge.redo(); return await deckBridge.query({ name: 'story.document', params: {} })"
         )
-        let redone = try requireStory(rawRedone, revision: 11)
-        try requireStoryOrder(
-            redone,
-            sectionIds: [secondSectionId, openingSectionId],
-            slideIdsBySection: [[], [openingSlideId, secondSlideId]]
-        )
-        guard let redoneSections = redone["sections"] as? [[String: Any]],
-              let redoneSlides = redoneSections[1]["slides"] as? [[String: Any]],
-              let redoneBlocks = redoneSlides[1]["contentBlocks"] as? [[String: Any]],
-              redoneBlocks.count == 1,
-              redoneBlocks.allSatisfy({ $0["id"] as? String != bodyBlockId })
+        let contentRemoved = try requireStory(rawContentRemoved, revision: 15)
+        guard let redoneContentSections = contentRemoved["sections"] as? [[String: Any]],
+              let redoneContentSlides = redoneContentSections[1]["slides"] as? [[String: Any]],
+              let redoneContentBlocks = redoneContentSlides[1]["contentBlocks"] as? [[String: Any]],
+              redoneContentBlocks.count == 1
         else {
-            throw WorkbenchFailure(name: "InvalidCommand", message: "Redo did not remove Content Block again")
+            throw WorkbenchFailure(name: "InvalidCommand", message: "Redo did not remove Content Block")
         }
+
+        let rawSlideRemoved = try await controller.invokeWorkspaceForTracer(
+            "await deckBridge.redo(); return await deckBridge.query({ name: 'story.document', params: {} })"
+        )
+        let slideRemoved = try requireStory(rawSlideRemoved, revision: 16)
+        try requireStoryOrder(
+            slideRemoved,
+            sectionIds: [secondSectionId, openingSectionId],
+            slideIdsBySection: [[], [openingSlideId]]
+        )
+
+        let rawSectionRemoved = try await controller.invokeWorkspaceForTracer(
+            "await deckBridge.redo(); return await deckBridge.query({ name: 'story.document', params: {} })"
+        )
+        let sectionRemoved = try requireStory(rawSectionRemoved, revision: 17)
+        try requireStoryOrder(sectionRemoved, sectionIds: [openingSectionId], slideIdsBySection: [[openingSlideId]])
         try controller.save()
         try writeJSON([
             "phase": "story-reopen",
-            "reopenedRevision": 9,
-            "undoRevision": 10,
-            "redoRevision": 11,
+            "reopenedRevision": 11,
+            "undoSectionRevision": 12,
+            "undoSlideRevision": 13,
+            "undoContentRevision": 14,
+            "redoContentRevision": 15,
+            "redoSlideRevision": 16,
+            "redoSectionRevision": 17,
             "sectionIds": [secondSectionId, openingSectionId],
             "openingSlideIds": [openingSlideId, secondSlideId],
             "deckTitle": "The Hill",
@@ -410,6 +466,7 @@ enum PackagedTracer {
             "bodyBlockId": bodyBlockId,
             "bodyText": bodyText,
             "bodyRemovedAfterRedo": true,
+            "structuralRemovalAfterRedo": true,
         ], to: resultURL)
         print("DW-W01 Story reopen phase passed")
     }

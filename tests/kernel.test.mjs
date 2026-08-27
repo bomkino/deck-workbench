@@ -302,6 +302,84 @@ test('content.remove rejects headline and missing identities atomically', () => 
   assert.equal(JSON.stringify(kernel.serializeSession(session)), before)
 })
 
+test('explicit Slide and empty Section removal survive reopen with stable undo order', () => {
+  const session = kernel.open(checkpoint())
+  const openingSectionId = 'section-00000000-0000-4000-8000-000000000001'
+  const openingSlideId = 'slide-00000000-0000-4000-8000-000000000001'
+  const emptySectionId = 'section-00000000-0000-4000-8000-000000000002'
+  const removableSlideId = 'slide-00000000-0000-4000-8000-000000000002'
+
+  execute(session, structuralCommand(0, 'section.add', {
+    sectionId: emptySectionId,
+    title: 'Empty Act',
+    afterSectionId: openingSectionId,
+  }))
+  execute(session, structuralCommand(1, 'slide.add', {
+    sectionId: openingSectionId,
+    slideId: removableSlideId,
+    blockId: 'block-00000000-0000-4000-8000-000000000002',
+    intent: 'statement',
+    headline: {
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Removable Story' }] }],
+    },
+    afterSlideId: openingSlideId,
+  }))
+  execute(session, structuralCommand(2, 'slide.remove', { slideId: removableSlideId }))
+  execute(session, structuralCommand(3, 'section.remove', { sectionId: emptySectionId }))
+
+  const reopened = kernel.open(kernel.serializeSession(session))
+  let story = kernel.query(reopened, 'story.document', {})
+  assert.deepEqual(JSON.parse(JSON.stringify(story.sections.map((section) => section.id))), [openingSectionId])
+  assert.deepEqual(JSON.parse(JSON.stringify(story.sections[0].slides.map((slide) => slide.id))), [openingSlideId])
+
+  kernel.commit(reopened, kernel.prepareUndo(reopened))
+  story = kernel.query(reopened, 'story.document', {})
+  assert.deepEqual(JSON.parse(JSON.stringify(story.sections.map((section) => section.id))), [openingSectionId, emptySectionId])
+
+  kernel.commit(reopened, kernel.prepareUndo(reopened))
+  story = kernel.query(reopened, 'story.document', {})
+  assert.deepEqual(JSON.parse(JSON.stringify(story.sections[0].slides.map((slide) => slide.id))), [openingSlideId, removableSlideId])
+  assert.equal(story.sections[0].slides[1].headline.plainText, 'Removable Story')
+
+  kernel.commit(reopened, kernel.prepareRedo(reopened))
+  kernel.commit(reopened, kernel.prepareRedo(reopened))
+  story = kernel.query(reopened, 'story.document', {})
+  assert.equal(story.revision, 8)
+  assert.deepEqual(JSON.parse(JSON.stringify(story.sections.map((section) => section.id))), [openingSectionId])
+  assert.deepEqual(JSON.parse(JSON.stringify(story.sections[0].slides.map((slide) => slide.id))), [openingSlideId])
+})
+
+test('structural removal rejects non-empty and last-item targets atomically', () => {
+  const session = kernel.open(checkpoint())
+  const initial = JSON.stringify(kernel.serializeSession(session))
+  const lastSection = kernel.prepare(session, structuralCommand(0, 'section.remove', {
+    sectionId: 'section-00000000-0000-4000-8000-000000000001',
+  }, 'remove-last-section'))
+  const lastSlide = kernel.prepare(session, structuralCommand(0, 'slide.remove', {
+    slideId: 'slide-00000000-0000-4000-8000-000000000001',
+  }, 'remove-last-slide'))
+  assert.equal(lastSection.error.message, 'Deck must retain at least one Section')
+  assert.equal(lastSlide.error.message, 'Deck must retain at least one Slide')
+  assert.equal(JSON.stringify(kernel.serializeSession(session)), initial)
+
+  execute(session, structuralCommand(0, 'section.add', {
+    sectionId: 'section-00000000-0000-4000-8000-000000000002',
+    title: 'Empty Act',
+    afterSectionId: 'section-00000000-0000-4000-8000-000000000001',
+  }))
+  const beforeNonEmpty = JSON.stringify(kernel.serializeSession(session))
+  const nonEmpty = kernel.prepare(session, structuralCommand(1, 'section.remove', {
+    sectionId: 'section-00000000-0000-4000-8000-000000000001',
+  }, 'remove-non-empty'))
+  const missingSlide = kernel.prepare(session, structuralCommand(1, 'slide.remove', {
+    slideId: 'missing-slide',
+  }, 'remove-missing-slide'))
+  assert.equal(nonEmpty.error.message, 'Section must be empty before removal')
+  assert.equal(missingSlide.error.message, 'Slide does not exist')
+  assert.equal(JSON.stringify(kernel.serializeSession(session)), beforeNonEmpty)
+})
+
 test('invalid structural commands reject atomically without consuming identities', () => {
   const session = kernel.open(checkpoint())
   const before = JSON.stringify(kernel.serializeSession(session))

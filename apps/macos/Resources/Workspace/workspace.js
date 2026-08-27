@@ -64,6 +64,7 @@ function setBusy(label) {
   elements.slideIntent.disabled = true
   elements.renameDeck.disabled = true
   elements.addBody.disabled = true
+  elements.sequenceList.querySelectorAll('button').forEach((button) => { button.disabled = true })
   elements.additionalContent.querySelectorAll('button').forEach((button) => { button.disabled = true })
 }
 
@@ -175,6 +176,15 @@ function renderSequence(next) {
       move.addEventListener('click', () => moveSectionUp(section.id))
       tools.append(move)
     }
+    if (section.slides.length === 0 && next.sections.length > 1) {
+      const remove = document.createElement('button')
+      remove.type = 'button'
+      remove.className = 'remove-structure'
+      remove.textContent = '×'
+      remove.setAttribute('aria-label', `Remove empty Section ${section.title}`)
+      remove.addEventListener('click', () => removeSection(section.id))
+      tools.append(remove)
+    }
     sectionRow.append(tools)
     elements.sequenceList.append(sectionRow)
 
@@ -192,6 +202,8 @@ function renderSequence(next) {
       select.append(number, label)
       select.addEventListener('click', () => selectSlide(slide.id))
       entry.append(select)
+      const slideTools = document.createElement('span')
+      slideTools.className = 'slide-tools'
       if (slideIndex > 0) {
         const move = document.createElement('button')
         move.type = 'button'
@@ -199,8 +211,19 @@ function renderSequence(next) {
         move.textContent = '↑'
         move.setAttribute('aria-label', `Move Slide ${slideNumber} up`)
         move.addEventListener('click', () => moveSlideUp(section.id, slide.id))
-        entry.append(move)
+        slideTools.append(move)
       }
+      const totalSlides = next.sections.reduce((sum, candidate) => sum + candidate.slides.length, 0)
+      if (totalSlides > 1) {
+        const remove = document.createElement('button')
+        remove.type = 'button'
+        remove.className = 'remove-structure'
+        remove.textContent = '×'
+        remove.setAttribute('aria-label', `Remove Slide ${slideNumber}`)
+        remove.addEventListener('click', () => removeSlide(slide.id))
+        slideTools.append(remove)
+      }
+      if (slideTools.childElementCount > 0) entry.append(slideTools)
       elements.sequenceList.append(entry)
       slideNumber += 1
     })
@@ -288,6 +311,11 @@ async function renameSection(sectionId, currentTitle) {
   await executeStructural('section.rename', { sectionId, title })
 }
 
+async function removeSection(sectionId) {
+  if (!storyDocument || !projection) return
+  await executeStructural('section.remove', { sectionId }, projection.slide.id)
+}
+
 async function moveSlideUp(sectionId, slideId) {
   if (!storyDocument) return
   const section = storyDocument.sections.find((candidate) => candidate.id === sectionId)
@@ -298,6 +326,18 @@ async function moveSlideUp(sectionId, slideId) {
     targetSectionId: sectionId,
     afterSlideId: index > 1 ? section.slides[index - 2].id : null,
   }, slideId)
+}
+
+async function removeSlide(slideId) {
+  if (!storyDocument || !projection) return
+  const orderedSlides = storyDocument.sections.flatMap((section) => section.slides)
+  const removedIndex = orderedSlides.findIndex((slide) => slide.id === slideId)
+  const remainingSlides = orderedSlides.filter((slide) => slide.id !== slideId)
+  if (removedIndex < 0 || remainingSlides.length === 0) return
+  const selectedSlideId = projection.slide.id === slideId
+    ? remainingSlides[Math.min(removedIndex, remainingSlides.length - 1)].id
+    : projection.slide.id
+  await executeStructural('slide.remove', { slideId }, selectedSlideId)
 }
 
 function applyScales() {

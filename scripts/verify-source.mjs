@@ -42,6 +42,7 @@ assert.equal(bridge.methods.length, 10)
 assert.equal(new Set(bridge.methods.map((method) => method.name)).size, 10)
 assert.match(kernel, /'content\.remove'/)
 assert.match(workspaceJavaScript, /executeStructural\('content\.remove'/)
-assert.doesNotMatch(workspaceJavaScript, /section\.remove|slide\.remove/)
+assert.match(workspaceJavaScript, /executeStructural\('section\.remove'/)
+assert.match(workspaceJavaScript, /executeStructural\('slide\.remove'/)
 
 console.log('Source contract verification passed')

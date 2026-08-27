@@ -81,11 +81,13 @@ button:disabled { color: var(--faint); }
 .rename-section { min-height: 1.7rem; padding-inline: 0.35rem; font-size: 0.55rem; }
 .disclosure { color: var(--muted); }
 .slide-entry { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.25rem; margin-top: 0.3rem; }
+.slide-tools { display: flex; gap: 0.2rem; }
 .slide-row { width: 100%; display: grid; grid-template-columns: 1.7rem minmax(0, 1fr); text-align: left; overflow: hidden; }
 .slide-row span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .slide-row.selected { border-color: var(--accent); }
 .slide-number { color: var(--faint); font-variant-numeric: tabular-nums; }
 .move-up { min-height: 2rem; padding-inline: 0.45rem; color: var(--muted); }
+.remove-structure { min-height: 2rem; padding-inline: 0.45rem; color: var(--muted); }
 
 .panel-heading { display: flex; justify-content: space-between; align-items: start; gap: 1rem; min-height: 3.2rem; }
 .revision, #zoom-label { margin: 0; color: var(--muted); font-size: 0.7rem; }

@@ -38,10 +38,23 @@ projection contracts before exposing a destructive Story command.
 
 | Severity | Finding | Resolution |
 |---|---|---|
-| Blocking | Cascading Section/Slide removal and last-item behavior have no supplied product decision. | Keep `section.remove` and `slide.remove` unavailable; dispatch `DW-W01-D01-B` as a founder decision. |
+| Blocking | Cascading Section/Slide removal and last-item behavior had no supplied product decision. | D01-A kept both commands unavailable. D01-B later selected explicit-only removal with hard last-item rejection; cascading remains unsupported. |
 | Blocking | Removing a headline would invalidate the named `slide.activeProjection` seam. | Public `content.remove` rejects every headline Block atomically. |
 | Material | Recreating removed content with a new ID or append-only placement would break stable references and Story order. | History inverse stores the complete Block and its stable predecessor anchor; packaged reopen/undo must prove exact restoration. |
 | Material | A UI-only removal path would bypass durability and replay semantics. | Removal uses `deck.execute`, kernel prepare, host append/fsync, commit, projection, undo and redo without another mutation route. |
 
 Accepted scope is one non-headline Content Block. No production dependency, renderer
 filesystem power, generic IPC, AI, telemetry or network path enters this slice.
+
+## DW-W01-D01-B addendum
+
+| Severity | Finding | Resolution |
+|---|---|---|
+| Blocking | Cascading Section deletion would combine multiple user-visible losses and enlarge every inverse/journal record. | Rejected for DW-W01. `section.remove` accepts only an empty Section. |
+| Blocking | Removing the final Slide would leave `slide.activeProjection` without a valid target. | `slide.remove` rejects when Deck Slide count is one. |
+| Blocking | Removing the final Section would violate the canonical Deck fixture and Editorial Spine topology. | `section.remove` rejects when Section count is one. |
+| Material | Removing the selected Slide could make the workspace query a deleted ID after durable commit. | Workspace resolves a deterministic next/previous stable Slide ID before dispatch and queries only that surviving target after acknowledgement. |
+| Material | Undo must restore exact structure, not create replacement identities. | Full Section/Slide snapshots plus owning/predecessor anchors are retained in semantic history and verified after packaged reopen. |
+
+No second mutation path or new dependency enters D01-B. Clean Linux and macOS jobs
+remain required before packaged status.

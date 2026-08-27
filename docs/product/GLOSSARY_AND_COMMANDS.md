@@ -45,9 +45,11 @@ deck.rename
 section.add
 section.rename
 section.move
+section.remove
 slide.add
 slide.move
 slide.intent.set
+slide.remove
 content.add
 content.update
 content.remove
@@ -123,3 +125,13 @@ Avoid a generic query language or raw state dump across the privilege boundary. 
 `content.remove` accepts stable `slideId` and `blockId` identities. It removes only a
 non-headline Content Block. Its history inverse retains the complete Block plus its
 stable predecessor anchor so undo restores the same identity and order after reopen.
+
+## Structural removal
+
+`slide.remove` accepts one stable `slideId`. It is rejected when the Deck contains
+only one Slide. Its inverse retains the full Slide, source Section identity and
+stable predecessor anchor.
+
+`section.remove` accepts one stable `sectionId`. It is rejected unless the Section
+is empty, and it may not remove the Deck's final Section. Its inverse retains the
+complete empty Section and stable predecessor anchor. Neither command cascades.
