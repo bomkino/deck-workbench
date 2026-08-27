@@ -1,0 +1,25 @@
+name: Workbench source export
+
+on:
+  push:
+    branches:
+      - codex/workbench-fix
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          ref: codex/workbench-fix
+      - run: git archive --format=tar.gz --output=workbench-branch.tar.gz HEAD
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: workbench-branch-${{ github.sha }}
+          path: workbench-branch.tar.gz
+          if-no-files-found: error
