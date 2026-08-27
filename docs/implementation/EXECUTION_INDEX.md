@@ -12,6 +12,7 @@
   journey remain.
 - `DW-W09`: bounded local CLI source-ready.
 - `DW-W10`: privacy-safe support-report seam source-ready.
+- Repository hardening: strict journal record boundaries, durable/live-state fencing, dead utility-process rejection, recoverable Linux preferences, atomic Linux PDF publication and one canonical repository verification gate.
 
 Target-machine Garuda and interactive macOS accessibility checks are waived for
 canonical `main` promotion only. The waiver is not verification and does not make

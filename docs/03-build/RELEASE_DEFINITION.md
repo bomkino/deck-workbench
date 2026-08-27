@@ -59,3 +59,7 @@ Design System and fonts, authored Pattern breadth, Review/Preflight, honest PDF,
 PPTX/handoff/PNG exports, performance evidence, installation documentation and
 release checksums. Deferred target-machine checks may be reinstated as binding by
 an explicit owner decision.
+
+## Repository integrity gate
+
+Every promoted source tree must pass `npm run verify`. The gate regenerates shared contracts, runs all tests, checks source invariants, validates JavaScript and shell syntax, resolves relative documentation links, enforces full-commit GitHub Action pins, reconciles Electron notices and rejects tracked build output. Platform package journeys run this gate before packaging.

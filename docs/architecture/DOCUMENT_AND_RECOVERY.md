@@ -55,6 +55,8 @@ It excludes renderer DOM, selection, hover, open panels, cache paths, platform f
 }
 ```
 
+Every non-empty journal is newline-terminated and contains exactly one JSON object per physical line. Blank lines are corruption. Readers must reject them rather than silently filtering evidence.
+
 ## Acknowledgement order
 
 ```text
@@ -74,6 +76,8 @@ acknowledge workspace
 ```
 
 If append/fsync fails, live state remains unchanged and the user sees a named persistence error.
+
+If the durable append succeeds but the live kernel commit cannot complete, the session is fenced against further mutation. Read-only projection remains available; Close releases the writer lock without overwriting the durable tail; reopen replays the journal before editing resumes.
 
 ## Idempotency and stale state
 

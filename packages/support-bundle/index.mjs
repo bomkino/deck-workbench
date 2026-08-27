@@ -134,10 +134,15 @@ function inspectJournal(bytes, manifest) {
     return { status: 'invalid', reason: 'invalid-utf8' }
   }
 
+  const lines = text.length === 0 ? [] : text.slice(0, -1).split('\n')
+  if (lines.some((line) => line.length === 0)) {
+    return { status: 'invalid', reason: 'blank-record' }
+  }
+
   let previousHash = ZERO_HASH
   let expectedRevision = 1
   const hashes = new Set([ZERO_HASH])
-  for (const line of text.split('\n').filter(Boolean)) {
+  for (const line of lines) {
     let record
     try {
       record = JSON.parse(line)

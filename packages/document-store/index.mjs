@@ -357,11 +357,16 @@ export function validateJournal(data) {
     throw failure('JournalCorruption', 'Journal has a partial or non-UTF-8 record', error)
   }
 
+  const lines = text.slice(0, -1).split('\n')
+  if (lines.some((line) => line.length === 0)) {
+    throw failure('JournalCorruption', 'Journal contains a blank record')
+  }
+
   let previousHash = ZERO_HASH
   let expectedRevision = 1
   const hashes = new Set([ZERO_HASH])
   const records = []
-  for (const line of text.split('\n').filter(Boolean)) {
+  for (const line of lines) {
     let record
     try {
       record = requiredObject(JSON.parse(line), 'Journal record')
@@ -706,6 +711,7 @@ export class DurableDeckSession {
     this.kernelSession = kernelSession
     this.store = store
     this.recovery = recovery
+    this.requiresReopen = false
     this.closed = false
   }
 
@@ -716,13 +722,23 @@ export class DurableDeckSession {
     if (this.closed) throw failure('KernelUnavailable', 'Deck session is closed')
   }
 
+  #requireWritable() {
+    this.#requireOpen()
+    if (this.requiresReopen || this.store.requiresReopen) {
+      throw failure(
+        'KernelUnavailable',
+        'Deck session requires reopen before further mutation',
+      )
+    }
+  }
+
   query(name, params = {}) {
     this.#requireOpen()
     return clone(kernelValue(this.kernel.query(this.kernelSession, name, params)))
   }
 
   async execute(command) {
-    this.#requireOpen()
+    this.#requireWritable()
     const prepared = kernelValue(this.kernel.prepare(this.kernelSession, command))
     if (prepared.duplicate === true) {
       return {
@@ -734,18 +750,34 @@ export class DurableDeckSession {
   }
 
   async undo() {
-    this.#requireOpen()
+    this.#requireWritable()
     return this.#commitPrepared(kernelValue(this.kernel.prepareUndo(this.kernelSession)))
   }
 
   async redo() {
-    this.#requireOpen()
+    this.#requireWritable()
     return this.#commitPrepared(kernelValue(this.kernel.prepareRedo(this.kernelSession)))
   }
 
   async #commitPrepared(prepared) {
-    await this.store.appendDurably(prepared)
-    const acknowledgement = kernelValue(this.kernel.commit(this.kernelSession, prepared))
+    try {
+      await this.store.appendDurably(prepared)
+    } catch (error) {
+      if (this.store.requiresReopen) this.requiresReopen = true
+      throw error
+    }
+
+    let acknowledgement
+    try {
+      acknowledgement = kernelValue(this.kernel.commit(this.kernelSession, prepared))
+    } catch (error) {
+      this.requiresReopen = true
+      throw failure(
+        'KernelUnavailable',
+        'A durable Deck change could not be applied to live state; close and reopen before editing again',
+        error,
+      )
+    }
     return {
       acknowledgement: clone(acknowledgement),
       projection: this.query('slide.activeProjection', {}),
@@ -753,17 +785,31 @@ export class DurableDeckSession {
   }
 
   async save() {
-    this.#requireOpen()
+    this.#requireWritable()
     await this.store.saveCheckpoint(this.kernel.serializeSession(this.kernelSession))
     return { revision: this.revision, packagePath: this.packagePath }
   }
 
   async close({ save = true } = {}) {
     if (this.closed) return
-    if (save) await this.save()
-    await this.store.close()
-    this.closed = true
-    this.kernelSession = undefined
+    let pendingError
+    if (save && !this.requiresReopen && !this.store.requiresReopen) {
+      try {
+        await this.save()
+      } catch (error) {
+        pendingError = error
+      }
+    }
+    try {
+      await this.store.close()
+    } catch (error) {
+      pendingError ??= error
+    }
+    if (this.store.closed) {
+      this.closed = true
+      this.kernelSession = undefined
+    }
+    if (pendingError) throw pendingError
   }
 }
 
