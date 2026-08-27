@@ -203,3 +203,30 @@ focus the first Slide in the later Section
 ```
 
 Drag-and-drop, multi-selection and broad Sequence navigation remain deferred.
+
+## DW-W01-R04 — Sequence Section keyboard reorder
+
+Each Section heading group is keyboard-focusable and uses the same unmodified
+Option–Up / Option–Down policy as Slide rows. The caller maps direction to the
+existing `section.move` payload with a stable Section ID and stable predecessor
+anchor. Boundary directions with no destination remain uncancelled.
+
+After durable acknowledgement, the Story projection is requeried and focus returns
+to the Section group with the same ID. While a structural command is pending,
+Section groups are removed from the tab order and marked disabled to prevent a
+second command from using stale projection state.
+
+Exact packaged extension:
+
+```text
+focus the later Section
+→ Option–Up moves it before the preceding Section
+→ retain focus by stable Section ID
+→ Option–Down restores the original order
+→ retain focus
+→ save, close and reopen
+→ undo Section down/up, Slide down/up and paragraph update in stack order
+→ redo the same history in forward order
+```
+
+This adds no Section-selection model, drag behavior or alternate structural seam.

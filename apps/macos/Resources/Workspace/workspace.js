@@ -101,6 +101,18 @@ function slideMovePlan(story, sectionId, slideId, direction) {
   return { slideId, targetSectionId: target.id, afterSlideId: null }
 }
 
+function sectionMovePlan(story, sectionId, direction) {
+  if (!story || (direction !== 'up' && direction !== 'down')) return null
+  const index = story.sections.findIndex((section) => section.id === sectionId)
+  if (index < 0) return null
+  if (direction === 'up') {
+    if (index === 0) return null
+    return { sectionId, afterSectionId: index > 1 ? story.sections[index - 2].id : null }
+  }
+  if (index === story.sections.length - 1) return null
+  return { sectionId, afterSectionId: story.sections[index + 1].id }
+}
+
 function setBusy(label) {
   elements.saveState.textContent = label
   elements.commit.disabled = true
@@ -112,6 +124,10 @@ function setBusy(label) {
   elements.renameDeck.disabled = true
   elements.addBody.disabled = true
   elements.sequenceList.querySelectorAll('button').forEach((button) => { button.disabled = true })
+  elements.sequenceList.querySelectorAll('.section-row').forEach((row) => {
+    row.tabIndex = -1
+    row.setAttribute('aria-disabled', 'true')
+  })
   elements.additionalContent.querySelectorAll('button').forEach((button) => { button.disabled = true })
 }
 
@@ -137,7 +153,10 @@ function renderProjection(next, options = {}) {
   elements.addBody.disabled = false
   elements.saveState.textContent = 'Durable and projected'
   applyScales()
-  void refreshSequence(options.sequenceFocusSlideId ?? null)
+  void refreshSequence({
+    slideId: options.sequenceFocusSlideId ?? null,
+    sectionId: options.sequenceFocusSectionId ?? null,
+  })
   return next
 }
 
@@ -205,6 +224,11 @@ function renderSequence(next) {
   next.sections.forEach((section, sectionIndex) => {
     const sectionRow = document.createElement('div')
     sectionRow.className = 'section-row'
+    sectionRow.tabIndex = 0
+    sectionRow.dataset.sectionId = section.id
+    sectionRow.setAttribute('role', 'group')
+    sectionRow.setAttribute('aria-label', `${section.title} Section`)
+    sectionRow.addEventListener('keydown', (event) => moveSectionByKeyboard(event, section.id))
     const title = document.createElement('strong')
     title.textContent = section.title
     sectionRow.append(title)
@@ -282,12 +306,13 @@ function renderSequence(next) {
   })
 }
 
-async function refreshSequence(focusSlideId = null) {
+async function refreshSequence(focus = {}) {
   try {
     renderSequence(await window.deckBridge.query({ name: 'story.document', params: {} }))
-    if (focusSlideId) {
-      elements.sequenceList.querySelector(`[data-slide-id="${CSS.escape(focusSlideId)}"]`)?.focus()
-    }
+    const target = focus.slideId
+      ? elements.sequenceList.querySelector(`[data-slide-id="${CSS.escape(focus.slideId)}"]`)
+      : elements.sequenceList.querySelector(`[data-section-id="${CSS.escape(focus.sectionId ?? '')}"]`)
+    target?.focus()
   } catch {
     // No Deck is open yet; the native shell owns empty-document state.
   }
@@ -311,7 +336,10 @@ async function executeStructural(type, payload, selectedSlideId = projection?.sl
       name: 'slide.activeProjection',
       params: selectedSlideId ? { slideId: selectedSlideId } : {},
     })
-    renderProjection(next, { sequenceFocusSlideId: options.sequenceFocusSlideId })
+    renderProjection(next, {
+      sequenceFocusSlideId: options.sequenceFocusSlideId,
+      sequenceFocusSectionId: options.sequenceFocusSectionId,
+    })
   } catch (error) {
     elements.saveState.textContent = `${error.name ?? 'Error'}: ${error.message}`
     renderProjection(projection)
@@ -357,6 +385,20 @@ async function moveSectionUp(sectionId) {
   await executeStructural('section.move', {
     sectionId,
     afterSectionId: index > 1 ? storyDocument.sections[index - 2].id : null,
+  })
+}
+
+function moveSectionByKeyboard(event, sectionId) {
+  if (event.target !== event.currentTarget) return
+  if (event.currentTarget.getAttribute('aria-disabled') === 'true') return
+  const direction = sequenceShortcut(event)
+  if (!direction) return
+  const payload = sectionMovePlan(storyDocument, sectionId, direction)
+  if (!payload) return
+  event.preventDefault()
+  void executeStructural('section.move', payload, projection?.slide.id, {
+    sourceKind: 'keyboard',
+    sequenceFocusSectionId: sectionId,
   })
 }
 

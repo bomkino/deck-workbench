@@ -6,8 +6,8 @@ const workspace = await readFile(new URL('../apps/macos/Resources/Workspace/work
 const shortcutStart = workspace.indexOf('function sequenceShortcut(event)')
 const shortcutEnd = workspace.indexOf('\nfunction setBusy', shortcutStart)
 assert.ok(shortcutStart >= 0 && shortcutEnd > shortcutStart)
-const { sequenceShortcut, slideMovePlan } = Function(
-  `"use strict"; ${workspace.slice(shortcutStart, shortcutEnd)}; return { sequenceShortcut, slideMovePlan }`,
+const { sequenceShortcut, slideMovePlan, sectionMovePlan } = Function(
+  `"use strict"; ${workspace.slice(shortcutStart, shortcutEnd)}; return { sequenceShortcut, slideMovePlan, sectionMovePlan }`,
 )()
 
 function key(overrides = {}) {
@@ -55,4 +55,19 @@ test('Sequence move planning uses stable IDs within and across Sections', () => 
   assert.equal(slideMovePlan(story, 'section-a', 'slide-a', 'up'), null)
   assert.equal(slideMovePlan(story, 'section-c', 'slide-d', 'down'), null)
   assert.equal(slideMovePlan(story, 'missing', 'slide-a', 'up'), null)
+})
+
+test('Sequence Section movement uses stable neighbor anchors', () => {
+  assert.deepEqual(sectionMovePlan(story, 'section-b', 'up'), {
+    sectionId: 'section-b', afterSectionId: null,
+  })
+  assert.deepEqual(sectionMovePlan(story, 'section-b', 'down'), {
+    sectionId: 'section-b', afterSectionId: 'section-c',
+  })
+  assert.deepEqual(sectionMovePlan(story, 'section-c', 'up'), {
+    sectionId: 'section-c', afterSectionId: 'section-a',
+  })
+  assert.equal(sectionMovePlan(story, 'section-a', 'up'), null)
+  assert.equal(sectionMovePlan(story, 'section-c', 'down'), null)
+  assert.equal(sectionMovePlan(story, 'missing', 'up'), null)
 })

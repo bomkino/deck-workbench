@@ -94,3 +94,14 @@ focus. Hardware key routing and VoiceOver remain later acceptance surfaces.
 
 The packaged WebKit journey crosses a real Section boundary in both directions and
 checks order, revision, cancellation, focus, replay and journal source metadata.
+
+## DW-W01-R04 addendum
+
+| Severity | Finding | Resolution |
+|---|---|---|
+| Material | A focusable Section could dispatch twice while the first move still uses the prior projection. | Pending structural work removes Section groups from the tab order, marks them disabled and ignores their key handler. |
+| Material | Deriving order from the DOM would couple semantics to rerender timing. | A pure planner reads `story.document` and emits only stable Section and predecessor IDs. |
+| Material | Section focus could be lost when the Sequence subtree is replaced. | Requery Story and restore focus by stable Section ID after acknowledgement. |
+| Material | Section keyboard movement could bypass the existing history path. | It dispatches typed `section.move` with `source.kind = keyboard`; packaged reopen undoes/redoes both moves in exact stack order. |
+
+R04 changes no command vocabulary, dependency, bridge authority or deletion policy.

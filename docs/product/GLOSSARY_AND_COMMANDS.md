@@ -153,3 +153,7 @@ Focused Sequence Slide rows use Option–Up / Option–Down to dispatch the exis
 `slide.move` command with `source.kind = keyboard`. Boundary moves target the
 preceding Section's end or following Section's start using stable IDs. Focus is
 reacquired by Slide ID after projection; unavailable directions remain uncancelled.
+
+Focused Sequence Section groups use the same keys to dispatch `section.move` with
+`source.kind = keyboard`. The caller supplies only the Section ID and stable
+predecessor anchor. Focus is reacquired by Section ID after projection.
