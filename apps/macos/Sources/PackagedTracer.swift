@@ -469,6 +469,7 @@ enum PackagedTracer {
                 "bodyBlockId": bodyBlockId,
                 "openingSectionId": openingSectionId,
                 "openingSlideId": openingSlideId,
+                "secondSectionId": secondSectionId,
                 "secondSlideId": secondSlideId,
             ]
         )
