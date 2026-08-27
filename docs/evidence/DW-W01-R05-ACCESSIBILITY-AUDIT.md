@@ -134,7 +134,7 @@ narrow widths it becomes one column. Toolbar controls wrap, the Inspector change
 from four-column chrome to a bounded grid, and the artboard width is viewport
 bounded while retaining its canvas aspect ratio and independent zoom transform.
 
-The packaged WebKit journey applies 175%, waits for layout, and requires the
+The packaged WebKit journey applies 175%, forces a synchronous layout read, and requires the
 document width plus Add Section, Add Slide, Headline, Commit headline and Slide
 intent bounds to remain inside the horizontal viewport. This directly covers
 reachability geometry; the remaining manual gate is visual quality, clipping,

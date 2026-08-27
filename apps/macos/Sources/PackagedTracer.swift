@@ -312,6 +312,8 @@ enum PackagedTracer {
             throw WorkbenchFailure(name: "InvalidCommand", message: "Story rename or Slide intent did not project")
         }
 
+        print("DW-W01 Story create phase: keyboard journey starting")
+        fflush(stdout)
         let rawKeyboardJourney = try await controller.invokeWorkspaceForTracer(
             """
             deckWorkbench.renderProjection(
@@ -388,7 +390,7 @@ enum PackagedTracer {
             const priorInterfaceScale = interfaceScale;
             interfaceScale = 1.75;
             applyScales();
-            await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            document.documentElement.getBoundingClientRect();
             const essentialControls = [
               '#add-section', '#add-slide', '#headline', '#commit-headline', '#slide-intent'
             ].map((selector) => document.querySelector(selector));
@@ -548,6 +550,8 @@ enum PackagedTracer {
                 "secondSlideId": secondSlideId,
             ]
         )
+        print("DW-W01 Story create phase: keyboard journey returned")
+        fflush(stdout)
         guard let keyboardJourney = rawKeyboardJourney as? [String: Any],
               let keyboardCommitted = keyboardJourney["committed"] as? [String: Any],
               keyboardCommitted["revision"] as? Int == 9,
