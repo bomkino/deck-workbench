@@ -347,9 +347,18 @@ final class DeckSessionController: ObservableObject {
             if tracerDestination != nil {
                 print("DW-T00 native save panel presented")
                 fflush(stdout)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) {
-                    panel.makeKeyAndOrderFront(nil)
-                    Self.postSystemReturnKey()
+                Task { @MainActor in
+                    for attempt in 1...8 {
+                        try? await Task.sleep(for: .milliseconds(750))
+                        guard panel.isVisible else { return }
+                        NSApplication.shared.activate(ignoringOtherApps: true)
+                        panel.makeKeyAndOrderFront(nil)
+                        Self.postSystemReturnKey()
+                        if attempt > 1 {
+                            print("DW-T00 native save panel retry \(attempt)")
+                            fflush(stdout)
+                        }
+                    }
                 }
             }
         }

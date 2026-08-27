@@ -249,6 +249,8 @@ enum PackagedTracer {
         else {
             throw WorkbenchFailure(name: "InvalidCommand", message: "Story Deck did not start with the canonical fixture")
         }
+        print("DW-W01 Story create phase: native document created")
+        fflush(stdout)
 
         let secondSectionId = UUID().uuidString.lowercased()
         let secondSlideId = UUID().uuidString.lowercased()
@@ -289,6 +291,8 @@ enum PackagedTracer {
                 "bodyBlockId": bodyBlockId,
             ]
         )
+        print("DW-W01 Story create phase: structural commands returned")
+        fflush(stdout)
         let story = try requireStory(rawStory, revision: 8)
         try requireStoryOrder(
             story,
