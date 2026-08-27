@@ -4,7 +4,9 @@ A local-first, story-first application for prototyping, reviewing and handing of
 
 ## Status
 
-Pre-alpha. `DW-T00` proves the first integrated Apple-Silicon Story Document tracer. The bounded `DW-W01` work adds durable Deck/Section/Slide structure, ordering, intent and semantic Content Blocks. `DW-G01` adds a sandboxed Electron/utility-process Linux shell and exact x86-64 tarball, Arch-package and AppImage gates on Ubuntu/X11. Ubuntu CI is a real package/runtime gate; it is not a substitute for final Garuda KDE/Wayland acceptance.
+Pre-alpha. `main` is the canonical source branch. `DW-T00` proves the first integrated Apple-Silicon Story Document tracer. The bounded `DW-W01` work adds durable Deck/Section/Slide structure, ordering, intent and semantic Content Blocks. `DW-G01` adds a sandboxed Electron/utility-process Linux shell and exact x86-64 tarball, Arch-package and AppImage gates on Ubuntu/X11.
+
+The automated macOS and Ubuntu package journeys are binding repository gates. Target-machine Garuda/KDE/Wayland and interactive macOS accessibility checks are explicitly waived for source promotion to `main`; they remain unverified and are not release claims. See [`docs/03-build/RELEASE_DEFINITION.md`](docs/03-build/RELEASE_DEFINITION.md).
 
 The tracer creates a native `.pitchdeck`, edits one canonical Story headline through the typed bridge and host-owned durable command seam, reopens with undo history, and exports one PDF page. Its macOS 26 arm64 workflow builds, ad-hoc signs, extracts, verifies, and runs the exact packaged journey at the checked-out SHA.
 
@@ -70,6 +72,7 @@ Start with:
 - `docs/product/WORKBENCH_CONSTITUTION.md`
 - `docs/architecture/SYSTEM_ARCHITECTURE.md`
 - `docs/implementation/EXECUTION_INDEX.md`
+- `docs/03-build/RELEASE_DEFINITION.md`
 
 ## Privacy
 

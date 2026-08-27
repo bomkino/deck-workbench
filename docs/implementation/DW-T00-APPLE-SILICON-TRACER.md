@@ -31,7 +31,8 @@ launch app
 
 ### Repository
 
-- branch is `codex/apple-silicon-story-tracer`;
+- `main` is the canonical source branch after the verified tracer promotion;
+- the original tracer branch and exact start/end SHAs remain recorded in evidence;
 - exact start/end SHAs recorded;
 - existing AGPL licence preserved;
 - root documentation installed;

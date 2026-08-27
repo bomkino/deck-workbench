@@ -1,7 +1,7 @@
 # Deck package exclusive-writer decision
 
 Date: 2026-08-27
-Status: implemented source contract; packaged macOS verification pending CI
+Status: implemented and exercised by exact-commit packaged macOS and Linux CI
 
 ## Decision
 

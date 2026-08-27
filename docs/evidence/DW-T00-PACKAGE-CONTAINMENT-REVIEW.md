@@ -1,6 +1,6 @@
 # DW-T00 — Package-entry containment review
 
-Status: source-ready; exact macOS packaged journey required before integrated claim.
+Status: integrated for the bounded DW-T00 package contract by exact-commit macOS CI.
 
 ## P0 finding
 

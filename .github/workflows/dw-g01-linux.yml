@@ -3,7 +3,11 @@ name: DW-G01 Ubuntu Linux x64
 on:
   push:
     branches:
+      - main
       - codex/apple-silicon-story-tracer
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:

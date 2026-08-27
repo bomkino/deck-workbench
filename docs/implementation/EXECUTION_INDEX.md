@@ -1,5 +1,22 @@
 # Deck Workbench execution index
 
+## Current repository milestone
+
+- `DW-T00`: integrated on Apple-Silicon macOS 26 by exact-commit package CI.
+- `DW-W01`: bounded structured Story slice integrated on macOS and Ubuntu/X11;
+  the complete cross-platform ticket remains broader than this slice.
+- `DW-G01`: Ubuntu/X11 package/runtime surface verified for tarball and AppImage;
+  Arch package structure verified. Garuda/KDE/Wayland acceptance is unverified.
+- `DW-W02`: semantic Pattern, Design Option, frame, Asset assignment and crop seams
+  are source-ready; a real authorized Asset-byte resolver and packaged visual
+  journey remain.
+- `DW-W09`: bounded local CLI source-ready.
+- `DW-W10`: privacy-safe support-report seam source-ready.
+
+Target-machine Garuda and interactive macOS accessibility checks are waived for
+canonical `main` promotion only. The waiver is not verification and does not make
+the application release-ready.
+
 ## Native gates
 
 ### DW-T00 — Apple-Silicon Story Document Tracer

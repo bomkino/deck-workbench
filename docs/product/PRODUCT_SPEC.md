@@ -168,4 +168,4 @@ Deck Workbench contains no AI runtime, model API, generated copy, generated layo
 
 ## First serious release acceptance
 
-A first public-quality release must satisfy the complete list in `FOUNDER_DECISIONS.md` section 4.12 and the release gates in `docs/03-build/RELEASE_DEFINITION.md`.
+A first public-quality release must satisfy this specification, the Workbench Constitution and the gates in `docs/03-build/RELEASE_DEFINITION.md`. Repository promotion, an automated package artifact and a public product release are deliberately separate states.

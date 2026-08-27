@@ -83,6 +83,6 @@ Workbench is an operating tool. It should feel authored and cinematic without be
 - keyboard focus;
 - VoiceOver/Orca output.
 
-## Reference prototypes
+## Direction provenance
 
-The F03 direction board under `prototypes/f03-visual-directions/` contains three structural directions. Direction A is the accepted default. Direction B contributes Focus Stage; Direction C contributes Reference Strip. Do not merge all three into permanent simultaneous chrome.
+The accepted topology was selected during the F03 direction exercise: Editorial Spine is the default, Focus Stage is temporary and Reference Strip is contextual. The exploratory prototype files are not production inputs and are intentionally not carried in this repository. Do not merge all three states into permanent simultaneous chrome.

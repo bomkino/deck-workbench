@@ -1,7 +1,8 @@
 # DW-G01 — Linux parity tracer
 
-Status: Ubuntu/X11 source and package candidate; exact-commit CI must pass before
-calling that surface verified. Garuda KDE/Wayland remains an external gate.
+Status: Ubuntu/X11 source, package and two-process runtime journey verified by
+exact-commit CI. Garuda KDE/Wayland remains unverified and is waived for canonical
+`main` promotion; it is not implied by the Ubuntu result.
 
 ## Causal journey
 
