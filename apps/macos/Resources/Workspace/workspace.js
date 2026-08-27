@@ -65,6 +65,42 @@ function storyShortcut(event, dirty) {
   return event.shiftKey ? 'redo' : 'undo'
 }
 
+function sequenceShortcut(event) {
+  if (event.isComposing || !event.altKey || event.metaKey || event.ctrlKey || event.shiftKey) return null
+  if (event.key === 'ArrowUp') return 'up'
+  if (event.key === 'ArrowDown') return 'down'
+  return null
+}
+
+function slideMovePlan(story, sectionId, slideId, direction) {
+  if (!story || (direction !== 'up' && direction !== 'down')) return null
+  const sectionIndex = story.sections.findIndex((section) => section.id === sectionId)
+  if (sectionIndex < 0) return null
+  const section = story.sections[sectionIndex]
+  const slideIndex = section.slides.findIndex((slide) => slide.id === slideId)
+  if (slideIndex < 0) return null
+
+  if (direction === 'up') {
+    if (slideIndex > 0) {
+      return {
+        slideId,
+        targetSectionId: sectionId,
+        afterSlideId: slideIndex > 1 ? section.slides[slideIndex - 2].id : null,
+      }
+    }
+    const target = story.sections[sectionIndex - 1]
+    if (!target) return null
+    return { slideId, targetSectionId: target.id, afterSlideId: target.slides.at(-1)?.id ?? null }
+  }
+
+  if (slideIndex < section.slides.length - 1) {
+    return { slideId, targetSectionId: sectionId, afterSlideId: section.slides[slideIndex + 1].id }
+  }
+  const target = story.sections[sectionIndex + 1]
+  if (!target) return null
+  return { slideId, targetSectionId: target.id, afterSlideId: null }
+}
+
 function setBusy(label) {
   elements.saveState.textContent = label
   elements.commit.disabled = true
@@ -79,7 +115,7 @@ function setBusy(label) {
   elements.additionalContent.querySelectorAll('button').forEach((button) => { button.disabled = true })
 }
 
-function renderProjection(next) {
+function renderProjection(next, options = {}) {
   projection = next
   elements.deckTitle.textContent = next.deckTitle
   elements.headline.disabled = false
@@ -101,7 +137,7 @@ function renderProjection(next) {
   elements.addBody.disabled = false
   elements.saveState.textContent = 'Durable and projected'
   applyScales()
-  void refreshSequence()
+  void refreshSequence(options.sequenceFocusSlideId ?? null)
   return next
 }
 
@@ -208,6 +244,7 @@ function renderSequence(next) {
       const select = document.createElement('button')
       select.type = 'button'
       select.className = `slide-row${projection?.slide.id === slide.id ? ' selected' : ''}`
+      select.dataset.slideId = slide.id
       const number = document.createElement('span')
       number.className = 'slide-number'
       number.textContent = String(slideNumber).padStart(2, '0')
@@ -215,6 +252,7 @@ function renderSequence(next) {
       label.textContent = slide.headline?.plainText || slide.intent
       select.append(number, label)
       select.addEventListener('click', () => selectSlide(slide.id))
+      select.addEventListener('keydown', (event) => moveSlideByKeyboard(event, section.id, slide.id))
       entry.append(select)
       const slideTools = document.createElement('span')
       slideTools.className = 'slide-tools'
@@ -244,15 +282,18 @@ function renderSequence(next) {
   })
 }
 
-async function refreshSequence() {
+async function refreshSequence(focusSlideId = null) {
   try {
     renderSequence(await window.deckBridge.query({ name: 'story.document', params: {} }))
+    if (focusSlideId) {
+      elements.sequenceList.querySelector(`[data-slide-id="${CSS.escape(focusSlideId)}"]`)?.focus()
+    }
   } catch {
     // No Deck is open yet; the native shell owns empty-document state.
   }
 }
 
-async function executeStructural(type, payload, selectedSlideId = projection?.slide.id) {
+async function executeStructural(type, payload, selectedSlideId = projection?.slide.id, options = {}) {
   if (!projection) return
   setBusy(`Validating ${type}…`)
   try {
@@ -262,7 +303,7 @@ async function executeStructural(type, payload, selectedSlideId = projection?.sl
         expectedRevision: projection.revision,
         type,
         payload,
-        source: { kind: 'ui', label: 'Story document' },
+        source: { kind: options.sourceKind ?? 'ui', label: 'Story document' },
         issuedAt: new Date().toISOString(),
       },
     })
@@ -270,7 +311,7 @@ async function executeStructural(type, payload, selectedSlideId = projection?.sl
       name: 'slide.activeProjection',
       params: selectedSlideId ? { slideId: selectedSlideId } : {},
     })
-    renderProjection(next)
+    renderProjection(next, { sequenceFocusSlideId: options.sequenceFocusSlideId })
   } catch (error) {
     elements.saveState.textContent = `${error.name ?? 'Error'}: ${error.message}`
     renderProjection(projection)
@@ -340,6 +381,18 @@ async function moveSlideUp(sectionId, slideId) {
     targetSectionId: sectionId,
     afterSlideId: index > 1 ? section.slides[index - 2].id : null,
   }, slideId)
+}
+
+function moveSlideByKeyboard(event, sectionId, slideId) {
+  const direction = sequenceShortcut(event)
+  if (!direction) return
+  const payload = slideMovePlan(storyDocument, sectionId, slideId, direction)
+  if (!payload) return
+  event.preventDefault()
+  void executeStructural('slide.move', payload, slideId, {
+    sourceKind: 'keyboard',
+    sequenceFocusSlideId: slideId,
+  })
 }
 
 async function removeSlide(slideId) {

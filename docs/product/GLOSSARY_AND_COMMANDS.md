@@ -148,3 +148,8 @@ Keyboard commits use the same `content.update` envelope with
 `source.kind = keyboard`. Keyboard undo/redo remains the same durable history
 operation; no keyboard-only mutation vocabulary exists. Local uncommitted text undo
 stays inside the focused editor until its value matches the acknowledged projection.
+
+Focused Sequence Slide rows use Option–Up / Option–Down to dispatch the existing
+`slide.move` command with `source.kind = keyboard`. Boundary moves target the
+preceding Section's end or following Section's start using stable IDs. Focus is
+reacquired by Slide ID after projection; unavailable directions remain uncancelled.

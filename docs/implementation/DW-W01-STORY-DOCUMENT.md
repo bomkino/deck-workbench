@@ -176,3 +176,28 @@ body textarea, proves composition and dirty-undo are not intercepted, commits th
 multiline value, undoes/redoes it, and verifies focus after all three durable
 operations. Button and keyboard callers still share the same typed bridge and
 kernel history seam.
+
+## DW-W01-R03 — Sequence keyboard reorder
+
+A focused Slide row uses Option–Up and Option–Down to reorder through the existing
+`slide.move` command. The caller calculates only stable Slide, Section and neighbor
+IDs; no DOM position or array index crosses the bridge. At a Section boundary, Up
+moves the Slide to the preceding Section's end and Down moves it to the following
+Section's start. A missing neighbor is an uncancelled no-op.
+
+After acknowledgement, Sequence is queried again and focus is restored to the row
+with the same stable Slide ID. The command records `source.kind = keyboard`; no
+keyboard-only command or mutation path exists.
+
+Exact packaged extension:
+
+```text
+focus the first Slide in the later Section
+→ Option–Up moves it into the preceding empty Section
+→ retain focus by stable Slide ID
+→ Option–Down moves it back to the later Section's start
+→ retain focus and original order
+→ save, close, reopen and replay both durable slide.move records
+```
+
+Drag-and-drop, multi-selection and broad Sequence navigation remain deferred.

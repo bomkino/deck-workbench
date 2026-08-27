@@ -82,3 +82,15 @@ semantic history. It adds no dependency or privileged renderer capability.
 
 The packaged WebKit journey checks cancelation, revision, source kind, content and
 focus. Hardware key routing and VoiceOver remain later acceptance surfaces.
+
+## DW-W01-R03 addendum
+
+| Severity | Finding | Resolution |
+|---|---|---|
+| Material | Using a rendered row index as command identity would become stale after any Sequence projection. | The movement planner emits only stable `slideId`, `targetSectionId` and `afterSlideId` values. |
+| Material | Replacing Sequence DOM after acknowledgement could strand keyboard focus on a discarded node. | Requery Story, reacquire the row by stable Slide ID, then restore focus. |
+| Material | A boundary key could be cancelled even when no move exists. | The shortcut cancels only after a valid stable-ID move plan is available. |
+| Material | Keyboard reorder could introduce a parallel structural operation. | It dispatches the existing typed `slide.move` command with `source.kind = keyboard`. |
+
+The packaged WebKit journey crosses a real Section boundary in both directions and
+checks order, revision, cancellation, focus, replay and journal source metadata.
