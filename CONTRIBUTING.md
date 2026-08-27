@@ -25,4 +25,6 @@ Describe:
 - third-party additions;
 - known gaps.
 
-The repository uses squash merging. Do not merge your own work without the required review and evidence.
+Routine pull requests use squash merging. A maintainer may fast-forward an intact,
+already-verified release lineage when the repository owner explicitly authorizes
+that promotion. Do not merge work without the required authority and evidence.
