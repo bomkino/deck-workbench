@@ -67,6 +67,7 @@ slide.move
 slide.intent.set
 content.add
 content.update
+content.remove
 asset.reference.add
 asset.availability.set
 asset.assign

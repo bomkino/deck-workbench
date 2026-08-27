@@ -59,7 +59,7 @@ ${commits}
 
 | Seam | Scenario | Independent expectation | Result |
 |---|---|---|---|
-| Deck kernel | prepare/commit/query/undo/redo plus stale and invalid rejection | Prepare is private; rejection is atomic; history is semantic | Pass: 13 portable scenario tests |
+| Deck kernel | prepare/commit/query/undo/redo plus stale and invalid rejection | Prepare is private; rejection is atomic; history is semantic | Pass: 15 portable scenario tests |
 | Document store | append/fsync/hash/replay/checkpoint plus corrupt/unsupported probes | Acknowledgement follows durable append; replay is deterministic | Pass: restart replay reached revision ${createResult.journalReplayRevision} |
 | Typed bridge | generated Swift/JavaScript parity and malformed method | Only named methods cross the WebView boundary | Pass |
 | Scale model | Interface Scale 1.25 and artboard zoom 0.5 | Chrome scale does not alter slide/export geometry | Pass |
@@ -69,7 +69,7 @@ ${commits}
 
 | Command | Exit | Key result / artifact |
 |---|---:|---|
-| \`npm test\` | 0 | 13/13 causal tests passed |
+| \`npm test\` | 0 | 15/15 causal tests passed |
 | \`node scripts/verify-source.mjs\` | 0 | Source contract passed |
 | \`scripts/build-macos.sh\` | 0 | arm64 app built and ad-hoc signed |
 | \`scripts/verify-packaged-macos.sh\` | 0 | ZIP extracted; signature, architecture and exact journey passed |
@@ -119,9 +119,9 @@ No third-party production runtime dependency is present.
 
 ## Next dispatchable ticket
 
-- Ticket: \`DW-W01-D01 — Story deletion semantics\`
-- Exact user journey: remove a Content Block and undo it with stable identity/order; decide empty-Section, last-Slide and cascading-delete behavior before Section/Slide removal exists
-- Dependency/gate: Design It Twice is required because deletion semantics are a one-way document/history decision; preserve the green DW-T00 architecture
+- Ticket: \`DW-W01-D01-B — Section and Slide deletion policy\`
+- Exact user journey: compare explicit empty-only removal against cascading subtree removal; decide last-Section and last-Slide constraints before exposing either command
+- Dependency/gate: founder decision remains required for cascading and last-item behavior; preserve the green DW-T00 and D01-A architecture
 `
 
 writeFileSync(join(evidence, 'DW-T00-EVIDENCE-RECEIPT.md'), receipt)
@@ -134,24 +134,24 @@ const storyReceipt = `# DW-W01 Story structure slice evidence receipt
 - Branch: \`${branch}\`
 - DW-T00 baseline SHA: \`0e434c508088a5150b20c2d8aef92d830fa17b7c\`
 - Ending SHA: \`${endingSHA}\`
-- Slice: Deck/Section/Slide structure, ordering and semantic Story content
+- Slice: Deck/Section/Slide structure, ordering, semantic Story content and reversible Content removal
 - Date: ${new Date().toISOString()}
 
 ## User-observable slice
 
-The extracted macOS app creates a second Section and Slide through the typed bridge, projects the expanded Editorial Spine, reorders both entities by stable ID, renames the Deck and Section, sets Slide intent, adds a role-keyed semantic Content Block, repairs an injected stale manifest head, explicitly closes the session, reopens the same semantic Deck, undoes and redoes the Content addition through durable history, and checkpoints revision ${storyReopenResult.redoRevision}.
+The extracted macOS app creates a second Section and Slide through the typed bridge, projects the expanded Editorial Spine, reorders both entities by stable ID, renames the Deck and Section, sets Slide intent, adds then removes a role-keyed semantic Content Block, repairs an injected stale manifest head, explicitly closes the session, reopens the Deck with that Block absent, undoes removal to restore the same identity and order, redoes removal, and checkpoints revision ${storyReopenResult.redoRevision}.
 
 ## Public seams exercised
 
 | Seam | Scenario | Result |
 |---|---|---|
-| Kernel | \`deck.rename\`, \`section.add\`, \`section.rename\`, \`slide.add\`, \`section.move\`, \`slide.move\`, \`slide.intent.set\`, \`content.add\`, \`content.update\` prepare/commit and atomic rejection | Pass |
+| Kernel | \`deck.rename\`, \`section.add\`, \`section.rename\`, \`slide.add\`, \`section.move\`, \`slide.move\`, \`slide.intent.set\`, \`content.add\`, \`content.update\`, \`content.remove\` prepare/commit and atomic rejection | Pass |
 | Story projection | Ordered Sections/Slides and canonical headline summaries | Pass |
-| Typed bridge | Eight packaged Story commands plus query/undo/redo from WebView | Pass |
-| Journal/replay | Eight commands, undo and redo in one hash chain; pre-checkpoint restart at revision ${storyCreateResult.journalReplayRevision} | Pass |
+| Typed bridge | Nine packaged Story commands plus query/undo/redo from WebView | Pass |
+| Journal/replay | Nine commands, undo and redo in one hash chain; pre-checkpoint restart at revision ${storyCreateResult.journalReplayRevision} | Pass |
 | Crash recovery | Stale manifest head with valid durable journal tail | Pass: repaired and replayed to revision ${storyCreateResult.crashRecoveryRevision} |
 | Session lifecycle | Checkpoint, host close, cleared projection, new-process reopen | Pass |
-| Packaged app | Native create → add/reorder/rename/intent/content → save/quit → reopen → undo/redo | Pass |
+| Packaged app | Native create → add/reorder/rename/intent/content → remove → save/quit → reopen absent → undo restores identity/order → redo | Pass |
 
 ## Packaged artifact
 
@@ -166,15 +166,15 @@ The extracted macOS app creates a second Section and Slide through the typed bri
 ## Honest status
 
 - Status: **Packaged macOS DW-W01 structural slice**, not full integrated DW-W01
-- Supported claims: native Story document structure creation; stable-ID ordering; Deck/Section rename; Slide intent; role-keyed Content add/update; durable replay and stale-head repair; explicit close/reopen undo/redo; minimal Editorial Spine controls
-- Unsupported claims: Content removal UI, multi-paragraph rich editor behavior, broader crash-injection matrix, Garuda parity, production editor behavior
+- Supported claims: native Story document structure creation; stable-ID ordering; Deck/Section rename; Slide intent; role-keyed Content add/update/remove; non-headline removal UI; stable identity/order restoration after reopen; durable replay and stale-head repair; explicit close/reopen undo/redo; minimal Editorial Spine controls
+- Unsupported claims: Section/Slide removal, cascading deletion, last-Section/last-Slide policy, multi-paragraph rich editor behavior, broader crash-injection matrix, Garuda parity, production editor behavior
 - Scope boundary: no Garuda shell, editor dependency or export expansion was introduced
 
 ## Next dispatchable ticket
 
-- Ticket: \`DW-W01-D01 — Story deletion semantics\`
-- Exact user journey: remove a Content Block, save/close/reopen, undo to restore its stable identity and order; compare Section/Slide deletion policies before implementation.
-- Gate: genuine one-way document/history decision requiring Design It Twice. No Garuda, editor dependency or export expansion is needed.
+- Ticket: \`DW-W01-D01-B — Section and Slide deletion policy\`
+- Exact user journey: compare explicit empty-only removal against cascading subtree removal; decide last-Section and last-Slide constraints before implementation.
+- Gate: genuine founder-facing destructive-policy decision. No Garuda, editor dependency or export expansion is needed.
 `
 
 writeFileSync(join(evidence, 'DW-W01-STORY-SLICE-RECEIPT.md'), storyReceipt)

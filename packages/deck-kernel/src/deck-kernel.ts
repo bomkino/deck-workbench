@@ -61,6 +61,11 @@ type ContentAddPayload = {
   afterBlockId?: string | null
 }
 
+type ContentRemovePayload = {
+  slideId: string
+  blockId: string
+}
+
 type DeckRenamePayload = {
   title: string
 }
@@ -104,7 +109,7 @@ type SlideIntentPayload = {
 type CommandEnvelope = {
   commandId: string
   expectedRevision: number
-  type: 'deck.rename' | 'content.add' | 'content.update' | 'section.add' | 'section.rename' | 'section.move' | 'slide.add' | 'slide.move' | 'slide.intent.set'
+  type: 'deck.rename' | 'content.add' | 'content.update' | 'content.remove' | 'section.add' | 'section.rename' | 'section.move' | 'slide.add' | 'slide.move' | 'slide.intent.set'
   payload: JsonObject
   source: {
     kind: 'ui' | 'keyboard' | 'cli' | 'mcp' | 'migration'
@@ -117,7 +122,7 @@ type HistoryOperation =
   | { type: 'deck.rename'; payload: DeckRenamePayload }
   | { type: 'content.set'; payload: ContentUpdatePayload }
   | { type: 'content.insert'; payload: { slideId: string; block: ContentBlock; afterBlockId: string | null } }
-  | { type: 'content.remove'; payload: { slideId: string; blockId: string } }
+  | { type: 'content.remove'; payload: ContentRemovePayload }
   | { type: 'section.insert'; payload: { section: Section; afterSectionId: string | null } }
   | { type: 'section.remove'; payload: { sectionId: string } }
   | { type: 'section.rename'; payload: SectionRenamePayload }
@@ -594,6 +599,20 @@ function prepare(session: KernelSession, command: CommandEnvelope): PrepareResul
         payload: { slideId, blockId, value: clone(currentBlock.value) },
       }
       label = `Update Content: ${currentBlock.role}`
+    } else if (command.type === 'content.remove') {
+      const slideId = assertString(command.payload.slideId, 'slideId')
+      const blockId = assertString(command.payload.blockId, 'blockId')
+      const location = findSlideLocation(session.checkpoint.deck, slideId)
+      if (!location) throw new Error('Slide does not exist')
+      const blocks = session.checkpoint.deck.sections[location.sectionIndex].slides[location.slideIndex].contentBlocks
+      const blockIndex = blocks.findIndex((block) => block.id === blockId)
+      if (blockIndex < 0) throw new Error('Content Block does not exist')
+      const block = blocks[blockIndex]
+      if (block.role === 'headline') throw new Error('Headline Content Block cannot be removed')
+      const afterBlockId = blockIndex > 0 ? blocks[blockIndex - 1].id : null
+      forward = { type: 'content.remove', payload: { slideId, blockId } }
+      inverse = { type: 'content.insert', payload: { slideId, block: clone(block), afterBlockId } }
+      label = `Remove Content: ${block.role}`
     } else if (command.type === 'section.add') {
       const sectionId = assertString(command.payload.sectionId, 'sectionId')
       const title = assertString(command.payload.title, 'title')

@@ -64,6 +64,7 @@ function setBusy(label) {
   elements.slideIntent.disabled = true
   elements.renameDeck.disabled = true
   elements.addBody.disabled = true
+  elements.additionalContent.querySelectorAll('button').forEach((button) => { button.disabled = true })
 }
 
 function renderProjection(next) {
@@ -132,7 +133,15 @@ function renderAdditionalContent(blocks) {
     commit.type = 'button'
     commit.textContent = 'Commit'
     commit.addEventListener('click', () => updateContentBlock(block.id, textarea.value))
-    footer.append(key, commit)
+    const remove = document.createElement('button')
+    remove.type = 'button'
+    remove.textContent = 'Remove'
+    remove.className = 'remove-content'
+    remove.setAttribute('aria-label', `Remove ${block.role} Content Block`)
+    remove.addEventListener('click', () => removeContentBlock(block.id))
+    const actions = document.createElement('div')
+    actions.append(commit, remove)
+    footer.append(key, actions)
     field.append(role, textarea, footer)
     elements.additionalContent.append(field)
   })
@@ -351,6 +360,14 @@ async function addBody() {
     role: 'body',
     value: richText('New Story body'),
     afterBlockId: projection.contentBlocks.at(-1)?.id ?? null,
+  }, projection.slide.id)
+}
+
+async function removeContentBlock(blockId) {
+  if (!projection) return
+  await executeStructural('content.remove', {
+    slideId: projection.slide.id,
+    blockId,
   }, projection.slide.id)
 }
 

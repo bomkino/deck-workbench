@@ -237,6 +237,71 @@ test('Story structure edits use semantic history and stable IDs', () => {
   assert.equal(kernel.query(reopened, 'story.document', {}).revision, 16)
 })
 
+test('content.remove survives reopen and undo restores stable identity and order', () => {
+  const session = kernel.open(checkpoint())
+  const slideId = 'slide-00000000-0000-4000-8000-000000000001'
+  const headlineId = 'block-00000000-0000-4000-8000-000000000001'
+  const firstBodyId = 'block-00000000-0000-4000-8000-000000000002'
+  const secondBodyId = 'block-00000000-0000-4000-8000-000000000003'
+  const body = (blockId, semanticKey, text, afterBlockId) => structuralCommand(
+    kernel.query(session, 'deck.summary', {}).revision,
+    'content.add',
+    {
+      slideId,
+      blockId,
+      semanticKey,
+      role: 'body',
+      value: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] },
+      afterBlockId,
+    },
+    `add-${blockId}`,
+  )
+  const blockIds = (target) => kernel
+    .query(target, 'story.document', {})
+    .sections[0]
+    .slides[0]
+    .contentBlocks
+    .map((block) => block.id)
+
+  execute(session, body(firstBodyId, 'story.body.1', 'First body', headlineId))
+  execute(session, body(secondBodyId, 'story.body.2', 'Second body', firstBodyId))
+
+  const beforeRemove = JSON.stringify(kernel.serializeSession(session))
+  const prepared = kernel.prepare(session, structuralCommand(2, 'content.remove', {
+    slideId,
+    blockId: firstBodyId,
+  }, 'remove-first-body'))
+  assert.equal(prepared.ok, true, prepared.error?.message)
+  assert.equal(JSON.stringify(kernel.serializeSession(session)), beforeRemove)
+  kernel.commit(session, prepared)
+  assert.deepEqual(JSON.parse(JSON.stringify(blockIds(session))), [headlineId, secondBodyId])
+
+  const reopened = kernel.open(kernel.serializeSession(session))
+  kernel.commit(reopened, kernel.prepareUndo(reopened))
+  assert.deepEqual(JSON.parse(JSON.stringify(blockIds(reopened))), [headlineId, firstBodyId, secondBodyId])
+  kernel.commit(reopened, kernel.prepareRedo(reopened))
+  assert.deepEqual(JSON.parse(JSON.stringify(blockIds(reopened))), [headlineId, secondBodyId])
+  assert.equal(kernel.query(reopened, 'deck.summary', {}).revision, 5)
+})
+
+test('content.remove rejects headline and missing identities atomically', () => {
+  const session = kernel.open(checkpoint())
+  const before = JSON.stringify(kernel.serializeSession(session))
+  const removeHeadline = kernel.prepare(session, structuralCommand(0, 'content.remove', {
+    slideId: 'slide-00000000-0000-4000-8000-000000000001',
+    blockId: 'block-00000000-0000-4000-8000-000000000001',
+  }, 'remove-headline'))
+  const removeMissing = kernel.prepare(session, structuralCommand(0, 'content.remove', {
+    slideId: 'slide-00000000-0000-4000-8000-000000000001',
+    blockId: 'missing-block',
+  }, 'remove-missing'))
+
+  assert.equal(removeHeadline.error.name, 'InvalidCommand')
+  assert.equal(removeHeadline.error.message, 'Headline Content Block cannot be removed')
+  assert.equal(removeMissing.error.name, 'InvalidCommand')
+  assert.equal(JSON.stringify(kernel.serializeSession(session)), before)
+})
+
 test('invalid structural commands reject atomically without consuming identities', () => {
   const session = kernel.open(checkpoint())
   const before = JSON.stringify(kernel.serializeSession(session))

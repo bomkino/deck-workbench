@@ -1,4 +1,4 @@
-# DW-T00 Spec / Standards review
+# DW-T00 / DW-W01-D01 Spec and Standards review
 
 ## Review basis
 
@@ -30,3 +30,18 @@
 | arm64-only, macOS 26, ad-hoc signed, ZIP-valid extracted app | Direct artifact checks in packaged workflow | Pass |
 
 No unresolved blocking finding remains for DW-T00. This review does not claim notarization, release readiness, final PDF typography, PPTX fidelity, Garuda parity or editor breadth.
+
+## DW-W01-D01 addendum
+
+Method: Design It Twice against stable-identity, atomic-command, durable-history and
+projection contracts before exposing a destructive Story command.
+
+| Severity | Finding | Resolution |
+|---|---|---|
+| Blocking | Cascading Section/Slide removal and last-item behavior have no supplied product decision. | Keep `section.remove` and `slide.remove` unavailable; dispatch `DW-W01-D01-B` as a founder decision. |
+| Blocking | Removing a headline would invalidate the named `slide.activeProjection` seam. | Public `content.remove` rejects every headline Block atomically. |
+| Material | Recreating removed content with a new ID or append-only placement would break stable references and Story order. | History inverse stores the complete Block and its stable predecessor anchor; packaged reopen/undo must prove exact restoration. |
+| Material | A UI-only removal path would bypass durability and replay semantics. | Removal uses `deck.execute`, kernel prepare, host append/fsync, commit, projection, undo and redo without another mutation route. |
+
+Accepted scope is one non-headline Content Block. No production dependency, renderer
+filesystem power, generic IPC, AI, telemetry or network path enters this slice.

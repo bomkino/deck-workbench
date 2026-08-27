@@ -31,6 +31,7 @@ native create
 - `deck.rename`
 - `content.add`
 - `content.update`
+- `content.remove` (D01-A only)
 
 All Story commands use the existing command envelope, non-mutating prepare, append/fsync-before-commit acknowledgement, hash-chained journal, idempotency map and semantic undo/redo stacks.
 
@@ -54,9 +55,44 @@ All Story commands use the existing command envelope, non-mutating prepare, appe
 
 ## Explicitly deferred
 
-- Content Block removal and rich-editor schema breadth;
+- Section/Slide removal and rich-editor schema breadth;
 - drag-and-drop interaction;
 - crash-injection matrix beyond the recovery behavior already proven;
 - Garuda parity, editor dependencies and export breadth.
 
 This slice may be called packaged on macOS after its exact journey passes. It must not be called the complete integrated DW-W01 ticket because the execution index requires broader Story behavior and Mac/Garuda parity.
+
+## DW-W01-D01 — Story deletion semantics
+
+### Design It Twice
+
+**Design A — explicit conservative removal.** `content.remove` removes one named,
+non-headline Content Block. Undo stores the full Block and its stable predecessor
+anchor. Section and Slide removal remain unavailable until their empty/last-item
+rules are proven separately. This keeps destructive scope small and preserves the
+existing `slide.activeProjection` headline contract.
+
+**Design B — cascading subtree removal.** Section and Slide removal may delete
+descendants in one command while history stores the full removed subtree. This is
+faster for bulk cleanup, but increases accidental-loss risk, journal size and policy
+surface around last Section/Slide behavior.
+
+### D01-A selection
+
+Use Design A for the next causal slice. Prove this exact journey before exposing any
+Section or Slide removal:
+
+```text
+add body Content Block
+→ remove it by stable SlideID + ContentBlockID
+→ save and close
+→ reopen
+→ undo restores same identity and order
+→ redo removes it again
+```
+
+Public `content.remove` rejects headline removal, missing identities and stale
+revisions atomically. Internal history operations remain capable of removing a
+newly-added headline while undoing `content.add`; command policy does not leak into
+history replay. Section/Slide cascading and last-item rules stay deferred to
+`DW-W01-D01-B`.
