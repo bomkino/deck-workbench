@@ -12,10 +12,12 @@ and the Deck kernel outside the renderer.
 
 The packaged verifier runs two distinct application processes:
 
-1. create a `.pitchdeck`, edit Story, append/fsync before acknowledgement, undo,
-   redo, change Interface Scale independently from artboard zoom, save and exit;
+1. create a `.pitchdeck`, edit the headline, add/move/rename Sections and Slides,
+   set Slide intent, add and paragraph-edit canonical Content, append/fsync before
+   every acknowledgement, undo/redo, change Interface Scale independently from
+   artboard zoom, save and exit;
 2. reopen the same package and preferences, recover semantic state and history,
-   undo/redo, export and parse a one-page PDF.
+   undo/redo the last structured Content edit, export and parse a one-page PDF.
 
 It repeats that journey from both an extracted tarball and the exact AppImage. It
 also extracts the Arch package and checks its metadata, launcher, paths, legal

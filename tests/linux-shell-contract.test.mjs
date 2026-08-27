@@ -209,4 +209,12 @@ test('packaged tracer exposes deterministic create and fresh-process reopen phas
   assert.match(source, /createInstanceId: createResult\.processInstanceId/)
   assert.match(source, /reopenInstanceId: processInstanceId/)
   assert.match(source, /requireDistinctProcess && !result\.processLifecycle\.distinctProcesses/)
+  for (const command of [
+    'section.add', 'slide.add', 'section.move', 'slide.move',
+    'section.rename', 'slide.intent.set', 'content.add', 'content.update',
+  ]) {
+    assert.match(source, new RegExp(`'${command.replace('.', '\\.')}'`))
+  }
+  assert.match(source, /reopenedUndoBodyText/)
+  assert.match(source, /reopenedRedoBodyText/)
 })

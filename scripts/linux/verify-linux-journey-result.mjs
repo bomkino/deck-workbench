@@ -33,7 +33,7 @@ const expectedHeadlines = {
   undoneHeadline: 'Untitled Story',
   redoneHeadline: 'Linux Story Traced',
   reopenedHeadline: 'Linux Story Traced',
-  reopenedUndoHeadline: 'Untitled Story',
+  reopenedUndoHeadline: 'Linux Story Traced',
   reopenedRedoHeadline: 'Linux Story Traced',
 }
 for (const [field, expected] of Object.entries(expectedHeadlines)) {
@@ -43,10 +43,20 @@ for (const [field, expected] of Object.entries(expectedHeadlines)) {
 if (!Number.isInteger(checks.reopenedUndoDepth) || checks.reopenedUndoDepth < 1) {
   throw new Error(`${label}: reopened undo history is unavailable`)
 }
-if (checks.savedRevision !== 3 || checks.reopenSavedRevision !== 5 || checks.finalRevision !== 5) {
+if (checks.savedRevision !== 11 || checks.reopenSavedRevision !== 13 || checks.finalRevision !== 13) {
   throw new Error(`${label}: saved revision sequence mismatch`)
 }
-if (checks.finalUndoDepth !== 1) throw new Error(`${label}: final undo history mismatch`)
+if (checks.reopenedUndoDepth !== 9 || checks.finalUndoDepth !== 9) {
+  throw new Error(`${label}: structured Story undo history mismatch`)
+}
+if (checks.reopenedStoryRevision !== 11
+  || checks.reopenedSectionOrder?.length !== 2
+  || checks.reopenedOpeningSlideOrder?.length !== 2
+  || checks.reopenedBodyText !== 'A body block.\n\nThat survives design.'
+  || checks.reopenedUndoBodyText !== 'A body block that survives design.'
+  || checks.reopenedRedoBodyText !== 'A body block.\n\nThat survives design.') {
+  throw new Error(`${label}: structured Story replay or history mismatch`)
+}
 if (checks.interfaceScale !== 1.25 || checks.artboardZoom !== 0.5
   || checks.persistedInterfaceScale !== 1.25 || checks.persistedArtboardZoom !== 0.5) {
   throw new Error(`${label}: Interface Scale/artboard zoom persistence or independence failed`)

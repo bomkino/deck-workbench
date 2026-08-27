@@ -45,8 +45,8 @@ const receipt = `# DW-G01 Ubuntu Linux package evidence receipt
 | AppImage extraction and identity | verified | The exact AppImage runtime performed a clean SquashFS extraction; the extracted inner executable, exact commit manifest and shipped runtime licence were inspected directly |
 | Executable architecture | verified | Extracted executable is ELF 64-bit x86-64 |
 | Exact source identity | verified | Tarball and AppImage extraction manifests name commit \`${endingSHA}\` and Electron 44.0.0 |
-| Extracted tarball process journey | verified | Two distinct extracted Electron application processes completed create/edit/save/quit/reopen/undo/redo, persisted independent scale controls, and PDF; result SHA-256 \`${sha256(journeyPath)}\` |
-| Exact AppImage process journey | verified | The exact hashed AppImage ran twice through its embedded runtime without FUSE, retained document/preferences across distinct processes, preserved the sandbox boundary, and exported PDF; result SHA-256 \`${sha256(appImageJourneyPath)}\` |
+| Extracted tarball process journey | verified | Two distinct extracted Electron application processes completed headline edit/history plus structured Section/Slide add, move, rename, intent and paragraph-preserving Content edit, save/quit/reopen/undo/redo, independent scale controls, and PDF; result SHA-256 \`${sha256(journeyPath)}\` |
+| Exact AppImage process journey | verified | The exact hashed AppImage ran the same structured Story journey twice through its embedded runtime without FUSE, retained document/preferences/history across distinct processes, preserved the sandbox boundary, and exported PDF; result SHA-256 \`${sha256(appImageJourneyPath)}\` |
 | PDF projection | verified | Both package lanes produced one page parsed by \`pdfinfo\`; tarball PDF SHA-256 \`${sha256(pdfPath)}\`; AppImage PDF SHA-256 \`${sha256(appImagePDFPath)}\` |
 
 ## Commands and results

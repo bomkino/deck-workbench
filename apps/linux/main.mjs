@@ -50,11 +50,27 @@ let activePackagePath = null
 let preferences = { interfaceScale: 1, artboardZoom: 0.35 }
 const preferencesQueue = new SerialOperationQueue()
 const processInstanceId = randomUUID()
+const packagedStoryIds = Object.freeze({
+  secondSectionId: '00000000-0000-4000-8000-000000000106',
+  secondSlideId: '00000000-0000-4000-8000-000000000107',
+  secondHeadlineBlockId: '00000000-0000-4000-8000-000000000108',
+  bodyBlockId: '00000000-0000-4000-8000-000000000109',
+})
 let quitAfterCheckpoint = false
 let pendingQuit = null
 
 function namedError(name, message) {
   return Object.assign(new Error(message), { name })
+}
+
+function storyBlockPlainText(story, blockId) {
+  for (const section of story.sections ?? []) {
+    for (const slide of section.slides ?? []) {
+      const block = (slide.contentBlocks ?? []).find((candidate) => candidate.id === blockId)
+      if (block) return block.plainText
+    }
+  }
+  return undefined
 }
 
 function assertPayload(payload) {
@@ -413,6 +429,104 @@ async function runPackagedTracerCreate(outputDirectory) {
   const scale = await invokeInWorkspace('setInterfaceScale', { value: 1.25 })
   const zoom = await invokeInWorkspace('setArtboardZoom', { value: 0.5 })
 
+  const executeStoryCommand = async (commandId, type, payload, issuedAt) => {
+    const story = await invokeInWorkspace('query', { name: 'story.document', params: {} })
+    return invokeInWorkspace('execute', {
+      command: {
+        commandId,
+        expectedRevision: story.revision,
+        type,
+        payload,
+        source: { kind: 'ui', label: 'Linux packaged Story journey' },
+        issuedAt,
+      },
+    })
+  }
+  await executeStoryCommand(
+    '00000000-0000-4000-8000-000000000110',
+    'section.add',
+    { sectionId: packagedStoryIds.secondSectionId, title: 'Act Two', afterSectionId: seed.sectionId },
+    '2026-08-27T00:00:01.000Z',
+  )
+  await executeStoryCommand(
+    '00000000-0000-4000-8000-000000000111',
+    'slide.add',
+    {
+      sectionId: packagedStoryIds.secondSectionId,
+      slideId: packagedStoryIds.secondSlideId,
+      blockId: packagedStoryIds.secondHeadlineBlockId,
+      intent: 'statement',
+      headline: {
+        type: 'doc',
+        content: [{ type: 'paragraph', content: [{ type: 'text', text: 'The Work Begins' }] }],
+      },
+      afterSlideId: null,
+    },
+    '2026-08-27T00:00:02.000Z',
+  )
+  await executeStoryCommand(
+    '00000000-0000-4000-8000-000000000112',
+    'section.move',
+    { sectionId: packagedStoryIds.secondSectionId, afterSectionId: null },
+    '2026-08-27T00:00:03.000Z',
+  )
+  await executeStoryCommand(
+    '00000000-0000-4000-8000-000000000113',
+    'slide.move',
+    { slideId: packagedStoryIds.secondSlideId, targetSectionId: seed.sectionId, afterSlideId: seed.slideId },
+    '2026-08-27T00:00:04.000Z',
+  )
+  await executeStoryCommand(
+    '00000000-0000-4000-8000-000000000114',
+    'section.rename',
+    { sectionId: packagedStoryIds.secondSectionId, title: 'Act II' },
+    '2026-08-27T00:00:05.000Z',
+  )
+  await executeStoryCommand(
+    '00000000-0000-4000-8000-000000000115',
+    'slide.intent.set',
+    { slideId: packagedStoryIds.secondSlideId, intent: 'editorial-body' },
+    '2026-08-27T00:00:06.000Z',
+  )
+  await executeStoryCommand(
+    '00000000-0000-4000-8000-000000000116',
+    'content.add',
+    {
+      slideId: packagedStoryIds.secondSlideId,
+      blockId: packagedStoryIds.bodyBlockId,
+      semanticKey: 'story.body.1',
+      role: 'body',
+      value: {
+        type: 'doc',
+        content: [{ type: 'paragraph', content: [{ type: 'text', text: 'A body block that survives design.' }] }],
+      },
+      afterBlockId: packagedStoryIds.secondHeadlineBlockId,
+    },
+    '2026-08-27T00:00:07.000Z',
+  )
+  const structuredResult = await executeStoryCommand(
+    '00000000-0000-4000-8000-000000000117',
+    'content.update',
+    {
+      slideId: packagedStoryIds.secondSlideId,
+      blockId: packagedStoryIds.bodyBlockId,
+      value: {
+        type: 'doc',
+        content: [
+          { type: 'paragraph', content: [{ type: 'text', text: 'A body block.' }] },
+          { type: 'paragraph', content: [] },
+          { type: 'paragraph', content: [{ type: 'text', text: 'That survives design.' }] },
+        ],
+      },
+    },
+    '2026-08-27T00:00:08.000Z',
+  )
+  await renderProjection(structuredResult.projection)
+  const structuredStory = await invokeInWorkspace('query', { name: 'story.document', params: {} })
+  const sectionOrder = structuredStory.sections.map((section) => section.id)
+  const openingSlideOrder = structuredStory.sections[1].slides.map((slide) => slide.id)
+  const bodyText = storyBlockPlainText(structuredStory, packagedStoryIds.bodyBlockId)
+
   const saved = await utility.request('document.save')
   await utility.request('document.close')
   activePackagePath = null
@@ -434,6 +548,15 @@ async function runPackagedTracerCreate(outputDirectory) {
       artboardZoom: zoom.artboardZoom,
       persistedInterfaceScale: persistedPreferences.interfaceScale,
       persistedArtboardZoom: persistedPreferences.artboardZoom,
+      storyRevision: structuredStory.revision,
+      sectionOrder,
+      openingSlideOrder,
+      emptySecondSection: structuredStory.sections[0].slides.length === 0,
+      renamedSectionTitle: structuredStory.sections[0].title,
+      secondSlideIntent: structuredStory.sections[1].slides[1].intent,
+      bodyBlockId: packagedStoryIds.bodyBlockId,
+      bodyOriginalText: 'A body block that survives design.',
+      bodyText,
     },
   }
   result.ok = result.checks.utilityOwner === 'electron-utility-process'
@@ -445,11 +568,24 @@ async function runPackagedTracerCreate(outputDirectory) {
     && result.checks.editedHeadline === 'Linux Story Traced'
     && result.checks.undoneHeadline === 'Untitled Story'
     && result.checks.redoneHeadline === 'Linux Story Traced'
-    && result.checks.savedRevision === 3
+    && result.checks.savedRevision === 11
     && result.checks.interfaceScale === 1.25
     && result.checks.artboardZoom === 0.5
     && result.checks.persistedInterfaceScale === 1.25
     && result.checks.persistedArtboardZoom === 0.5
+    && result.checks.storyRevision === 11
+    && JSON.stringify(result.checks.sectionOrder) === JSON.stringify([
+      packagedStoryIds.secondSectionId,
+      seed.sectionId,
+    ])
+    && JSON.stringify(result.checks.openingSlideOrder) === JSON.stringify([
+      seed.slideId,
+      packagedStoryIds.secondSlideId,
+    ])
+    && result.checks.emptySecondSection === true
+    && result.checks.renamedSectionTitle === 'Act II'
+    && result.checks.secondSlideIntent === 'editorial-body'
+    && result.checks.bodyText === 'A body block.\n\nThat survives design.'
   await writeDurably(
     resolve(outputDirectory, 'journey-create-result.json'),
     `${JSON.stringify(result, null, 2)}\n`,
@@ -477,11 +613,14 @@ async function runPackagedTracerReopen(outputDirectory, { requireDistinctProcess
   await renderProjection(reopened)
   const boundary = await inspectRendererBoundary()
   const historyAtReopen = await invokeInWorkspace('query', { name: 'history.summary', params: {} })
+  const reopenedStory = await invokeInWorkspace('query', { name: 'story.document', params: {} })
   const reopenedPreferences = await invokeInWorkspace('getPreferences')
   const reopenedUndo = (await invokeInWorkspace('undo')).projection
   await renderProjection(reopenedUndo)
+  const reopenedUndoStory = await invokeInWorkspace('query', { name: 'story.document', params: {} })
   const reopenedRedo = (await invokeInWorkspace('redo')).projection
   await renderProjection(reopenedRedo)
+  const reopenedRedoStory = await invokeInWorkspace('query', { name: 'story.document', params: {} })
   const history = await invokeInWorkspace('query', { name: 'history.summary', params: {} })
   const pdf = await exportOnePagePDF(pdfPath)
   const reopenedSaved = await utility.request('document.save')
@@ -519,6 +658,12 @@ async function runPackagedTracerReopen(outputDirectory, { requireDistinctProcess
       artboardZoom: createResult.checks.artboardZoom,
       persistedInterfaceScale: reopenedPreferences.interfaceScale,
       persistedArtboardZoom: reopenedPreferences.artboardZoom,
+      reopenedStoryRevision: reopenedStory.revision,
+      reopenedSectionOrder: reopenedStory.sections.map((section) => section.id),
+      reopenedOpeningSlideOrder: reopenedStory.sections[1].slides.map((slide) => slide.id),
+      reopenedBodyText: storyBlockPlainText(reopenedStory, createResult.checks.bodyBlockId),
+      reopenedUndoBodyText: storyBlockPlainText(reopenedUndoStory, createResult.checks.bodyBlockId),
+      reopenedRedoBodyText: storyBlockPlainText(reopenedRedoStory, createResult.checks.bodyBlockId),
       pdfBytes: pdf.bytes,
       pdfSHA256: pdf.sha256,
     },
@@ -540,16 +685,23 @@ async function runPackagedTracerReopen(outputDirectory, { requireDistinctProcess
     || result.checks.redoneHeadline !== 'Linux Story Traced'
     || result.checks.reopenedHeadline !== 'Linux Story Traced'
     || result.checks.reopenedUndoDepth < 1
-    || result.checks.reopenedUndoHeadline !== 'Untitled Story'
+    || result.checks.reopenedUndoHeadline !== 'Linux Story Traced'
     || result.checks.reopenedRedoHeadline !== 'Linux Story Traced'
-    || result.checks.finalRevision !== 5
-    || result.checks.finalUndoDepth !== 1
-    || result.checks.savedRevision !== 3
-    || result.checks.reopenSavedRevision !== 5
+    || result.checks.finalRevision !== 13
+    || result.checks.finalUndoDepth !== 9
+    || result.checks.reopenedUndoDepth !== 9
+    || result.checks.savedRevision !== 11
+    || result.checks.reopenSavedRevision !== 13
     || result.checks.interfaceScale !== 1.25
     || result.checks.artboardZoom !== 0.5
     || result.checks.persistedInterfaceScale !== 1.25
     || result.checks.persistedArtboardZoom !== 0.5
+    || result.checks.reopenedStoryRevision !== 11
+    || JSON.stringify(result.checks.reopenedSectionOrder) !== JSON.stringify(createResult.checks.sectionOrder)
+    || JSON.stringify(result.checks.reopenedOpeningSlideOrder) !== JSON.stringify(createResult.checks.openingSlideOrder)
+    || result.checks.reopenedBodyText !== 'A body block.\n\nThat survives design.'
+    || result.checks.reopenedUndoBodyText !== createResult.checks.bodyOriginalText
+    || result.checks.reopenedRedoBodyText !== 'A body block.\n\nThat survives design.'
     || result.checks.pdfBytes < 100
     || (requireDistinctProcess && !result.processLifecycle.distinctProcesses)
   result.ok = !failed
