@@ -22,10 +22,80 @@ type ContentBlock = {
   value: RichTextDocument
 }
 
+type AssetReference = {
+  id: string
+  label: string
+  mediaKind: 'image' | 'gif' | 'video'
+  availability: 'unknown' | 'available' | 'missing'
+}
+
+type MediaAssignment = {
+  id: string
+  role: string
+  assetReferenceId: string
+}
+
+type ElementFrame = {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+type NormalizedCrop = {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+type CompositionElement = {
+  id: string
+  kind: 'text' | 'image' | 'shape' | 'line' | 'group'
+  frame: ElementFrame
+  patternElementKey?: string
+  contentBlockId?: string
+  mediaRole?: string
+  crop?: NormalizedCrop
+}
+
+type Composition = {
+  id: string
+  elements: CompositionElement[]
+}
+
+type AuthoredPatternId = 'cover' | 'full-bleed-statement' | 'editorial-body'
+
+type PatternElementSnapshot = {
+  key: string
+  kind: CompositionElement['kind']
+  frame: ElementFrame
+  contentSlot?: string
+  contentRole?: string
+  mediaRole?: string
+}
+
+type LayoutPatternSnapshot = {
+  id: AuthoredPatternId
+  version: 1
+  name: string
+  elements: PatternElementSnapshot[]
+}
+
+type DesignOption = {
+  id: string
+  name: string
+  patternSnapshot?: LayoutPatternSnapshot
+  composition: Composition
+}
+
 type Slide = {
   id: string
   intent: string
   contentBlocks: ContentBlock[]
+  mediaAssignments?: MediaAssignment[]
+  designOptions?: DesignOption[]
+  activeDesignOptionId?: string
 }
 
 type Section = {
@@ -43,6 +113,7 @@ type DeckSnapshot = {
     width: 2576
     height: 1080
   }
+  assetReferences?: AssetReference[]
   sections: Section[]
 }
 
@@ -114,10 +185,66 @@ type SlideRemovePayload = {
   slideId: string
 }
 
+type ElementFrameUpdatePayload = {
+  slideId: string
+  designOptionId: string
+  elementId: string
+  frame: ElementFrame
+}
+
+type AssetReferenceInsertPayload = {
+  assetReference: AssetReference
+}
+
+type AssetReferenceRemovePayload = {
+  assetReferenceId: string
+}
+
+type MediaAssignmentInsertPayload = {
+  slideId: string
+  assignment: MediaAssignment
+}
+
+type MediaAssignmentRemovePayload = {
+  slideId: string
+  mediaAssignmentId: string
+}
+
+type MediaAssignmentAssetSetPayload = {
+  slideId: string
+  mediaAssignmentId: string
+  assetReferenceId: string
+}
+
+type ElementCropSetPayload = {
+  slideId: string
+  designOptionId: string
+  elementId: string
+  crop: NormalizedCrop | null
+}
+
+type DesignOptionInsertPayload = {
+  slideId: string
+  designOption: DesignOption
+  afterDesignOptionId: string | null
+  activeDesignOptionId: string
+}
+
+type DesignOptionRemovePayload = {
+  slideId: string
+  designOptionId: string
+  activeDesignOptionId: string | null
+}
+
+type DesignOptionActivatePayload = {
+  slideId: string
+  designOptionId: string | null
+}
+
 type CommandEnvelope = {
   commandId: string
   expectedRevision: number
-  type: 'deck.rename' | 'content.add' | 'content.update' | 'content.remove' | 'section.add' | 'section.rename' | 'section.move' | 'section.remove' | 'slide.add' | 'slide.move' | 'slide.intent.set' | 'slide.remove'
+  type: 'deck.rename' | 'content.add' | 'content.update' | 'content.remove' | 'section.add' | 'section.rename' | 'section.move' | 'section.remove' | 'slide.add' | 'slide.move' | 'slide.intent.set' | 'slide.remove' | 'asset.reference.add' | 'asset.assign' | 'designOption.applyPattern' | 'designOption.activate' | 'element.frame.update' | 'element.crop.update'
   payload: JsonObject
   source: {
     kind: 'ui' | 'keyboard' | 'cli' | 'mcp' | 'migration'
@@ -139,6 +266,16 @@ type HistoryOperation =
   | { type: 'slide.remove'; payload: SlideRemovePayload }
   | { type: 'slide.move'; payload: SlideMovePayload }
   | { type: 'slide.intent.set'; payload: SlideIntentPayload }
+  | { type: 'asset.reference.insert'; payload: AssetReferenceInsertPayload }
+  | { type: 'asset.reference.remove'; payload: AssetReferenceRemovePayload }
+  | { type: 'asset.assignment.insert'; payload: MediaAssignmentInsertPayload }
+  | { type: 'asset.assignment.remove'; payload: MediaAssignmentRemovePayload }
+  | { type: 'asset.assignment.asset.set'; payload: MediaAssignmentAssetSetPayload }
+  | { type: 'designOption.insert'; payload: DesignOptionInsertPayload }
+  | { type: 'designOption.remove'; payload: DesignOptionRemovePayload }
+  | { type: 'designOption.activate.set'; payload: DesignOptionActivatePayload }
+  | { type: 'element.frame.set'; payload: ElementFrameUpdatePayload }
+  | { type: 'element.crop.set'; payload: ElementCropSetPayload }
 
 type HistoryEntry = {
   id: string
@@ -192,6 +329,76 @@ type KernelError = {
 
 type PrepareResult = PreparedChange | DuplicateResult | KernelError
 
+const AUTHORED_PATTERNS: LayoutPatternSnapshot[] = [
+  {
+    id: 'cover',
+    version: 1,
+    name: 'Cover',
+    elements: [
+      {
+        key: 'primary-image',
+        kind: 'image',
+        mediaRole: 'primary',
+        frame: { x: 0, y: 0, width: 2576, height: 1080 },
+      },
+      {
+        key: 'headline',
+        kind: 'text',
+        contentSlot: 'headline',
+        contentRole: 'headline',
+        frame: { x: 160, y: 660, width: 1700, height: 260 },
+      },
+    ],
+  },
+  {
+    id: 'full-bleed-statement',
+    version: 1,
+    name: 'Full-bleed Statement',
+    elements: [
+      {
+        key: 'primary-image',
+        kind: 'image',
+        mediaRole: 'primary',
+        frame: { x: 0, y: 0, width: 2576, height: 1080 },
+      },
+      {
+        key: 'headline',
+        kind: 'text',
+        contentSlot: 'headline',
+        contentRole: 'headline',
+        frame: { x: 288, y: 300, width: 2000, height: 480 },
+      },
+    ],
+  },
+  {
+    id: 'editorial-body',
+    version: 1,
+    name: 'Editorial Body',
+    elements: [
+      {
+        key: 'headline',
+        kind: 'text',
+        contentSlot: 'headline',
+        contentRole: 'headline',
+        frame: { x: 160, y: 140, width: 1050, height: 240 },
+      },
+      {
+        key: 'body',
+        kind: 'text',
+        contentSlot: 'body',
+        contentRole: 'body',
+        frame: { x: 160, y: 420, width: 1050, height: 460 },
+      },
+      {
+        key: 'primary-image',
+        kind: 'image',
+        mediaRole: 'primary',
+        frame: { x: 1376, y: 0, width: 1200, height: 1080 },
+      },
+    ],
+  },
+]
+
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
@@ -200,11 +407,130 @@ function failure(name: string, message: string): KernelError {
   return { ok: false, error: { name, message } }
 }
 
-function assertString(value: unknown, field: string): string {
+function assertString(value: unknown, field: string, maxLength = 4096): string {
   if (typeof value !== 'string' || value.length === 0) {
     throw new Error(`${field} must be a non-empty string`)
   }
+  if (value.length > maxLength) throw new Error(`${field} must be at most ${maxLength} characters`)
   return value
+}
+
+function utf8ByteLength(value: string): number {
+  let length = 0
+  for (const character of value) {
+    const codePoint = character.codePointAt(0) as number
+    length += codePoint <= 0x7f ? 1 : codePoint <= 0x7ff ? 2 : codePoint <= 0xffff ? 3 : 4
+  }
+  return length
+}
+
+function assertBoundedJsonStrings(value: unknown, seen = new WeakSet<object>()): void {
+  if (typeof value === 'string') {
+    if (value.length > 262144) throw new Error('Command contains a string longer than 262144 characters')
+    return
+  }
+  if (!value || typeof value !== 'object') return
+  if (seen.has(value)) return
+  seen.add(value)
+  if (Array.isArray(value)) {
+    for (const item of value) assertBoundedJsonStrings(item, seen)
+    return
+  }
+  for (const item of Object.values(value as JsonObject)) assertBoundedJsonStrings(item, seen)
+}
+
+function assertCommandEnvelope(command: CommandEnvelope): void {
+  assertString(command.commandId, 'commandId', 256)
+  if (!Number.isSafeInteger(command.expectedRevision) || command.expectedRevision < 0) {
+    throw new Error('expectedRevision must be a non-negative integer')
+  }
+  assertString(command.type, 'type', 128)
+  if (!command.payload || typeof command.payload !== 'object' || Array.isArray(command.payload)) {
+    throw new Error(`${String(command.type)} requires an object payload`)
+  }
+  if (!command.source || typeof command.source !== 'object' || Array.isArray(command.source)) {
+    throw new Error('source must be an object')
+  }
+  if (!['ui', 'keyboard', 'cli', 'mcp', 'migration'].includes(command.source.kind)) {
+    throw new Error('source.kind is unsupported')
+  }
+  if (command.source.label !== undefined) assertString(command.source.label, 'source.label', 512)
+  const issuedAt = assertString(command.issuedAt, 'issuedAt', 64)
+  const iso8601 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/
+  if (!iso8601.test(issuedAt) || !Number.isFinite(Date.parse(issuedAt))) {
+    throw new Error('issuedAt must be an ISO-8601 timestamp')
+  }
+  let serialized: string | undefined
+  try {
+    serialized = JSON.stringify(command)
+  } catch {
+    throw new Error('Command must be JSON-serializable')
+  }
+  if (typeof serialized !== 'string') throw new Error('Command must be JSON-serializable')
+  if (utf8ByteLength(serialized) > 1048576) throw new Error('Command exceeds the 1 MiB limit')
+  assertBoundedJsonStrings(command)
+}
+
+function assertElementFrame(value: unknown): ElementFrame {
+  if (!value || typeof value !== 'object') throw new Error('frame must be an object')
+  const candidate = value as Partial<ElementFrame>
+  for (const field of ['x', 'y', 'width', 'height'] as const) {
+    if (typeof candidate[field] !== 'number' || !Number.isFinite(candidate[field])) {
+      throw new Error(`frame.${field} must be a finite number`)
+    }
+  }
+  if ((candidate.width as number) <= 0 || (candidate.height as number) <= 0) {
+    throw new Error('frame width and height must be greater than zero')
+  }
+  return {
+    x: candidate.x as number,
+    y: candidate.y as number,
+    width: candidate.width as number,
+    height: candidate.height as number,
+  }
+}
+
+function assertMediaKind(value: unknown): AssetReference['mediaKind'] {
+  if (value !== 'image' && value !== 'gif' && value !== 'video') {
+    throw new Error('mediaKind must be image, gif, or video')
+  }
+  return value
+}
+
+function assertNormalizedCrop(value: unknown): NormalizedCrop {
+  if (!value || typeof value !== 'object') throw new Error('crop must be an object')
+  const candidate = value as Partial<NormalizedCrop>
+  for (const field of ['x', 'y', 'width', 'height'] as const) {
+    if (typeof candidate[field] !== 'number' || !Number.isFinite(candidate[field])) {
+      throw new Error(`crop.${field} must be a finite number`)
+    }
+  }
+  const x = candidate.x as number
+  const y = candidate.y as number
+  const width = candidate.width as number
+  const height = candidate.height as number
+  if (x < 0 || y < 0 || width <= 0 || height <= 0 || x + width > 1 || y + height > 1) {
+    throw new Error('crop must be a positive normalized rectangle within the source image')
+  }
+  return { x, y, width, height }
+}
+
+function assertContentBindings(value: unknown, pattern: LayoutPatternSnapshot): Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('contentBindings must be an object')
+  }
+  const candidate = value as JsonObject
+  const requiredSlots = pattern.elements
+    .map((element) => element.contentSlot)
+    .filter((slot): slot is string => typeof slot === 'string')
+  for (const suppliedSlot of Object.keys(candidate)) {
+    if (!requiredSlots.includes(suppliedSlot)) {
+      throw new Error(`Pattern does not define content slot: ${suppliedSlot}`)
+    }
+  }
+  return Object.fromEntries(
+    requiredSlots.map((slot) => [slot, assertString(candidate[slot], `contentBindings.${slot}`)]),
+  )
 }
 
 function isRichTextDocument(value: unknown): value is RichTextDocument {
@@ -250,6 +576,90 @@ function findSlideLocation(deck: DeckSnapshot, slideId: string): { sectionIndex:
     if (slideIndex >= 0) return { sectionIndex, slideIndex }
   }
   return undefined
+}
+
+function findSlide(deck: DeckSnapshot, slideId: string): Slide | undefined {
+  const location = findSlideLocation(deck, slideId)
+  return location ? deck.sections[location.sectionIndex].slides[location.slideIndex] : undefined
+}
+
+function designOptionIdentityExists(deck: DeckSnapshot, designOptionId: string): boolean {
+  return deck.sections.some((section) =>
+    section.slides.some((slide) => slide.designOptions?.some((option) => option.id === designOptionId) ?? false),
+  )
+}
+
+function assetReferenceIdentityExists(deck: DeckSnapshot, assetReferenceId: string): boolean {
+  return deck.assetReferences?.some((asset) => asset.id === assetReferenceId) ?? false
+}
+
+function mediaAssignmentIdentityExists(deck: DeckSnapshot, mediaAssignmentId: string): boolean {
+  return deck.sections.some((section) =>
+    section.slides.some((slide) =>
+      slide.mediaAssignments?.some((assignment) => assignment.id === mediaAssignmentId) ?? false,
+    ),
+  )
+}
+
+function findMediaAssignment(slide: Slide, mediaAssignmentId: string): MediaAssignment | undefined {
+  return slide.mediaAssignments?.find((assignment) => assignment.id === mediaAssignmentId)
+}
+
+function authoredPattern(patternId: string, patternVersion: number): LayoutPatternSnapshot | undefined {
+  return AUTHORED_PATTERNS.find((pattern) => pattern.id === patternId && pattern.version === patternVersion)
+}
+
+function instantiatePattern(
+  slide: Slide,
+  designOptionId: string,
+  name: string,
+  pattern: LayoutPatternSnapshot,
+  contentBindings: Record<string, string>,
+): DesignOption {
+  const elements = pattern.elements.map((patternElement): CompositionElement => {
+    const element: CompositionElement = {
+      id: `${designOptionId}:element:${patternElement.key}`,
+      kind: patternElement.kind,
+      frame: clone(patternElement.frame),
+      patternElementKey: patternElement.key,
+    }
+    if (patternElement.contentSlot && patternElement.contentRole) {
+      const contentBlockId = contentBindings[patternElement.contentSlot]
+      const contentBlock = slide.contentBlocks.find((block) => block.id === contentBlockId)
+      if (!contentBlock) throw new Error(`Pattern Content Block does not exist: ${patternElement.contentSlot}`)
+      if (contentBlock.role !== patternElement.contentRole) {
+        throw new Error(`Pattern content slot ${patternElement.contentSlot} requires role ${patternElement.contentRole}`)
+      }
+      element.contentBlockId = contentBlock.id
+    }
+    if (patternElement.mediaRole) {
+      element.mediaRole = patternElement.mediaRole
+      if (patternElement.kind === 'image') element.crop = { x: 0, y: 0, width: 1, height: 1 }
+    }
+    return element
+  })
+  return {
+    id: designOptionId,
+    name,
+    patternSnapshot: clone(pattern),
+    composition: {
+      id: `${designOptionId}:composition`,
+      elements,
+    },
+  }
+}
+
+function findElement(
+  deck: DeckSnapshot,
+  slideId: string,
+  designOptionId: string,
+  elementId: string,
+): CompositionElement | undefined {
+  const location = findSlideLocation(deck, slideId)
+  if (!location) return undefined
+  const slide = deck.sections[location.sectionIndex].slides[location.slideIndex]
+  const option = slide.designOptions?.find((candidate) => candidate.id === designOptionId)
+  return option?.composition.elements.find((candidate) => candidate.id === elementId)
 }
 
 function insertAfter<T extends { id: string }>(items: T[], value: T, afterId: string | null): void {
@@ -335,6 +745,138 @@ function applyHistoryOperation(deck: DeckSnapshot, operation: HistoryOperation):
     const location = findSlideLocation(next, operation.payload.slideId)
     if (!location) throw new Error('Slide does not exist')
     next.sections[location.sectionIndex].slides[location.slideIndex].intent = operation.payload.intent
+    return next
+  }
+  if (operation.type === 'asset.reference.insert') {
+    if (assetReferenceIdentityExists(next, operation.payload.assetReference.id)) {
+      throw new Error('Asset Reference identity already exists')
+    }
+    const assetReferences = next.assetReferences ?? []
+    next.assetReferences = assetReferences
+    assetReferences.push(clone(operation.payload.assetReference))
+    return next
+  }
+  if (operation.type === 'asset.reference.remove') {
+    const assetReferences = next.assetReferences ?? []
+    const assetIndex = assetReferences.findIndex((asset) => asset.id === operation.payload.assetReferenceId)
+    if (assetIndex < 0) throw new Error('Asset Reference does not exist')
+    const isAssigned = next.sections.some((section) =>
+      section.slides.some((slide) =>
+        slide.mediaAssignments?.some(
+          (assignment) => assignment.assetReferenceId === operation.payload.assetReferenceId,
+        ) ?? false,
+      ),
+    )
+    if (isAssigned) throw new Error('Asset Reference is assigned to a Slide')
+    assetReferences.splice(assetIndex, 1)
+    return next
+  }
+  if (operation.type === 'asset.assignment.insert') {
+    const slide = findSlide(next, operation.payload.slideId)
+    if (!slide) throw new Error('Slide does not exist')
+    if (!assetReferenceIdentityExists(next, operation.payload.assignment.assetReferenceId)) {
+      throw new Error('Asset Reference does not exist')
+    }
+    if (mediaAssignmentIdentityExists(next, operation.payload.assignment.id)) {
+      throw new Error('Media Assignment identity already exists')
+    }
+    const mediaAssignments = slide.mediaAssignments ?? []
+    if (mediaAssignments.some((assignment) => assignment.role === operation.payload.assignment.role)) {
+      throw new Error('Media role already has an assignment')
+    }
+    slide.mediaAssignments = mediaAssignments
+    mediaAssignments.push(clone(operation.payload.assignment))
+    return next
+  }
+  if (operation.type === 'asset.assignment.remove') {
+    const slide = findSlide(next, operation.payload.slideId)
+    if (!slide) throw new Error('Slide does not exist')
+    const mediaAssignments = slide.mediaAssignments ?? []
+    const assignmentIndex = mediaAssignments.findIndex(
+      (assignment) => assignment.id === operation.payload.mediaAssignmentId,
+    )
+    if (assignmentIndex < 0) throw new Error('Media Assignment does not exist')
+    mediaAssignments.splice(assignmentIndex, 1)
+    return next
+  }
+  if (operation.type === 'asset.assignment.asset.set') {
+    const slide = findSlide(next, operation.payload.slideId)
+    if (!slide) throw new Error('Slide does not exist')
+    if (!assetReferenceIdentityExists(next, operation.payload.assetReferenceId)) {
+      throw new Error('Asset Reference does not exist')
+    }
+    const assignment = findMediaAssignment(slide, operation.payload.mediaAssignmentId)
+    if (!assignment) throw new Error('Media Assignment does not exist')
+    assignment.assetReferenceId = operation.payload.assetReferenceId
+    return next
+  }
+  if (operation.type === 'designOption.insert') {
+    const slide = findSlide(next, operation.payload.slideId)
+    if (!slide) throw new Error('Slide does not exist')
+    if (designOptionIdentityExists(next, operation.payload.designOption.id)) {
+      throw new Error('Design Option identity already exists')
+    }
+    const designOptions = slide.designOptions ?? []
+    slide.designOptions = designOptions
+    insertAfter(designOptions, clone(operation.payload.designOption), operation.payload.afterDesignOptionId)
+    slide.activeDesignOptionId = operation.payload.activeDesignOptionId
+    return next
+  }
+  if (operation.type === 'designOption.remove') {
+    const slide = findSlide(next, operation.payload.slideId)
+    if (!slide) throw new Error('Slide does not exist')
+    const designOptions = slide.designOptions ?? []
+    const optionIndex = designOptions.findIndex((option) => option.id === operation.payload.designOptionId)
+    if (optionIndex < 0) throw new Error('Design Option does not exist')
+    designOptions.splice(optionIndex, 1)
+    if (operation.payload.activeDesignOptionId === null) {
+      delete slide.activeDesignOptionId
+    } else {
+      if (!designOptions.some((option) => option.id === operation.payload.activeDesignOptionId)) {
+        throw new Error('Restored active Design Option does not exist')
+      }
+      slide.activeDesignOptionId = operation.payload.activeDesignOptionId
+    }
+    return next
+  }
+  if (operation.type === 'designOption.activate.set') {
+    const slide = findSlide(next, operation.payload.slideId)
+    if (!slide) throw new Error('Slide does not exist')
+    if (operation.payload.designOptionId === null) {
+      delete slide.activeDesignOptionId
+      return next
+    }
+    if (!slide.designOptions?.some((option) => option.id === operation.payload.designOptionId)) {
+      throw new Error('Design Option does not exist')
+    }
+    slide.activeDesignOptionId = operation.payload.designOptionId
+    return next
+  }
+  if (operation.type === 'element.frame.set') {
+    const element = findElement(
+      next,
+      operation.payload.slideId,
+      operation.payload.designOptionId,
+      operation.payload.elementId,
+    )
+    if (!element) throw new Error('Element does not exist in Design Option')
+    element.frame = clone(operation.payload.frame)
+    return next
+  }
+  if (operation.type === 'element.crop.set') {
+    const element = findElement(
+      next,
+      operation.payload.slideId,
+      operation.payload.designOptionId,
+      operation.payload.elementId,
+    )
+    if (!element) throw new Error('Element does not exist in Design Option')
+    if (element.kind !== 'image') throw new Error('Only an Image Element can be cropped')
+    if (operation.payload.crop === null) {
+      delete element.crop
+    } else {
+      element.crop = clone(operation.payload.crop)
+    }
     return next
   }
   const location = findSlideLocation(next, operation.payload.slideId)
@@ -439,6 +981,20 @@ function open(input: unknown): KernelSession | KernelError {
 
 function query(session: KernelSession, name: string, params: JsonObject = {}): JsonObject | KernelError {
   const checkpoint = session.checkpoint
+  if (name === 'asset.catalog') {
+    return {
+      assets: clone(checkpoint.deck.assetReferences ?? []),
+    }
+  }
+  if (name === 'pattern.catalog') {
+    return {
+      patterns: AUTHORED_PATTERNS.map((pattern) => ({
+        id: pattern.id,
+        version: pattern.version,
+        name: pattern.name,
+      })),
+    }
+  }
   if (name === 'deck.summary') {
     return {
       deckId: checkpoint.deck.deckId,
@@ -493,11 +1049,19 @@ function query(session: KernelSession, name: string, params: JsonObject = {}): J
   }
   if (name === 'slide.activeProjection') {
     const requestedSlideId = typeof params.slideId === 'string' ? params.slideId : undefined
+    const requestedDesignOptionId = typeof params.designOptionId === 'string' ? params.designOptionId : undefined
     for (const section of checkpoint.deck.sections) {
       for (const slide of section.slides) {
         if (requestedSlideId && slide.id !== requestedSlideId) continue
         const headline = slide.contentBlocks.find((block) => block.role === 'headline')
         if (!headline) return failure('InvalidCommand', 'Slide has no headline Content Block')
+        const selectedDesignOptionId = requestedDesignOptionId ?? slide.activeDesignOptionId
+        const designOption = selectedDesignOptionId
+          ? slide.designOptions?.find((candidate) => candidate.id === selectedDesignOptionId)
+          : slide.designOptions?.[0]
+        if (selectedDesignOptionId && !designOption) {
+          return failure('InvalidCommand', 'Design Option does not exist')
+        }
         return {
           deckId: checkpoint.deck.deckId,
           deckTitle: checkpoint.deck.title,
@@ -518,7 +1082,31 @@ function query(session: KernelSession, name: string, params: JsonObject = {}): J
             value: clone(block.value),
             plainText: richTextToPlainText(block.value),
           })),
+          mediaAssignments: (slide.mediaAssignments ?? []).map((assignment) => {
+            const assetReference = checkpoint.deck.assetReferences?.find(
+              (asset) => asset.id === assignment.assetReferenceId,
+            )
+            return {
+              id: assignment.id,
+              role: assignment.role,
+              assetReference: assetReference ? clone(assetReference) : null,
+            }
+          }),
           canvas: clone(checkpoint.deck.canvasPreset),
+          designOption: designOption
+            ? {
+                id: designOption.id,
+                name: designOption.name,
+                pattern: designOption.patternSnapshot
+                  ? {
+                      id: designOption.patternSnapshot.id,
+                      version: designOption.patternSnapshot.version,
+                      name: designOption.patternSnapshot.name,
+                    }
+                  : null,
+              }
+            : null,
+          composition: designOption ? clone(designOption.composition) : null,
           history: {
             canUndo: checkpoint.undoStack.length > 0,
             canRedo: checkpoint.redoStack.length > 0,
@@ -532,11 +1120,13 @@ function query(session: KernelSession, name: string, params: JsonObject = {}): J
 }
 
 function prepare(session: KernelSession, command: CommandEnvelope): PrepareResult {
-  if (!command || typeof command !== 'object') {
+  if (!command || typeof command !== 'object' || Array.isArray(command)) {
     return failure('InvalidCommand', 'Command must be an object')
   }
-  if (typeof command.commandId !== 'string' || command.commandId.length === 0) {
-    return failure('InvalidCommand', 'commandId is required')
+  try {
+    assertCommandEnvelope(command)
+  } catch (error) {
+    return failure('InvalidCommand', (error as Error).message)
   }
   const duplicate = session.checkpoint.processedCommands[command.commandId]
   if (duplicate) return { ok: true, duplicate: true, acknowledgement: clone(duplicate) }
@@ -546,10 +1136,6 @@ function prepare(session: KernelSession, command: CommandEnvelope): PrepareResul
       `Expected revision ${session.checkpoint.revision}; received ${String(command.expectedRevision)}`,
     )
   }
-  if (!command.payload || typeof command.payload !== 'object') {
-    return failure('InvalidCommand', `${String(command.type)} requires a payload`)
-  }
-
   let forward: HistoryOperation
   let inverse: HistoryOperation
   let label: string
@@ -739,6 +1325,160 @@ function prepare(session: KernelSession, command: CommandEnvelope): PrepareResul
       inverse = { type: 'slide.insert', payload: { sectionId: section.id, slide: clone(slide), afterSlideId } }
       label = 'Remove Slide'
       projectionHints = ['story', 'sequence', 'slide.activeProjection', 'history']
+    } else if (command.type === 'asset.reference.add') {
+      const assetReferenceId = assertString(command.payload.assetReferenceId, 'assetReferenceId')
+      if (assetReferenceIdentityExists(session.checkpoint.deck, assetReferenceId)) {
+        throw new Error('Asset Reference identity already exists')
+      }
+      const labelValue = assertString(command.payload.label, 'label')
+      const mediaKind = assertMediaKind(command.payload.mediaKind)
+      const assetReference: AssetReference = {
+        id: assetReferenceId,
+        label: labelValue,
+        mediaKind,
+        availability: 'unknown',
+      }
+      forward = { type: 'asset.reference.insert', payload: { assetReference } }
+      inverse = { type: 'asset.reference.remove', payload: { assetReferenceId } }
+      label = `Add Asset Reference: ${labelValue}`
+      projectionHints = ['slide.activeProjection', 'history']
+    } else if (command.type === 'asset.assign') {
+      const slideId = assertString(command.payload.slideId, 'slideId')
+      const slide = findSlide(session.checkpoint.deck, slideId)
+      if (!slide) throw new Error('Slide does not exist')
+      const mediaAssignmentId = assertString(command.payload.mediaAssignmentId, 'mediaAssignmentId')
+      const role = assertString(command.payload.role, 'role')
+      const assetReferenceId = assertString(command.payload.assetReferenceId, 'assetReferenceId')
+      if (!assetReferenceIdentityExists(session.checkpoint.deck, assetReferenceId)) {
+        throw new Error('Asset Reference does not exist')
+      }
+      const existingForRole = slide.mediaAssignments?.find((assignment) => assignment.role === role)
+      if (existingForRole) {
+        if (existingForRole.id !== mediaAssignmentId) {
+          throw new Error('Media role replacement must preserve assignment identity')
+        }
+        if (existingForRole.assetReferenceId === assetReferenceId) {
+          throw new Error('Asset Reference is already assigned to media role')
+        }
+        forward = {
+          type: 'asset.assignment.asset.set',
+          payload: { slideId, mediaAssignmentId, assetReferenceId },
+        }
+        inverse = {
+          type: 'asset.assignment.asset.set',
+          payload: { slideId, mediaAssignmentId, assetReferenceId: existingForRole.assetReferenceId },
+        }
+        label = `Replace Asset: ${role}`
+      } else {
+        if (mediaAssignmentIdentityExists(session.checkpoint.deck, mediaAssignmentId)) {
+          throw new Error('Media Assignment identity already exists')
+        }
+        const assignment: MediaAssignment = { id: mediaAssignmentId, role, assetReferenceId }
+        forward = { type: 'asset.assignment.insert', payload: { slideId, assignment } }
+        inverse = { type: 'asset.assignment.remove', payload: { slideId, mediaAssignmentId } }
+        label = `Assign Asset: ${role}`
+      }
+      projectionHints = ['slide.activeProjection', 'history']
+    } else if (command.type === 'designOption.applyPattern') {
+      const slideId = assertString(command.payload.slideId, 'slideId')
+      const slide = findSlide(session.checkpoint.deck, slideId)
+      if (!slide) throw new Error('Slide does not exist')
+      const designOptionId = assertString(command.payload.designOptionId, 'designOptionId')
+      if (designOptionIdentityExists(session.checkpoint.deck, designOptionId)) {
+        throw new Error('Design Option identity already exists')
+      }
+      const patternId = assertString(command.payload.patternId, 'patternId')
+      if (!Number.isSafeInteger(command.payload.patternVersion)) {
+        throw new Error('patternVersion must be an integer')
+      }
+      const pattern = authoredPattern(patternId, command.payload.patternVersion as number)
+      if (!pattern) throw new Error('Authored Layout Pattern version does not exist')
+      const name = command.payload.name === undefined
+        ? pattern.name
+        : assertString(command.payload.name, 'name')
+      const contentBindings = assertContentBindings(command.payload.contentBindings, pattern)
+      const previousActiveDesignOptionId = slide.activeDesignOptionId ?? null
+      if (
+        previousActiveDesignOptionId !== null
+        && !slide.designOptions?.some((option) => option.id === previousActiveDesignOptionId)
+      ) {
+        throw new Error('Active Design Option does not exist')
+      }
+      const designOption = instantiatePattern(slide, designOptionId, name, pattern, contentBindings)
+      const afterDesignOptionId = slide.designOptions?.at(-1)?.id ?? null
+      forward = {
+        type: 'designOption.insert',
+        payload: { slideId, designOption, afterDesignOptionId, activeDesignOptionId: designOptionId },
+      }
+      inverse = {
+        type: 'designOption.remove',
+        payload: { slideId, designOptionId, activeDesignOptionId: previousActiveDesignOptionId },
+      }
+      label = `Apply Pattern: ${pattern.name}`
+      projectionHints = ['slide.activeProjection', 'history']
+    } else if (command.type === 'designOption.activate') {
+      const slideId = assertString(command.payload.slideId, 'slideId')
+      const slide = findSlide(session.checkpoint.deck, slideId)
+      if (!slide) throw new Error('Slide does not exist')
+      const designOptionId = assertString(command.payload.designOptionId, 'designOptionId')
+      if (!slide.designOptions?.some((option) => option.id === designOptionId)) {
+        throw new Error('Design Option does not exist')
+      }
+      const previousActiveDesignOptionId = slide.activeDesignOptionId ?? null
+      if (previousActiveDesignOptionId === designOptionId) {
+        throw new Error('Design Option is already active')
+      }
+      forward = {
+        type: 'designOption.activate.set',
+        payload: { slideId, designOptionId },
+      }
+      inverse = {
+        type: 'designOption.activate.set',
+        payload: { slideId, designOptionId: previousActiveDesignOptionId },
+      }
+      label = `Activate Design Option: ${designOptionId}`
+      projectionHints = ['slide.activeProjection', 'history']
+    } else if (command.type === 'element.frame.update') {
+      const slideId = assertString(command.payload.slideId, 'slideId')
+      const designOptionId = assertString(command.payload.designOptionId, 'designOptionId')
+      const elementId = assertString(command.payload.elementId, 'elementId')
+      const frame = assertElementFrame(command.payload.frame)
+      const currentElement = findElement(session.checkpoint.deck, slideId, designOptionId, elementId)
+      if (!currentElement) throw new Error('Element does not exist in Design Option')
+      forward = {
+        type: 'element.frame.set',
+        payload: { slideId, designOptionId, elementId, frame },
+      }
+      inverse = {
+        type: 'element.frame.set',
+        payload: { slideId, designOptionId, elementId, frame: clone(currentElement.frame) },
+      }
+      label = 'Update Element frame'
+      projectionHints = ['slide.activeProjection', 'history']
+    } else if (command.type === 'element.crop.update') {
+      const slideId = assertString(command.payload.slideId, 'slideId')
+      const designOptionId = assertString(command.payload.designOptionId, 'designOptionId')
+      const elementId = assertString(command.payload.elementId, 'elementId')
+      const crop = assertNormalizedCrop(command.payload.crop)
+      const slide = findSlide(session.checkpoint.deck, slideId)
+      if (!slide) throw new Error('Slide does not exist')
+      const element = findElement(session.checkpoint.deck, slideId, designOptionId, elementId)
+      if (!element) throw new Error('Element does not exist in Design Option')
+      if (element.kind !== 'image') throw new Error('Only an Image Element can be cropped')
+      if (!element.mediaRole) throw new Error('Image Element is not bound to a media role')
+      if (!slide.mediaAssignments?.some((assignment) => assignment.role === element.mediaRole)) {
+        throw new Error('Image Element media role has no Asset assignment')
+      }
+      forward = {
+        type: 'element.crop.set',
+        payload: { slideId, designOptionId, elementId, crop },
+      }
+      inverse = {
+        type: 'element.crop.set',
+        payload: { slideId, designOptionId, elementId, crop: clone(element.crop ?? null) },
+      }
+      label = 'Update Image crop'
+      projectionHints = ['slide.activeProjection', 'history']
     } else {
       return failure('InvalidCommand', `Unsupported command type: ${String(command.type)}`)
     }
