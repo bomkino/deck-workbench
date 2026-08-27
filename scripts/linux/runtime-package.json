@@ -1,0 +1,8 @@
+{
+  "name": "deck-workbench-linux-runtime",
+  "version": "0.0.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "main": "apps/linux/main.mjs"
+}

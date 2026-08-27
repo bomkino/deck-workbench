@@ -1,0 +1,69 @@
+name: DW-G01 Ubuntu Linux x64
+
+on:
+  push:
+    branches:
+      - codex/apple-silicon-story-tracer
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dw-g01-linux-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  portable-seams:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm test
+      - run: node scripts/verify-source.mjs
+
+  packaged-linux-x64:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install Linux journey dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes file libasound2t64 libatspi2.0-0 libdrm2 libgbm1 libgtk-3-0 libnss3 libxss1 poppler-utils xdg-utils xvfb zstd
+          if sysctl -N kernel.apparmor_restrict_unprivileged_userns >/dev/null 2>&1; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+      - run: npm ci
+      - run: npm run install:electron
+      - run: scripts/linux/fetch-appimage-tools.sh
+      - run: npm test
+      - run: node scripts/verify-source.mjs
+      - run: npm run build:linux
+      - run: npm run verify:linux
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: deck-workbench-dw-g01-ubuntu-x64-${{ github.sha }}
+          path: |
+            artifacts/*.tar.gz
+            artifacts/*.tar.gz.sha256
+            artifacts/*.pkg.tar.zst
+            artifacts/*.pkg.tar.zst.sha256
+            artifacts/*.AppImage
+            artifacts/*.AppImage.sha256
+            artifacts/evidence/linux/*
+            artifacts/evidence/linux/journey/*
+          if-no-files-found: error

@@ -9,7 +9,13 @@
   },
   "scripts": {
     "generate": "node scripts/generate-bridge.mjs && node scripts/build-kernel.mjs",
+    "install:electron": "install-electron",
+    "build:linux": "scripts/linux/build-linux-x64.sh",
+    "verify:linux": "scripts/linux/verify-packaged-linux.sh",
     "test": "npm run generate && node --test tests/*.test.mjs",
     "verify": "npm test && node scripts/verify-source.mjs"
+  },
+  "dependencies": {
+    "electron": "44.0.0"
   }
 }

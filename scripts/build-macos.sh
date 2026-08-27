@@ -26,6 +26,11 @@ fi
 cd "$REPOSITORY_ROOT"
 npm run generate
 
+if ! git diff --quiet || ! git diff --cached --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
+  echo "ExactCommitGate: refusing to package a dirty working tree as $COMMIT_SHA" >&2
+  exit 2
+fi
+
 rm -rf "$BUILD_ROOT"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/Kernel" "$APP/Contents/Resources/Workspace" "$ARTIFACT_ROOT"
 

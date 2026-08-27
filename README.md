@@ -4,7 +4,7 @@ A local-first, story-first application for prototyping, reviewing and handing of
 
 ## Status
 
-Pre-alpha. `DW-T00` proves the first integrated Apple-Silicon Story Document tracer. The bounded `DW-W01` macOS work adds durable Deck/Section/Slide structure, ordering, intent and semantic Content Blocks; this is not the complete cross-platform Story Document ticket, a production editor or a release build.
+Pre-alpha. `DW-T00` proves the first integrated Apple-Silicon Story Document tracer. The bounded `DW-W01` work adds durable Deck/Section/Slide structure, ordering, intent and semantic Content Blocks. `DW-G01` adds a sandboxed Electron/utility-process Linux shell and exact x86-64 tarball, Arch-package and AppImage gates on Ubuntu/X11. Ubuntu CI is a real package/runtime gate; it is not a substitute for final Garuda KDE/Wayland acceptance.
 
 The tracer creates a native `.pitchdeck`, edits one canonical Story headline through the typed bridge and host-owned durable command seam, reopens with undo history, and exports one PDF page. Its macOS 26 arm64 workflow builds, ad-hoc signs, extracts, verifies, and runs the exact packaged journey at the checked-out SHA.
 
@@ -26,6 +26,25 @@ node scripts/write-evidence-receipt.mjs
 
 The packaged artifact and exact-SHA receipt are written under `artifacts/`.
 
+On Ubuntu 24.04 x86-64, after installing the workflow dependencies listed in
+`.github/workflows/dw-g01-linux.yml`:
+
+```sh
+npm ci
+npm run install:electron
+scripts/linux/fetch-appimage-tools.sh
+npm run build:linux
+npm run verify:linux
+```
+
+This builds and directly verifies a tarball, `.pkg.tar.zst`, and reproducible
+AppImage through distinct create and reopen application processes. Actual Garuda
+installation, KDE portals, Wayland/KWin behavior, drag/drop/reveal, target fonts,
+codecs and GPU paths remain target-machine gates.
+
+The bounded local CLI and privacy-safe support report adapters are documented in
+`apps/cli/README.md` and `docs/implementation/DW-W10-SUPPORT-REPORT.md`.
+
 ## Principles
 
 - Story remains canonical while visual alternatives change.
@@ -37,10 +56,11 @@ The packaged artifact and exact-SHA receipt are written under `artifacts/`.
 - Interface Scale never changes the Deck itself.
 - The project is free software under AGPL-3.0.
 
-## Planned applications
+## Applications
 
 - Apple-Silicon macOS 26+ app using SwiftUI and WebKit.
-- Garuda/Arch/KDE Linux app using Electron.
+- Garuda/Arch/KDE Linux app using Electron; Ubuntu/X11 package journey automated,
+  target Garuda acceptance still required.
 
 ## Documentation
 

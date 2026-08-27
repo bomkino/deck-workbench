@@ -59,7 +59,7 @@ ${commits}
 
 | Seam | Scenario | Independent expectation | Result |
 |---|---|---|---|
-| Deck kernel/workspace | semantic commands plus Story/Sequence keyboard and visible-control policy, stale and invalid rejection | Prepare is private; all callers share commands; rejection is atomic | Pass: 26 portable scenario tests |
+| Deck kernel/workspace | semantic commands plus Story/Sequence keyboard and visible-control policy, stale and invalid rejection | Prepare is private; all callers share commands; rejection is atomic | Pass: causal portable suite |
 | Document store | append/fsync/hash/replay/checkpoint plus corrupt/unsupported probes | Acknowledgement follows durable append; replay is deterministic | Pass: restart replay reached revision ${createResult.journalReplayRevision} |
 | Native shell | missing-document open through user-command presentation seam | Typed failure reaches persistent status and alert state | Pass: ${createResult.nativeFailurePresented ? 'MissingAttachment presented' : 'failed'} |
 | Typed bridge | generated Swift/JavaScript parity and malformed method | Only named methods cross the WebView boundary | Pass |
@@ -70,7 +70,7 @@ ${commits}
 
 | Command | Exit | Key result / artifact |
 |---|---:|---|
-| \`npm test\` | 0 | 26/26 causal tests passed |
+| \`npm test\` | 0 | Causal test suite passed |
 | \`node scripts/verify-source.mjs\` | 0 | Source contract passed |
 | \`scripts/build-macos.sh\` | 0 | arm64 app built and ad-hoc signed |
 | \`scripts/verify-packaged-macos.sh\` | 0 | ZIP extracted; signature, architecture and exact journey passed |
@@ -104,11 +104,12 @@ Result: pass. Create revision ${createResult.revision}; reopen revision ${reopen
 
 | Dependency/code | Version/commit | Licence | Purpose | Notice updated |
 |---|---|---|---|---|
-| actions/checkout | v4 | MIT | CI checkout only | Yes |
-| actions/setup-node | v4 | MIT | CI Node 24 only | Yes |
-| actions/upload-artifact | v4 | MIT | Retain package/evidence only | Yes |
+| actions/checkout | v4 / \`11d5960a326750d5838078e36cf38b85af677262\` | MIT | CI checkout only | Yes |
+| actions/setup-node | v4 / \`49933ea5288caeca8642d1e84afbd3f7d6820020\` | MIT | CI Node 24 only | Yes |
+| actions/upload-artifact | v4 / \`ea165f8d65b6e75b540449e92b4886f43607fa02\` | MIT | Retain package/evidence only | Yes |
+| Electron | 44.0.0 | MIT | Linux application runtime only; not embedded in the macOS app | Yes |
 
-No third-party production runtime dependency is present.
+Electron 44.0.0 is the Linux production runtime. The verified macOS app artifact continues to contain only Deck Workbench code and Apple operating-system frameworks.
 
 ## Honest status
 
@@ -120,9 +121,9 @@ No third-party production runtime dependency is present.
 
 ## Next dispatchable ticket
 
-- Ticket: \`DW-W01-R05-A — Interactive accessibility acceptance\`
-- Exact user journey: traverse the packaged Editorial Spine by hardware keyboard and verify names, roles, focus order and VoiceOver announcements
-- Dependency/gate: interactive macOS accessibility session; no editor dependency, Garuda or export expansion required
+- Ticket: \`DW-G01-GARUDA — Target-machine acceptance\`
+- Exact user journey: install the exact Ubuntu-produced Arch package and AppImage on Garuda, exercise KDE portal/menu/Wayland integration, and round-trip the same Deck back to macOS without semantic diff
+- Dependency/gate: an actual x86-64 Garuda KDE/Wayland machine; Ubuntu/X11 CI verifies the portable package seam but cannot establish this target integration
 `
 
 writeFileSync(join(evidence, 'DW-T00-EVIDENCE-RECEIPT.md'), receipt)
@@ -171,13 +172,13 @@ The extracted macOS app creates and reorders a second Section and Slide, uses Co
 - Status: **Packaged macOS DW-W01 structural slice with source-ready accessibility semantics**, not full integrated DW-W01
 - Supported claims: native Story structure creation; stable-ID ordering; Deck/Section rename; Slide intent; role-keyed Content add/update/remove; lossless textarea-to-paragraph mapping; IME-safe keyboard commit policy; clean-field durable keyboard undo/redo; stable-ID Story and Sequence focus restoration; Option–Arrow and visible bidirectional Slide/Section reorder; typed native failure retention and compiled alert binding; packaged current/shortcut/busy/live-status accessibility semantics; explicit removal UI; semantic restoration after reopen; durable replay and stale-head repair
 - Unsupported claims: hardware keyboard acceptance, VoiceOver, cascading deletion, marks/lists/headings/structured paste, broader crash-injection matrix, Garuda parity, production rich-editor behavior
-- Scope boundary: no Garuda shell, editor dependency or export expansion was introduced
+- Scope boundary: this macOS receipt does not establish Garuda/KDE/Wayland integration, editor-dependency acceptance or broad export fidelity
 
 ## Next dispatchable ticket
 
-- Ticket: \`DW-W01-R05-A — Interactive accessibility acceptance\`
-- Exact user journey: traverse the packaged Editorial Spine by hardware keyboard and verify names, roles, focus order and VoiceOver announcements.
-- Gate: macOS accessibility acceptance only. No editor dependency, Garuda or export expansion is needed.
+- Ticket: \`DW-G01-GARUDA — Target-machine acceptance\`
+- Exact user journey: install and run the exact Linux packages on Garuda KDE/Wayland, repeat the durable Story journey, and round-trip the package to macOS.
+- Gate: an actual target machine; Ubuntu/X11 automation establishes package/runtime evidence but not KDE/Wayland parity.
 `
 
 writeFileSync(join(evidence, 'DW-W01-STORY-SLICE-RECEIPT.md'), storyReceipt)
