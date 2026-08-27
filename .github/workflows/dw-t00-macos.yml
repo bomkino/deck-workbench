@@ -18,7 +18,8 @@ concurrency:
 
 jobs:
   portable-seams:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -27,8 +28,7 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - run: npm test
-      - run: node scripts/verify-source.mjs
+      - run: npm run verify
 
   packaged-apple-silicon:
     runs-on: macos-26
@@ -45,8 +45,7 @@ jobs:
         run: |
           test "$(uname -m)" = "arm64"
           test "$(sw_vers -productVersion | cut -d. -f1)" -ge 26
-      - run: npm test
-      - run: node scripts/verify-source.mjs
+      - run: npm run verify
       - run: scripts/build-macos.sh
       - run: scripts/verify-packaged-macos.sh
       - run: node scripts/write-evidence-receipt.mjs
