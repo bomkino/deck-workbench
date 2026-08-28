@@ -33,18 +33,48 @@ Priority meanings: P0 blocks independent use; P1 materially impairs a core journ
 |---|---|---:|---|
 | Semantics and labels | Native New, Open, Save, Close, and Export actions have textual labels and accessibility labels/help where ambiguity exists. Workspace regions, history buttons, zoom, Fit, sequence selection, reorder shortcuts, status, and composition are named. | — | Source inspection plus packaged tracer assertions. |
 | Target size | Web controls and sequence targets are measured across all seven Interface Scale steps; the runtime gate rejects any visible target under 43.5 pixels in either dimension. Native toolbar action labels have a 44 by 44 pixel minimum. | — | Packaged WebKit tracer plus Swift source contract. |
-| Keyboard | Menu commands expose standard shortcuts; Story commit/history and Sequence reordering preserve focus; the skip link targets the writing desk. | — | Existing packaged journey and source inspection. Manual full-keyboard traversal remains an installed-app check. |
+| Keyboard | Menu commands expose standard shortcuts; Story commit/history and Sequence reordering preserve focus; the skip link targets the writing desk. | — | Packaged journey plus exact-main installed traversal through 35 ordered native/WebKit controls, keyboard-only open, scale adjustment and export/cancel. |
 | Focus | Focus restoration after commit, undo, redo, and reorder is asserted. Focus rings use a three-pixel non-colour outline. | — | Packaged journey and CSS inspection. |
 | Dynamic feedback | Durable state is a polite atomic live status; busy state is exposed on the workbench; typed errors are shown without silent mutation. | — | Packaged journey and controller tests. |
-| Selection and contrast | Selected Slides use border, background, and `aria-current`, not colour alone. Forced-colours styles and reduced-motion styles exist. | — | Source inspection. System contrast and VoiceOver behaviour remain installed-app manual checks. |
+| Selection and contrast | Selected Slides use border, background, and `aria-current`, not colour alone. Forced-colours styles and reduced-motion styles exist. | — | Source inspection plus installed launch with Increase Contrast and Reduce Motion enabled; focus, selection and core controls remained visible. Core VoiceOver labels were traversed. |
 | Decorative media | The brand mark is omitted from WebKit accessibility output. | — | Packaged tracer assertion. |
-| Native document identity | macOS document and application icon metadata point to the packaged `.icns`. | — | Package inspection; Finder/Dock rendering remains an installed-app manual check. |
+| Native document identity | macOS document and application icon metadata point to the packaged `.icns`. | — | Package inspection plus candidate Finder and exact-main Dock visual acceptance. |
 
-Open audit state before final installed-app testing:
+Final installed-app audit state:
 
 - P0: none found by source or packaged-tracer review.
 - P1: none found by source or packaged-tracer review.
-- P2: manual VoiceOver reading order, Full Keyboard Access traversal, Increase Contrast, Reduce Motion, and Finder/Dock icon acceptance are still pending on the installed exact-commit app.
+- P2: no blocking finding in the bounded installed-app pass. Exhaustive VoiceOver narration across every Inspector control remains broader assistive-technology acceptance, not a release blocker for this local build.
+
+## Exact-main manual accessibility follow-up
+
+The installed app at commit `dd9b2cef1a116330452116674712cb0e60da3d67`
+was exercised without pointer input against the non-private revision-13 acceptance
+Deck.
+
+- `Command-O`, Go to Folder and Return opened the exact Deck through the native
+  panel. Tab then reached New, Open, Save, Close, Export, Rename, Undo,
+  Interface Scale, Artboard Zoom, Section/Slide creation and movement, Story,
+  Fit, Design, alignment and crop/media controls in a coherent order.
+- The Interface Scale keyboard commands changed 125% to 110% and restored 125%
+  without changing the 0.35 Artboard Zoom. `Command-Shift-E` opened the native
+  PDF panel and Escape cancelled it without changing revision 13.
+- VoiceOver was enabled for a bounded core-control pass. Native and WebKit
+  controls retained concrete names such as New Deck, Open Deck, Save, Apply
+  crop, reference label and Assign / replace Primary. The decorative mark
+  remained absent from the accessibility tree. VoiceOver was then quit and its
+  original off state confirmed.
+- Increase Contrast and Reduce Motion were enabled together, the exact installed
+  Deck reopened at revision 13, and focus, selection, toolbar, Sequence, Story
+  and scale controls remained present and usable. Both preferences were restored
+  to their original disabled values after a clean close/quit.
+- The canonical mark was visually confirmed in the live right-side Dock on the
+  running exact-main app. The local evidence crop is
+  `artifacts/evidence/dock-workbench-icon-main-dd9b2cef.png`, SHA-256
+  `c92c7d0a39a3887cffee375aabe6c39ff8e483debe79f274c6cd6cd5fc6e7210`.
+- Final environment readback: `AppleKeyboardUIMode=2`, `reduceMotion=0`,
+  `increaseContrast=0`, `voiceOverOnOffKey=0`; application and VoiceOver
+  processes stopped; writer lock released.
 
 ## Manual test script
 
