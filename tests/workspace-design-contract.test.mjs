@@ -34,6 +34,7 @@ test('every baseline control exposes at least a 44 pixel target at every Interfa
   assert.doesNotMatch(styles, /min-height:\s*2\.(?:5|65)rem/)
   assert.match(styles, /input\[type="range"\][\s\S]+?min-height: var\(--control-size\)/)
   assert.match(styles, /\.move-sequence,[\s\S]+?width: var\(--control-size\);[\s\S]+?min-height: var\(--control-size\);/)
+  assert.match(styles, /\.section-row \{[\s\S]+?min-height: var\(--control-size\);/)
 })
 
 test('frequent interactions use restrained interruptible feedback and accessible fallbacks', () => {

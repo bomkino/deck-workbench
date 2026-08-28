@@ -16,7 +16,7 @@ The 16-pixel rendering is necessarily low-detail, but the core metaphor survives
 
 | Before | After | Why |
 |---|---|---|
-| At 80% Interface Scale, a nominal 3.25 rem control became 41.6 pixels. | Control size is `max(3.25rem, 44px)` and native toolbar labels own a 44 by 44 pixel minimum. | Scale preference must not shrink frequent targets below the physical interaction floor. |
+| At 80% Interface Scale, a nominal 3.25 rem control became 41.6 pixels; the focusable Section row was shorter still. | Control size is `max(3.25rem, 44px)`, Section rows inherit that floor, and native toolbar labels own a 44 by 44 pixel minimum. | Scale preference must not shrink frequent targets below the physical interaction floor. |
 | The artboard used a visual transform while retaining its unscaled layout box. | A dedicated shell owns the scaled footprint and the artboard transforms from its top-left origin. | Zoom now tracks the projection’s real occupied space, so centring and scrolling remain truthful. |
 | Artboard rem dimensions inherited Interface Scale. | Artboard geometry and local typographic bounds use fixed projection pixels; only its dedicated zoom changes the projection. | Interface Scale changes chrome, not slide design. |
 | Low zoom could leave most of Stage unused with no recovery action. | `Fit Artboard to Stage` calculates the available Stage box and chooses the largest non-cropping slider step. | A common corrective action is immediate and interruptible. |
