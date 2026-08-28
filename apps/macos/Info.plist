@@ -6,11 +6,15 @@
   <string>en</string>
   <key>CFBundleDisplayName</key>
   <string>Deck Workbench</string>
+  <key>CFBundleIconFile</key>
+  <string>DeckWorkbench.icns</string>
   <key>CFBundleDocumentTypes</key>
   <array>
     <dict>
       <key>CFBundleTypeName</key>
       <string>Deck Workbench Document</string>
+      <key>CFBundleTypeIconFile</key>
+      <string>DeckWorkbench.icns</string>
       <key>CFBundleTypeRole</key>
       <string>Editor</string>
       <key>LSHandlerRank</key>

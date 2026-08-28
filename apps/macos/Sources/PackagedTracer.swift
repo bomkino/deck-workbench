@@ -388,6 +388,29 @@ enum PackagedTracer {
             const openingSequenceSection = [...document.querySelectorAll('#sequence-list [data-section-id]')]
               .find((row) => row.dataset.sectionId === openingSectionId);
             const priorInterfaceScale = interfaceScale;
+            const targetSizesByScale = [];
+            const artboardWidthsByScale = [];
+            for (const scale of INTERFACE_SCALE_STEPS) {
+              interfaceScale = scale;
+              applyScales();
+              document.documentElement.getBoundingClientRect();
+              const targets = [...document.querySelectorAll('button, select, input, textarea, .slide-row, .section-row')]
+                .filter((element) => element.getClientRects().length > 0);
+              const violations = targets.map((element) => {
+                const rect = element.getBoundingClientRect();
+                return { tag: element.tagName, id: element.id, width: rect.width, height: rect.height };
+              }).filter((target) => target.width < 43.5 || target.height < 43.5);
+              const artboardRect = document.querySelector('#artboard').getBoundingClientRect();
+              const shellRect = document.querySelector('#artboard-shell').getBoundingClientRect();
+              targetSizesByScale.push({ scale, targetCount: targets.length, violations });
+              artboardWidthsByScale.push({
+                scale,
+                artboardWidth: artboardRect.width,
+                artboardHeight: artboardRect.height,
+                shellWidth: shellRect.width,
+                shellHeight: shellRect.height
+              });
+            }
             interfaceScale = 1.75;
             applyScales();
             document.documentElement.getBoundingClientRect();
@@ -402,6 +425,8 @@ enum PackagedTracer {
               layout1440At175: workspaceLayoutMode({ viewportWidth: 1440, interfaceScale: 1.75 }),
               layout1512At150: workspaceLayoutMode({ viewportWidth: 1512, interfaceScale: 1.5 }),
               layout1512At175: workspaceLayoutMode({ viewportWidth: 1512, interfaceScale: 1.75 }),
+              targetSizesByScale,
+              artboardWidthsByScale,
               essentialControlsInsideViewport: essentialControls.every((element) => {
                 if (!element) return false;
                 const rect = element.getBoundingClientRect();
@@ -417,6 +442,8 @@ enum PackagedTracer {
               statusLive: document.querySelector('#save-state')?.getAttribute('aria-live'),
               statusAtomic: document.querySelector('#save-state')?.getAttribute('aria-atomic'),
               artboardZoomLabel: document.querySelector('#artboard-zoom')?.getAttribute('aria-label'),
+              fitArtboardLabel: document.querySelector('#fit-artboard')?.getAttribute('aria-label'),
+              brandHidden: document.querySelector('.brand-mark')?.getAttribute('aria-hidden'),
               selectedSlideId: selectedSequenceSlide?.dataset.slideId,
               selectedSlideLabel: selectedSequenceSlide?.getAttribute('aria-label'),
               selectedSlideCurrent: selectedSequenceSlide?.getAttribute('aria-current'),
@@ -583,6 +610,8 @@ enum PackagedTracer {
               accessibility["statusLive"] as? String == "polite",
               accessibility["statusAtomic"] as? String == "true",
               accessibility["artboardZoomLabel"] as? String == "Artboard Zoom",
+              accessibility["fitArtboardLabel"] as? String == "Fit Artboard to Stage",
+              accessibility["brandHidden"] as? String == "true",
               accessibility["selectedSlideId"] as? String == secondSlideId,
               accessibility["selectedSlideLabel"] as? String == "Slide 2: The Work Begins",
               accessibility["selectedSlideCurrent"] as? String == "page",
@@ -602,9 +631,27 @@ enum PackagedTracer {
               scaleReflow["layout1440At175"] as? String == "two-column",
               scaleReflow["layout1512At150"] as? String == "two-column",
               scaleReflow["layout1512At175"] as? String == "two-column",
+              let targetSizesByScale = scaleReflow["targetSizesByScale"] as? [[String: Any]],
+              targetSizesByScale.count == 7,
+              targetSizesByScale.allSatisfy({ (($0["targetCount"] as? NSNumber)?.intValue ?? 0) > 0
+                  && (($0["violations"] as? [[String: Any]])?.isEmpty == true) }),
+              let artboardWidthsByScale = scaleReflow["artboardWidthsByScale"] as? [[String: Any]],
+              artboardWidthsByScale.count == 7,
+              artboardWidthsByScale.allSatisfy({ entry in
+                  guard let artboardWidth = (entry["artboardWidth"] as? NSNumber)?.doubleValue,
+                        let artboardHeight = (entry["artboardHeight"] as? NSNumber)?.doubleValue,
+                        let shellWidth = (entry["shellWidth"] as? NSNumber)?.doubleValue,
+                        let shellHeight = (entry["shellHeight"] as? NSNumber)?.doubleValue else { return false }
+                  return abs(artboardWidth - shellWidth) <= 1 && abs(artboardHeight - shellHeight) <= 1
+              }),
+              let firstArtboardWidth = (artboardWidthsByScale.first?["artboardWidth"] as? NSNumber)?.doubleValue,
+              artboardWidthsByScale.allSatisfy({ entry in
+                  guard let width = (entry["artboardWidth"] as? NSNumber)?.doubleValue else { return false }
+                  return abs(width - firstArtboardWidth) <= 1
+              }),
               scaleReflow["essentialControlsInsideViewport"] as? Bool == true
         else {
-            throw WorkbenchFailure(name: "InvalidCommand", message: "Interface Scale 175% reflow left essential controls outside the viewport")
+            throw WorkbenchFailure(name: "InvalidCommand", message: "Interface Scale reflow, target size or artboard independence contract failed")
         }
         let sequenceMovedUp = try requireStory(keyboardJourney["sequenceMovedUp"], revision: 12)
         try requireStoryOrder(

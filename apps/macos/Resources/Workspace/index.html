@@ -19,7 +19,7 @@
     <main class="workbench" aria-label="Deck Workbench Editorial Desk" aria-busy="false" tabindex="-1">
       <header class="toolbar">
         <div class="brand-cluster">
-          <img class="brand-mark" src="workbench-mark.svg" alt="" width="64" height="64" />
+          <img class="brand-mark" src="workbench-mark.svg" alt="" role="presentation" aria-hidden="true" width="64" height="64" />
           <div class="brand-copy">
             <p class="eyebrow">pitch.dog / local-first</p>
             <div class="deck-title-row">
@@ -167,17 +167,22 @@
               <p class="panel-label">03 / Stage</p>
               <h2>Live Slide</h2>
             </div>
-            <p id="zoom-label">35%</p>
+            <div class="stage-view-actions">
+              <p id="zoom-label">35%</p>
+              <button id="fit-artboard" type="button" aria-label="Fit Artboard to Stage">Fit</button>
+            </div>
           </div>
-          <div class="stage-scroll">
-            <article class="artboard" id="artboard" aria-label="Projected Slide">
-              <div id="semantic-fallback">
-                <p class="artboard-kicker" id="artboard-intent">Cover</p>
-                <h3 id="artboard-headline">Untitled Story</h3>
-              </div>
-              <div id="composition-layer" aria-label="Active Design Option Composition"></div>
-              <p class="artboard-furniture">pitch.dog / Deck Workbench tracer</p>
-            </article>
+          <div class="stage-scroll" id="stage-scroll">
+            <div class="artboard-shell" id="artboard-shell">
+              <article class="artboard" id="artboard" aria-label="Projected Slide">
+                <div id="semantic-fallback">
+                  <p class="artboard-kicker" id="artboard-intent">Cover</p>
+                  <h3 id="artboard-headline">Untitled Story</h3>
+                </div>
+                <div id="composition-layer" aria-label="Active Design Option Composition"></div>
+                <p class="artboard-furniture">pitch.dog / Deck Workbench tracer</p>
+              </article>
+            </div>
           </div>
         </section>
 

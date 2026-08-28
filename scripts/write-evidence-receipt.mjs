@@ -2,8 +2,9 @@ import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { basename, join, relative } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const root = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
+const root = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const startSHA = '7ea90410287a5f90b44567ef5fc53e62736191ae'
 const git = (...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim()
 const sha256 = (path) => createHash('sha256').update(readFileSync(path)).digest('hex')
@@ -104,9 +105,9 @@ Result: pass. Create revision ${createResult.revision}; reopen revision ${reopen
 
 | Dependency/code | Version/commit | Licence | Purpose | Notice updated |
 |---|---|---|---|---|
-| actions/checkout | v4 / \`11d5960a326750d5838078e36cf38b85af677262\` | MIT | CI checkout only | Yes |
-| actions/setup-node | v4 / \`49933ea5288caeca8642d1e84afbd3f7d6820020\` | MIT | CI Node 24 only | Yes |
-| actions/upload-artifact | v4 / \`ea165f8d65b6e75b540449e92b4886f43607fa02\` | MIT | Retain package/evidence only | Yes |
+| actions/checkout | v7.0.1 / \`3d3c42e5aac5ba805825da76410c181273ba90b1\` | MIT | CI checkout only | Yes |
+| actions/setup-node | v7.0.0 / \`820762786026740c76f36085b0efc47a31fe5020\` | MIT | CI Node 24 only | Yes |
+| actions/upload-artifact | v7.0.1 / \`043fb46d1a93c77aae656e7c1c64a875d1fc6a0a\` | MIT | Retain package/evidence only | Yes |
 | Electron | 44.0.0 | MIT | Linux application runtime only; not embedded in the macOS app | Yes |
 
 Electron 44.0.0 is the Linux production runtime. The verified macOS app artifact continues to contain only Deck Workbench code and Apple operating-system frameworks.

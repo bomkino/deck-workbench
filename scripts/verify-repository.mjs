@@ -82,6 +82,9 @@ for (const path of tracked.filter((candidate) => candidate.endsWith('.md'))) {
 const packageJSON = JSON.parse(await readFile('package.json', 'utf8'))
 const lock = JSON.parse(await readFile('package-lock.json', 'utf8'))
 assert.equal(packageJSON.dependencies.electron, '44.0.0')
+assert.equal(packageJSON.version, '0.0.1')
+assert.equal(lock.version, packageJSON.version)
+assert.equal(lock.packages[''].version, packageJSON.version)
 assert.equal(lock.packages[''].dependencies.electron, packageJSON.dependencies.electron)
 assert.equal(
   packageJSON.scripts.verify,

@@ -109,7 +109,7 @@ function request(fixture) {
     deckPath: fixture.deckPath,
     thirdPartyPath: fixture.thirdPartyPath,
     commitSha: COMMIT_SHA,
-    appVersion: '0.0.0',
+    appVersion: '0.0.1',
     platform: 'linux',
     architecture: 'x64',
   }
@@ -127,7 +127,7 @@ test('creates deterministic useful evidence without collecting private Deck or m
   const first = await createSupportReport(request(fixture))
   const second = await createSupportReport(request(fixture))
   assert.deepEqual(second, first)
-  assert.deepEqual(first.build, { commitSha: COMMIT_SHA, appVersion: '0.0.0' })
+  assert.deepEqual(first.build, { commitSha: COMMIT_SHA, appVersion: '0.0.1' })
   assert.deepEqual(first.runtime, { platform: 'linux', architecture: 'x64' })
   assert.deepEqual(first.document, {
     manifest: {

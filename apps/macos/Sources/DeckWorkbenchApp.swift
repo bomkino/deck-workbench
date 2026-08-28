@@ -115,7 +115,7 @@ struct WorkbenchRootView: View {
     @ObservedObject var controller: DeckSessionController
 
     private var shellScale: CGFloat { CGFloat(controller.interfaceScale) }
-    private var toolbarHeight: CGFloat { 54 * shellScale }
+    private var toolbarHeight: CGFloat { max(44, 54 * shellScale) }
     private var toolbarSpacing: CGFloat { 12 * shellScale }
 
     var body: some View {
@@ -125,6 +125,7 @@ struct WorkbenchRootView: View {
                     Task { await controller.perform { _ = try await controller.presentNewDocument() } }
                 } label: {
                     Label("New Deck…", systemImage: "rectangle.stack.badge.plus")
+                        .frame(minWidth: 44, minHeight: 44)
                 }
                 .help("Create a new Deck")
                 .accessibilityLabel("New Deck")
@@ -133,6 +134,7 @@ struct WorkbenchRootView: View {
                     Task { await controller.perform { _ = try await controller.presentOpenDocument() } }
                 } label: {
                     Label("Open Deck…", systemImage: "folder")
+                        .frame(minWidth: 44, minHeight: 44)
                 }
                 .help("Open a Deck")
                 .accessibilityLabel("Open Deck")
@@ -141,6 +143,7 @@ struct WorkbenchRootView: View {
                     Task { await controller.perform { try controller.save() } }
                 } label: {
                     Label("Save", systemImage: "square.and.arrow.down")
+                        .frame(minWidth: 44, minHeight: 44)
                 }
                 .disabled(!controller.hasDocument)
 
@@ -148,6 +151,7 @@ struct WorkbenchRootView: View {
                     Task { await controller.perform { try await controller.closeDocument() } }
                 } label: {
                     Label("Close Deck", systemImage: "xmark.square")
+                        .frame(minWidth: 44, minHeight: 44)
                 }
                 .disabled(!controller.hasDocument)
 
@@ -180,6 +184,7 @@ struct WorkbenchRootView: View {
                     Task { await controller.perform { _ = try await controller.presentPDFExport() } }
                 } label: {
                     Label("Export Review PDF…", systemImage: "arrow.up.doc")
+                        .frame(minWidth: 44, minHeight: 44)
                 }
                 .disabled(!controller.hasDocument)
             }

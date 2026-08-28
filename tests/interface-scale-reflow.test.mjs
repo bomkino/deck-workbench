@@ -18,11 +18,12 @@ const { workspaceLayoutMode } = Function(
 test('large Interface Scale reflows the roomy workbench instead of clipping it', () => {
   assert.match(styles, /\.workbench \{\s*min-width: 0;/)
   assert.doesNotMatch(styles, /\.workbench \{[^}]*min-width: 70rem/)
-  assert.match(styles, /--control-size: 3\.25rem/)
+  assert.match(styles, /--control-size: max\(3\.25rem, 44px\)/)
   assert.match(styles, /data-workspace-layout="two-column"[\s\S]+?grid-template-areas:[\s\S]+?"sequence story"[\s\S]+?"stage stage"[\s\S]+?"inspector inspector"/)
   assert.match(styles, /data-workspace-layout="single-column"[\s\S]+?grid-template-columns: minmax\(0, 1fr\)/)
   assert.match(styles, /data-workspace-layout="two-column"\] \.toolbar-actions/)
-  assert.match(styles, /width: min\(68rem, calc\(100vw - 8rem\)\)/)
+  assert.match(styles, /\.artboard-shell \{[\s\S]+?position: relative/)
+  assert.match(styles, /\.artboard \{[\s\S]+?width: 1088px/)
 })
 
 test('layout choice preserves four-column working space and reflows at scaled widths', () => {
@@ -40,18 +41,21 @@ test('packaged WebKit journey still measures 175 percent horizontal reachability
   assert.doesNotMatch(tracer, /requestAnimationFrame/)
   assert.match(tracer, /essentialControlsInsideViewport/)
   assert.match(tracer, /layout1512At175/)
+  assert.match(tracer, /targetSizesByScale/)
+  assert.match(tracer, /artboardWidthsByScale/)
   assert.match(tracer, /documentWidth <= viewportWidth \+ 1/)
-  assert.match(tracer, /Interface Scale 175% reflow left essential controls outside the viewport/)
+  assert.match(tracer, /Interface Scale reflow, target size or artboard independence contract failed/)
 })
 
 test('native shell scales its large controls without feeding scale into artboard geometry', () => {
   assert.match(controller, /@Published private\(set\) var interfaceScale: Double/)
   assert.match(app, /private var shellScale: CGFloat \{ CGFloat\(controller\.interfaceScale\) \}/)
-  assert.match(app, /private var toolbarHeight: CGFloat \{ 54 \* shellScale \}/)
+  assert.match(app, /private var toolbarHeight: CGFloat \{ max\(44, 54 \* shellScale\) \}/)
   assert.match(app, /Label\("New Deck…", systemImage: "rectangle\.stack\.badge\.plus"\)/)
   assert.match(app, /AdaptiveToolbarLabelStyle\(compact: shellScale >= 1\.5\)/)
   assert.match(app, /\.controlSize\(\.large\)/)
   assert.match(app, /\.font\(\.system\(size: 14 \* shellScale, weight: \.semibold\)\)/)
+  assert.match(app, /\.frame\(minWidth: 44, minHeight: 44\)/)
   assert.match(tracer, /controller\.interfaceScale == 1\.25/)
   assert.doesNotMatch(app, /artboardZoom/)
 })

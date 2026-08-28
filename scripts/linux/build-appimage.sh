@@ -5,6 +5,7 @@ REPOSITORY_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 COMMIT_SHA="$(git -C "$REPOSITORY_ROOT" rev-parse HEAD)"
 SOURCE_DATE_EPOCH="$(git -C "$REPOSITORY_ROOT" show -s --format=%ct "$COMMIT_SHA")"
 SHORT_SHA="${COMMIT_SHA:0:12}"
+APP_VERSION="$(cd "$REPOSITORY_ROOT" && node -p "require('./package.json').version")"
 BUNDLE="${1:-$REPOSITORY_ROOT/build/linux-x64/Deck-Workbench-linux-x64}"
 APPDIR="$REPOSITORY_ROOT/build/linux-x64/Deck-Workbench.AppDir"
 REPRODUCIBILITY_APPDIR="$REPOSITORY_ROOT/build/linux-x64/Deck-Workbench.reproducibility.AppDir"
@@ -12,7 +13,7 @@ TOOLS_ROOT="$REPOSITORY_ROOT/build/appimage-tools"
 APPIMAGETOOL="$TOOLS_ROOT/appimagetool-x86_64.AppImage"
 RUNTIME="$TOOLS_ROOT/runtime-x86_64"
 ARTIFACT_ROOT="$REPOSITORY_ROOT/artifacts"
-APPIMAGE="$ARTIFACT_ROOT/Deck-Workbench-0.0.0.r${SHORT_SHA}-x86_64.AppImage"
+APPIMAGE="$ARTIFACT_ROOT/Deck-Workbench-${APP_VERSION}.r${SHORT_SHA}-x86_64.AppImage"
 REPRODUCIBILITY_COPY="$ARTIFACT_ROOT/.Deck-Workbench-reproducibility-check-${SHORT_SHA}.AppImage"
 
 APPIMAGETOOL_SHA256="ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0"
@@ -85,7 +86,7 @@ build_appimage() {
   local output="$2"
   rm -f "$output"
   ARCH=x86_64 \
-    VERSION="0.0.0.r${SHORT_SHA}" \
+    VERSION="${APP_VERSION}.r${SHORT_SHA}" \
     SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" \
     APPIMAGE_EXTRACT_AND_RUN=1 \
     "$APPIMAGETOOL" \

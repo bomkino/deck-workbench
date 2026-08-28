@@ -2,13 +2,15 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
-const [html, styles, mark, linuxHost, schemeHandler, macBuild, linuxIcon] = await Promise.all([
+const [html, styles, mark, linuxHost, schemeHandler, macBuild, macIconBuild, macInfo, linuxIcon] = await Promise.all([
   readFile(new URL('../apps/macos/Resources/Workspace/index.html', import.meta.url), 'utf8'),
   readFile(new URL('../apps/macos/Resources/Workspace/styles.css', import.meta.url), 'utf8'),
   readFile(new URL('../apps/macos/Resources/Workspace/workbench-mark.svg', import.meta.url), 'utf8'),
   readFile(new URL('../apps/linux/main.mjs', import.meta.url), 'utf8'),
   readFile(new URL('../apps/macos/Sources/WorkspaceSchemeHandler.swift', import.meta.url), 'utf8'),
   readFile(new URL('../scripts/build-macos.sh', import.meta.url), 'utf8'),
+  readFile(new URL('../scripts/build-macos-icon.sh', import.meta.url), 'utf8'),
+  readFile(new URL('../apps/macos/Info.plist', import.meta.url), 'utf8'),
   readFile(new URL('../scripts/linux/deck-workbench.svg', import.meta.url), 'utf8'),
 ])
 
@@ -20,11 +22,12 @@ test('static workspace actions cannot accidentally submit or reload the editor',
   }
 })
 
-test('every baseline control exposes a 52 pixel target that scales with Interface Scale', () => {
+test('every baseline control exposes at least a 44 pixel target at every Interface Scale step', () => {
   const root = styles.match(/:root \{([\s\S]*?)\n\}/)?.[1] ?? ''
-  const size = Number(root.match(/--control-size:\s*([\d.]+)rem/)?.[1])
-  assert.ok(Number.isFinite(size))
-  assert.ok(size >= 3.25, `control target is only ${size}rem`)
+  assert.match(root, /--control-size:\s*max\(3\.25rem, 44px\)/)
+  for (const scale of [0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75]) {
+    assert.ok(Math.max(3.25 * 16 * scale, 44) >= 44)
+  }
   assert.match(styles, /font-size: calc\(16px \* var\(--interface-scale\)\)/)
   assert.match(styles, /min-height: var\(--control-size\)/)
   assert.match(styles, /--icon-size: 1\.375rem/)
@@ -56,6 +59,20 @@ test('the pitch.dog mark is one sparse vector poem and ships through every host'
   assert.match(schemeHandler, /"workbench-mark\.svg"/)
   assert.match(schemeHandler, /name\.hasSuffix\("\.svg"\) \{ return "image\/svg\+xml" \}/)
   assert.match(macBuild, /workbench-mark\.svg/)
+  assert.match(macBuild, /build-macos-icon\.sh/)
+  assert.match(macIconBuild, /icon_512x512@2x\.png 1024/)
+  assert.match(macIconBuild, /iconutil -c icns/)
+  assert.match(macInfo, /<key>CFBundleIconFile<\/key>\s*<string>DeckWorkbench\.icns<\/string>/)
+  assert.match(macInfo, /<key>CFBundleTypeIconFile<\/key>\s*<string>DeckWorkbench\.icns<\/string>/)
+})
+
+test('Stage owns a scaled layout footprint, a genuine Fit control, and decorative brand silence', () => {
+  assert.match(html, /id="fit-artboard"[^>]+aria-label="Fit Artboard to Stage"/)
+  assert.match(html, /id="stage-scroll"[\s\S]+?id="artboard-shell"[\s\S]+?id="artboard"/)
+  assert.match(html, /class="brand-mark"[^>]+role="presentation"[^>]+aria-hidden="true"/)
+  assert.match(styles, /\.artboard-shell \{[\s\S]+?position: relative;/)
+  assert.match(styles, /\.artboard \{[\s\S]+?width: 1088px;[\s\S]+?transform-origin: top left;/)
+  assert.doesNotMatch(styles, /\.artboard \{[\s\S]+?width: min\(68rem/)
 })
 
 test('the hierarchy is editorial rather than a generic dashboard card grid', () => {

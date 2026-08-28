@@ -10,6 +10,7 @@ test('Interface Scale changes chrome without changing artboard transform or expo
 
   assert.notEqual(small.chromeRemPixels, large.chromeRemPixels)
   assert.equal(small.artboardTransform, large.artboardTransform)
+  assert.deepEqual(small.artboardViewport, large.artboardViewport)
   assert.deepEqual(small.exportGeometry, canvas)
   assert.deepEqual(large.exportGeometry, canvas)
 })
@@ -20,6 +21,8 @@ test('artboard zoom changes projection only and preserves export geometry', () =
 
   assert.equal(fit.chromeRemPixels, close.chromeRemPixels)
   assert.notEqual(fit.artboardTransform, close.artboardTransform)
+  assert.ok(fit.artboardViewport.width < close.artboardViewport.width)
+  assert.ok(fit.artboardViewport.height < close.artboardViewport.height)
   assert.deepEqual(fit.exportGeometry, close.exportGeometry)
 })
 

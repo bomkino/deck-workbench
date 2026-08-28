@@ -34,6 +34,9 @@ fi
 codesign --verify --deep --strict --verbose=2 "$APP"
 test "$(plutil -extract LSMinimumSystemVersion raw "$APP/Contents/Info.plist")" = "26.0"
 test "$(plutil -extract DeckWorkbenchCommit raw "$APP/Contents/Info.plist")" = "$COMMIT_SHA"
+test "$(plutil -extract CFBundleShortVersionString raw "$APP/Contents/Info.plist")" = "0.0.1"
+test "$(plutil -extract CFBundleIconFile raw "$APP/Contents/Info.plist")" = "DeckWorkbench.icns"
+test -s "$APP/Contents/Resources/DeckWorkbench.icns"
 
 DOCUMENT="$JOURNEY_ROOT/Tracer.pitchdeck"
 CREATE_RESULT="$JOURNEY_ROOT/create-result.json"

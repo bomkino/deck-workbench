@@ -2,12 +2,14 @@ import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { basename, join, relative } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const root = new URL('../..', import.meta.url).pathname.replace(/\/$/, '')
+const root = fileURLToPath(new URL('../..', import.meta.url)).replace(/\/$/, '')
 const git = (...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim()
 const sha256 = (path) => createHash('sha256').update(readFileSync(path)).digest('hex')
 const startingSHA = '7ea90410287a5f90b44567ef5fc53e62736191ae'
 const endingSHA = git('rev-parse', 'HEAD')
+const appVersion = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version
 const branch = process.env.GITHUB_REF_NAME || git('branch', '--show-current') || 'detached'
 const evidenceRoot = join(root, 'artifacts', 'evidence', 'linux')
 const journeyPath = join(evidenceRoot, 'journey', 'journey-result.json')
@@ -15,8 +17,8 @@ const pdfPath = join(evidenceRoot, 'journey', 'tracer.pdf')
 const appImageJourneyPath = join(evidenceRoot, 'appimage-journey', 'journey-result.json')
 const appImagePDFPath = join(evidenceRoot, 'appimage-journey', 'tracer.pdf')
 const archivePath = join(root, 'artifacts', `Deck-Workbench-linux-x64-${endingSHA}.tar.gz`)
-const archPackagePath = join(root, 'artifacts', `deck-workbench-0.0.0.r${endingSHA.slice(0, 12)}-1-x86_64.pkg.tar.zst`)
-const appImagePath = join(root, 'artifacts', `Deck-Workbench-0.0.0.r${endingSHA.slice(0, 12)}-x86_64.AppImage`)
+const archPackagePath = join(root, 'artifacts', `deck-workbench-${appVersion}.r${endingSHA.slice(0, 12)}-1-x86_64.pkg.tar.zst`)
+const appImagePath = join(root, 'artifacts', `Deck-Workbench-${appVersion}.r${endingSHA.slice(0, 12)}-x86_64.AppImage`)
 const journey = JSON.parse(readFileSync(journeyPath, 'utf8'))
 const appImageJourney = JSON.parse(readFileSync(appImageJourneyPath, 'utf8'))
 

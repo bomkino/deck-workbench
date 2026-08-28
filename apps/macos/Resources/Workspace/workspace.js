@@ -1,5 +1,6 @@
 const INTERFACE_SCALE_STEPS = Object.freeze([0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75])
 const W02_PATTERN_IDS = Object.freeze(['cover', 'full-bleed-statement', 'editorial-body'])
+const ARTBOARD_BASE_WIDTH = 1088
 
 function patternApplyPlan(activeProjection, patternId, designOptionId, bodyBlockId = null) {
   if (!activeProjection || !W02_PATTERN_IDS.includes(patternId) || !designOptionId) return null
@@ -101,6 +102,10 @@ function workspaceTransforms({ interfaceScale: requestedInterfaceScale, artboard
     interfaceScale: ui,
     chromeRemPixels: 16 * ui,
     artboardTransform: `scale(${zoom})`,
+    artboardViewport: Object.freeze({
+      width: ARTBOARD_BASE_WIDTH * zoom,
+      height: (ARTBOARD_BASE_WIDTH * canvas.height / canvas.width) * zoom,
+    }),
     exportGeometry: Object.freeze({ width: canvas.width, height: canvas.height }),
   })
 }
@@ -128,10 +133,13 @@ const elements = {
   redo: document.querySelector('#redo'),
   interfaceScale: document.querySelector('#interface-scale'),
   artboardZoom: document.querySelector('#artboard-zoom'),
+  fitArtboard: document.querySelector('#fit-artboard'),
   zoomLabel: document.querySelector('#zoom-label'),
   inspectorZoom: document.querySelector('#inspector-zoom'),
   inspectorInterface: document.querySelector('#inspector-interface'),
   slideIntent: document.querySelector('#slide-intent'),
+  stageScroll: document.querySelector('#stage-scroll'),
+  artboardShell: document.querySelector('#artboard-shell'),
   artboard: document.querySelector('#artboard'),
   patternChoice: document.querySelector('#pattern-choice'),
   patternBodyBlock: document.querySelector('#pattern-body-block'),
@@ -816,6 +824,8 @@ function applyScales() {
   const transforms = workspaceTransforms({ interfaceScale, artboardZoom, canvas })
   document.documentElement.style.setProperty('--interface-scale', String(transforms.interfaceScale))
   document.documentElement.style.setProperty('--artboard-zoom', String(artboardZoom))
+  elements.artboardShell.style.width = `${transforms.artboardViewport.width}px`
+  elements.artboardShell.style.height = `${transforms.artboardViewport.height}px`
   document.documentElement.dataset.workspaceLayout = workspaceLayoutMode({
     viewportWidth: window.innerWidth,
     interfaceScale,
@@ -826,6 +836,33 @@ function applyScales() {
   elements.zoomLabel.textContent = zoomPercent
   elements.inspectorZoom.textContent = zoomPercent
   elements.inspectorInterface.textContent = `${Math.round(interfaceScale * 100)}%`
+}
+
+async function setArtboardZoom(requested) {
+  try {
+    const result = await window.deckBridge.setArtboardZoom({ value: requested })
+    artboardZoom = result.artboardZoom
+    applyScales()
+  } catch (error) {
+    elements.saveState.textContent = `${error.name ?? 'Error'}: ${error.message}`
+  }
+}
+
+function fittedArtboardZoom() {
+  const style = getComputedStyle(elements.stageScroll)
+  const availableWidth = elements.stageScroll.clientWidth
+    - Number.parseFloat(style.paddingLeft)
+    - Number.parseFloat(style.paddingRight)
+  const availableHeight = elements.stageScroll.clientHeight
+    - Number.parseFloat(style.paddingTop)
+    - Number.parseFloat(style.paddingBottom)
+  const canvas = projection?.canvas ?? { width: 2576, height: 1080 }
+  const baseHeight = ARTBOARD_BASE_WIDTH * canvas.height / canvas.width
+  const raw = Math.min(availableWidth / ARTBOARD_BASE_WIDTH, availableHeight / baseHeight)
+  const step = Number(elements.artboardZoom.step)
+  const minimum = Number(elements.artboardZoom.min)
+  const maximum = Number(elements.artboardZoom.max)
+  return Math.min(maximum, Math.max(minimum, Math.floor(raw / step) * step))
 }
 
 async function commitHeadline() {
@@ -983,16 +1020,8 @@ elements.interfaceScale.addEventListener('change', async () => {
     elements.saveState.textContent = `${error.name ?? 'Error'}: ${error.message}`
   }
 })
-elements.artboardZoom.addEventListener('input', async () => {
-  const requested = Number(elements.artboardZoom.value)
-  try {
-    const result = await window.deckBridge.setArtboardZoom({ value: requested })
-    artboardZoom = result.artboardZoom
-    applyScales()
-  } catch (error) {
-    elements.saveState.textContent = `${error.name ?? 'Error'}: ${error.message}`
-  }
-})
+elements.artboardZoom.addEventListener('input', () => setArtboardZoom(Number(elements.artboardZoom.value)))
+elements.fitArtboard.addEventListener('click', () => setArtboardZoom(fittedArtboardZoom()))
 elements.slideIntent.addEventListener('change', async () => {
   if (!projection) return
   await executeStructural('slide.intent.set', {
