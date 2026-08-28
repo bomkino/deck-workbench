@@ -6,9 +6,10 @@ COMMIT_SHA="$(git -C "$REPOSITORY_ROOT" rev-parse HEAD)"
 ARCHIVE="$REPOSITORY_ROOT/artifacts/Deck-Workbench-linux-x64-${COMMIT_SHA}.tar.gz"
 CHECKSUM="$ARCHIVE.sha256"
 SHORT_SHA="${COMMIT_SHA:0:12}"
-ARCH_PACKAGE="$REPOSITORY_ROOT/artifacts/deck-workbench-0.0.0.r${SHORT_SHA}-1-x86_64.pkg.tar.zst"
+APP_VERSION="$(cd "$REPOSITORY_ROOT" && node -p "require('./package.json').version")"
+ARCH_PACKAGE="$REPOSITORY_ROOT/artifacts/deck-workbench-${APP_VERSION}.r${SHORT_SHA}-1-x86_64.pkg.tar.zst"
 ARCH_CHECKSUM="$ARCH_PACKAGE.sha256"
-APPIMAGE="$REPOSITORY_ROOT/artifacts/Deck-Workbench-0.0.0.r${SHORT_SHA}-x86_64.AppImage"
+APPIMAGE="$REPOSITORY_ROOT/artifacts/Deck-Workbench-${APP_VERSION}.r${SHORT_SHA}-x86_64.AppImage"
 APPIMAGE_CHECKSUM="$APPIMAGE.sha256"
 EVIDENCE_ROOT="$REPOSITORY_ROOT/artifacts/evidence/linux"
 EXTRACT_ROOT="$(mktemp -d)"
@@ -83,7 +84,7 @@ grep -Fx 'opt/deck-workbench/deck-workbench' "$EVIDENCE_ROOT/arch-package-files.
 grep -Fx 'usr/bin/deck-workbench' "$EVIDENCE_ROOT/arch-package-files.txt"
 grep -Fx 'usr/share/applications/deck-workbench.desktop' "$EVIDENCE_ROOT/arch-package-files.txt"
 tar --zstd -xOf "$ARCH_PACKAGE" .PKGINFO > "$EVIDENCE_ROOT/arch-package-info.txt"
-grep -Fx "pkgver = 0.0.0.r${SHORT_SHA}-1" "$EVIDENCE_ROOT/arch-package-info.txt"
+grep -Fx "pkgver = ${APP_VERSION}.r${SHORT_SHA}-1" "$EVIDENCE_ROOT/arch-package-info.txt"
 grep -Fx 'arch = x86_64' "$EVIDENCE_ROOT/arch-package-info.txt"
 mkdir -p "$ARCH_EXTRACT_ROOT"
 tar --zstd -xf "$ARCH_PACKAGE" -C "$ARCH_EXTRACT_ROOT"
@@ -104,6 +105,7 @@ if (identity.repository !== 'bomkino/deck-workbench') throw new Error('Repositor
 if (identity.commit !== expectedCommit) throw new Error(`Commit identity mismatch: ${identity.commit}`)
 if (identity.platform !== 'linux' || identity.architecture !== 'x86_64') throw new Error('Platform identity mismatch')
 if (identity.electron !== '44.0.0') throw new Error('Electron identity mismatch')
+if (identity.version !== '0.0.1') throw new Error('Application version mismatch')
 NODE
 
 run_two_phase_journey() {

@@ -7,63 +7,127 @@
       content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#dcebf2" />
     <title>Deck Workbench</title>
+    <link rel="icon" href="workbench-mark.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="styles.css" />
     <script src="bridge.generated.js" defer></script>
     <script src="workspace.js" defer></script>
   </head>
   <body>
-    <main class="workbench" aria-label="Deck Workbench Editorial Desk" aria-busy="false">
+    <a class="skip-link" href="#story-heading">Skip to writing desk</a>
+    <main class="workbench" aria-label="Deck Workbench Editorial Desk" aria-busy="false" tabindex="-1">
       <header class="toolbar">
-        <div>
-          <p class="eyebrow">Deck Workbench</p>
-          <div class="deck-title-row">
-            <h1 id="deck-title">No Deck open</h1>
-            <button id="rename-deck" type="button" disabled>Rename</button>
+        <div class="brand-cluster">
+          <img class="brand-mark" src="workbench-mark.svg" alt="" role="presentation" aria-hidden="true" width="64" height="64" />
+          <div class="brand-copy">
+            <p class="eyebrow">pitch.dog / local-first</p>
+            <div class="deck-title-row">
+              <h1 id="deck-title">No Deck open</h1>
+              <button id="rename-deck" class="text-button compact-button" type="button" disabled>
+                <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m4 20 4.2-1 10.4-10.4-3.2-3.2L5 15.8 4 20Z" />
+                  <path d="m13.9 6.9 3.2 3.2" />
+                </svg>
+                <span>Rename</span>
+              </button>
+            </div>
           </div>
         </div>
+
         <div class="toolbar-actions" aria-label="History and view controls">
-          <button id="undo" type="button" disabled>Undo</button>
-          <button id="redo" type="button" disabled>Redo</button>
-          <label>
-            <span>Interface</span>
-            <select id="interface-scale" aria-label="Interface Scale">
-              <option value="0.8">80%</option>
-              <option value="0.9">90%</option>
-              <option value="1">100%</option>
-              <option value="1.1">110%</option>
-              <option value="1.25">125%</option>
-              <option value="1.5">150%</option>
-              <option value="1.75">175%</option>
-            </select>
+          <div class="history-actions" role="group" aria-label="History">
+            <button id="undo" class="icon-button" type="button" disabled title="Undo">
+              <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M9 7 4 12l5 5" />
+                <path d="M5 12h8a6 6 0 0 1 6 6" />
+              </svg>
+              <span class="visually-hidden">Undo</span>
+            </button>
+            <button id="redo" class="icon-button" type="button" disabled title="Redo">
+              <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m15 7 5 5-5 5" />
+                <path d="M19 12h-8a6 6 0 0 0-6 6" />
+              </svg>
+              <span class="visually-hidden">Redo</span>
+            </button>
+          </div>
+
+          <label class="scale-control">
+            <span class="control-label">Interface</span>
+            <span class="control-field">
+              <svg class="field-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="4" y="5" width="16" height="14" rx="1" />
+                <path d="M8 9h8M8 13h5" />
+              </svg>
+              <select id="interface-scale" aria-label="Interface Scale">
+                <option value="0.8">80%</option>
+                <option value="0.9">90%</option>
+                <option value="1">100%</option>
+                <option value="1.1">110%</option>
+                <option value="1.25">125%</option>
+                <option value="1.5">150%</option>
+                <option value="1.75">175%</option>
+              </select>
+            </span>
           </label>
-          <label>
-            <span>Artboard</span>
-            <input id="artboard-zoom" type="range" min="0.15" max="0.8" step="0.05" value="0.35" aria-label="Artboard Zoom" />
+
+          <label class="scale-control zoom-control">
+            <span class="control-label">Artboard</span>
+            <span class="control-field range-field">
+              <svg class="field-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="10.5" cy="10.5" r="5.5" />
+                <path d="m15 15 5 5M8 10.5h5M10.5 8v5" />
+              </svg>
+              <input
+                id="artboard-zoom"
+                type="range"
+                min="0.15"
+                max="0.8"
+                step="0.05"
+                value="0.35"
+                aria-label="Artboard Zoom"
+              />
+            </span>
           </label>
         </div>
       </header>
 
       <section class="editorial-spine">
-        <nav class="sequence" aria-label="Deck sequence">
-          <div class="sequence-heading">
-            <p class="panel-label">Sequence</p>
+        <nav class="sequence panel" aria-label="Deck sequence">
+          <div class="sequence-heading panel-heading">
+            <div>
+              <p class="panel-label">01 / Sequence</p>
+              <h2>Deck spine</h2>
+            </div>
             <div class="sequence-actions">
-              <button id="add-section" type="button" disabled aria-label="Add Section">+ Section</button>
-              <button id="add-slide" type="button" disabled aria-label="Add Slide">+ Slide</button>
+              <button id="add-section" type="button" disabled aria-label="Add Section">
+                <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M5 5h14v14H5zM12 8v8M8 12h8" />
+                </svg>
+                <span>Section</span>
+              </button>
+              <button id="add-slide" class="primary-action" type="button" disabled aria-label="Add Slide">
+                <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="3" y="5" width="18" height="14" rx="1" />
+                  <path d="M12 8v8M8 12h8" />
+                </svg>
+                <span>Slide</span>
+              </button>
             </div>
           </div>
           <div id="sequence-list" class="sequence-list"></div>
         </nav>
 
-        <section class="story" aria-labelledby="story-heading">
+        <section class="story panel" aria-labelledby="story-heading">
           <div class="panel-heading">
             <div>
-              <p class="panel-label">Story</p>
+              <p class="panel-label">02 / Story</p>
               <h2 id="story-heading">Canonical writing</h2>
             </div>
             <p class="revision" id="revision">Revision —</p>
           </div>
+
           <label class="story-field">
             <span>Headline</span>
             <textarea
@@ -74,40 +138,62 @@
               placeholder="Create or open a Deck to begin."
             ></textarea>
           </label>
+
           <div id="additional-content" class="additional-content"></div>
+
           <div class="story-footer">
             <p id="save-state" role="status" aria-live="polite" aria-atomic="true">No document session</p>
-            <div>
-              <button id="add-body" type="button" disabled>+ Body</button>
-              <button id="commit-headline" type="button" disabled>Commit headline</button>
+            <div class="story-actions">
+              <button id="add-body" type="button" disabled>
+                <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M5 6h14M5 11h9M5 16h12" />
+                  <path d="M19 14v6M16 17h6" />
+                </svg>
+                <span>Body</span>
+              </button>
+              <button id="commit-headline" class="primary-action" type="button" disabled>
+                <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m5 12 4 4L19 6" />
+                </svg>
+                <span>Commit headline</span>
+              </button>
             </div>
           </div>
         </section>
 
         <section class="stage" aria-label="Visual stage">
-          <div class="panel-heading">
+          <div class="panel-heading stage-heading">
             <div>
-              <p class="panel-label">Visual stage</p>
-              <h2>Same Slide projection</h2>
+              <p class="panel-label">03 / Stage</p>
+              <h2>Live Slide</h2>
             </div>
-            <p id="zoom-label">35%</p>
+            <div class="stage-view-actions">
+              <p id="zoom-label">35%</p>
+              <button id="fit-artboard" type="button" aria-label="Fit Artboard to Stage">Fit</button>
+            </div>
           </div>
-          <div class="stage-scroll">
-            <article class="artboard" id="artboard" aria-label="Projected Slide">
-              <div id="semantic-fallback">
-                <p class="artboard-kicker" id="artboard-intent">Cover</p>
-                <h3 id="artboard-headline">Untitled Story</h3>
-              </div>
-              <div id="composition-layer" aria-label="Active Design Option Composition"></div>
-              <p class="artboard-furniture">pitch.dog / Deck Workbench tracer</p>
-            </article>
+          <div class="stage-scroll" id="stage-scroll">
+            <div class="artboard-shell" id="artboard-shell">
+              <article class="artboard" id="artboard" aria-label="Projected Slide">
+                <div id="semantic-fallback">
+                  <p class="artboard-kicker" id="artboard-intent">Cover</p>
+                  <h3 id="artboard-headline">Untitled Story</h3>
+                </div>
+                <div id="composition-layer" aria-label="Active Design Option Composition"></div>
+                <p class="artboard-furniture">pitch.dog / Deck Workbench tracer</p>
+              </article>
+            </div>
           </div>
         </section>
 
-        <aside class="inspector" aria-label="Inspector">
-          <p class="panel-label">Inspector</p>
+        <aside class="inspector panel" aria-label="Inspector">
+          <div class="inspector-heading">
+            <p class="panel-label">04 / Inspector</p>
+            <h2>Slide controls</h2>
+          </div>
+
           <section>
-            <h2>Content</h2>
+            <h3>Content</h3>
             <dl>
               <div><dt>Binding</dt><dd id="binding">—</dd></div>
               <div><dt>Role</dt><dd>Headline</dd></div>
@@ -122,8 +208,9 @@
               </select>
             </label>
           </section>
+
           <section aria-labelledby="design-heading">
-            <h2 id="design-heading">Design</h2>
+            <h3 id="design-heading">Design</h3>
             <label class="inspector-control">
               <span>Authored Pattern</span>
               <select id="pattern-choice" disabled>
@@ -136,49 +223,91 @@
               <span>Editorial body binding</span>
               <select id="pattern-body-block" disabled aria-label="Editorial Body Content Block"></select>
             </label>
-            <button id="apply-pattern" type="button" disabled>Apply as new Design Option</button>
+            <button id="apply-pattern" class="primary-action wide-action" type="button" disabled>
+              <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 5h16v14H4zM4 10h16M10 10v9" />
+              </svg>
+              <span>Apply new Design Option</span>
+            </button>
+
             <label class="inspector-control">
               <span>Element</span>
               <select id="visual-element" disabled aria-label="Composition Element"></select>
             </label>
             <div class="align-actions" role="group" aria-label="Align selected Element">
-              <button type="button" data-align="left" disabled>Left</button>
-              <button type="button" data-align="center" disabled>Center</button>
-              <button type="button" data-align="right" disabled>Right</button>
+              <button type="button" data-align="left" disabled aria-label="Align left">
+                <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M5 4v16M8 7h9M8 12h6M8 17h11" />
+                </svg>
+                <span>Left</span>
+              </button>
+              <button type="button" data-align="center" disabled aria-label="Align center">
+                <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 4v16M7 7h10M9 12h6M5 17h14" />
+                </svg>
+                <span>Center</span>
+              </button>
+              <button type="button" data-align="right" disabled aria-label="Align right">
+                <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M19 4v16M7 7h9M10 12h6M5 17h11" />
+                </svg>
+                <span>Right</span>
+              </button>
             </div>
+
             <fieldset class="crop-controls" disabled>
               <legend>Normalized image crop</legend>
               <label><span>X</span><input id="crop-x" type="number" min="0" max="1" step="0.01" value="0" /></label>
               <label><span>Y</span><input id="crop-y" type="number" min="0" max="1" step="0.01" value="0" /></label>
               <label><span>W</span><input id="crop-width" type="number" min="0.01" max="1" step="0.01" value="1" /></label>
               <label><span>H</span><input id="crop-height" type="number" min="0.01" max="1" step="0.01" value="1" /></label>
-              <button id="apply-crop" type="button">Apply crop</button>
+              <button id="apply-crop" class="wide-action" type="button">
+                <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M7 3v14a4 4 0 0 0 4 4h10M3 7h14a4 4 0 0 1 4 4v10" />
+                </svg>
+                <span>Apply crop</span>
+              </button>
             </fieldset>
           </section>
+
           <section aria-labelledby="media-heading">
-            <h2 id="media-heading">Media</h2>
+            <h3 id="media-heading">Media</h3>
             <label class="inspector-control">
               <span>Reference label</span>
               <input id="asset-label" type="text" maxlength="160" placeholder="e.g. Hill at dusk" disabled />
             </label>
-            <button id="add-asset-reference" type="button" disabled>Add neutral reference</button>
+            <button id="add-asset-reference" class="wide-action" type="button" disabled>
+              <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 5h16v14H4zM7 15l3-3 3 2 3-4 3 5" />
+                <path d="M18 3v6M15 6h6" />
+              </svg>
+              <span>Add neutral reference</span>
+            </button>
             <label class="inspector-control">
               <span>Primary Asset</span>
               <select id="asset-reference" disabled aria-label="Primary Asset Reference"></select>
             </label>
-            <button id="assign-primary-asset" type="button" disabled>Assign / replace Primary</button>
+            <button id="assign-primary-asset" class="primary-action wide-action" type="button" disabled>
+              <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 5h16v14H4zM7 15l3-3 3 2 3-4 3 5" />
+                <path d="m15 8 2 2 4-4" />
+              </svg>
+              <span>Assign / replace Primary</span>
+            </button>
             <p id="asset-resolution-note" class="small">References are semantic placeholders until a native host resolves authorized media bytes.</p>
           </section>
+
           <section>
-            <h2>Canvas</h2>
+            <h3>Canvas</h3>
             <dl>
               <div><dt>Preset</dt><dd id="canvas-preset">2576 × 1080</dd></div>
               <div><dt>Zoom</dt><dd id="inspector-zoom">35%</dd></div>
               <div><dt>Interface</dt><dd id="inspector-interface">100%</dd></div>
             </dl>
           </section>
-          <section>
-            <h2>Durability</h2>
+
+          <section class="durability-note">
+            <h3>Durability</h3>
             <p class="small">A change appears here only after journal append and fsync succeed.</p>
           </section>
         </aside>

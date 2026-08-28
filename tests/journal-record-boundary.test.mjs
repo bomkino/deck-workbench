@@ -86,7 +86,7 @@ test('support evidence reports a blank record instead of silently skipping it', 
     deckPath,
     thirdPartyPath,
     commitSha: '0'.repeat(40),
-    appVersion: '0.0.0',
+    appVersion: '0.0.1',
     platform: 'linux',
     architecture: 'x64',
   })

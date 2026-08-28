@@ -98,39 +98,106 @@ struct DeckWorkbenchApp: App {
     }
 }
 
+private struct AdaptiveToolbarLabelStyle: LabelStyle {
+    let compact: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: compact ? 0 : 6) {
+            configuration.icon
+            if !compact {
+                configuration.title
+            }
+        }
+    }
+}
+
 struct WorkbenchRootView: View {
     @ObservedObject var controller: DeckSessionController
 
     private var shellScale: CGFloat { CGFloat(controller.interfaceScale) }
+    private var toolbarHeight: CGFloat { max(44, 54 * shellScale) }
+    private var toolbarSpacing: CGFloat { 12 * shellScale }
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8 * shellScale) {
-                Button("New Deck…") { Task { await controller.perform { _ = try await controller.presentNewDocument() } } }
-                Button("Open Deck…") { Task { await controller.perform { _ = try await controller.presentOpenDocument() } } }
-                Button("Save") { Task { await controller.perform { try controller.save() } } }
-                    .disabled(!controller.hasDocument)
-                Button("Close Deck") { Task { await controller.perform { try await controller.closeDocument() } } }
-                    .disabled(!controller.hasDocument)
-                Divider().frame(height: 18 * shellScale)
-                Text(controller.documentTitle)
-                    .font(.system(size: 13 * shellScale, weight: .semibold))
-                    .accessibilityLabel("Document")
-                    .accessibilityValue(controller.documentTitle)
-                Spacer()
+            HStack(spacing: toolbarSpacing) {
+                Button {
+                    Task { await controller.perform { _ = try await controller.presentNewDocument() } }
+                } label: {
+                    Label("New Deck…", systemImage: "rectangle.stack.badge.plus")
+                        .frame(minWidth: 44, minHeight: 44)
+                }
+                .help("Create a new Deck")
+                .accessibilityLabel("New Deck")
+
+                Button {
+                    Task { await controller.perform { _ = try await controller.presentOpenDocument() } }
+                } label: {
+                    Label("Open Deck…", systemImage: "folder")
+                        .frame(minWidth: 44, minHeight: 44)
+                }
+                .help("Open a Deck")
+                .accessibilityLabel("Open Deck")
+
+                Button {
+                    Task { await controller.perform { try controller.save() } }
+                } label: {
+                    Label("Save", systemImage: "square.and.arrow.down")
+                        .frame(minWidth: 44, minHeight: 44)
+                }
+                .disabled(!controller.hasDocument)
+
+                Button {
+                    Task { await controller.perform { try await controller.closeDocument() } }
+                } label: {
+                    Label("Close Deck", systemImage: "xmark.square")
+                        .frame(minWidth: 44, minHeight: 44)
+                }
+                .disabled(!controller.hasDocument)
+
+                Divider()
+                    .frame(height: 24 * shellScale)
+
+                VStack(alignment: .leading, spacing: 2 * shellScale) {
+                    Text("DECK")
+                        .font(.system(size: 9 * shellScale, weight: .bold))
+                        .tracking(1.2 * shellScale)
+                        .foregroundStyle(.secondary)
+                    Text(controller.documentTitle)
+                        .font(.system(size: 15 * shellScale, weight: .bold))
+                        .lineLimit(1)
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Document")
+                .accessibilityValue(controller.documentTitle)
+
+                Spacer(minLength: 16 * shellScale)
+
                 Text(controller.status)
                     .foregroundStyle(.secondary)
-                    .font(.system(size: 11 * shellScale))
+                    .font(.system(size: 12 * shellScale, weight: .medium))
+                    .lineLimit(1)
                     .accessibilityLabel("Document status")
                     .accessibilityValue(controller.status)
-                Button("Export Review PDF…") { Task { await controller.perform { _ = try await controller.presentPDFExport() } } }
-                    .disabled(!controller.hasDocument)
+
+                Button {
+                    Task { await controller.perform { _ = try await controller.presentPDFExport() } }
+                } label: {
+                    Label("Export Review PDF…", systemImage: "arrow.up.doc")
+                        .frame(minWidth: 44, minHeight: 44)
+                }
+                .disabled(!controller.hasDocument)
             }
-            .font(.system(size: 13 * shellScale))
-            .padding(.horizontal, 10 * shellScale)
-            .padding(.vertical, 6 * shellScale)
-            .frame(minHeight: 42 * shellScale)
-            .background(.bar)
+            .buttonStyle(.bordered)
+            .labelStyle(AdaptiveToolbarLabelStyle(compact: shellScale >= 1.5))
+            .controlSize(.large)
+            .font(.system(size: 14 * shellScale, weight: .semibold))
+            .padding(.horizontal, 16 * shellScale)
+            .padding(.vertical, 9 * shellScale)
+            .frame(minHeight: toolbarHeight)
+            .background(Color(nsColor: .windowBackgroundColor))
+
+            Divider()
 
             WorkspaceWebView(controller: controller)
         }

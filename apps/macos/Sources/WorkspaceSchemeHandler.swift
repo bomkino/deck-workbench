@@ -9,6 +9,7 @@ final class WorkspaceSchemeHandler: NSObject, WKURLSchemeHandler {
         "workspace.js",
         "bridge.generated.js",
         "scale-model.mjs",
+        "workbench-mark.svg",
     ]
 
     init(bundle: Bundle = .main) throws {
@@ -53,6 +54,7 @@ final class WorkspaceSchemeHandler: NSObject, WKURLSchemeHandler {
     private func mimeType(for name: String) -> String {
         if name.hasSuffix(".html") { return "text/html" }
         if name.hasSuffix(".css") { return "text/css" }
+        if name.hasSuffix(".svg") { return "image/svg+xml" }
         return "text/javascript"
     }
 }

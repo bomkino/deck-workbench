@@ -59,13 +59,14 @@ cp -R build/generated "$BUNDLE/resources/app/build/generated"
 cp scripts/linux/runtime-package.json "$BUNDLE/resources/app/package.json"
 cp LICENSE NOTICE THIRD_PARTY.md "$BUNDLE/resources/app/legal/"
 
-node --input-type=module - "$BUNDLE/resources/app/deck-workbench-build.json" "$COMMIT_SHA" <<'NODE'
+node --input-type=module - "$BUNDLE/resources/app/deck-workbench-build.json" "$COMMIT_SHA" "$(node -p "require('./package.json').version")" <<'NODE'
 import { writeFileSync } from 'node:fs'
 
-const [, , output, commit] = process.argv
+const [, , output, commit, version] = process.argv
 writeFileSync(output, `${JSON.stringify({
   repository: 'bomkino/deck-workbench',
   commit,
+  version,
   platform: 'linux',
   architecture: 'x86_64',
   electron: '44.0.0',

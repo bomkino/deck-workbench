@@ -83,3 +83,7 @@ Start with:
 ## Privacy
 
 Deck Workbench is designed to work offline and collect nothing. Private decks, commercial fonts and client media must not be committed to this repository.
+
+## Interface character
+
+Workbench uses an oversized editorial desk rather than a compact dashboard: 48 px baseline controls, scale-aware spacing, hard rules, a light paper workspace, and a dark focused stage. Interface Scale changes the complete chrome geometry while Artboard Zoom remains independent. The project mark follows the pitch.dog illustration law: one imperfect frame, one impossible coral cord, and enough negative space to stay legible at favicon size.

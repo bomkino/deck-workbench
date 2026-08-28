@@ -1,4 +1,5 @@
 export const INTERFACE_SCALE_STEPS = Object.freeze([0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75])
+export const ARTBOARD_BASE_WIDTH = 1088
 
 export function normalizeInterfaceScale(value) {
   const numeric = Number(value)
@@ -26,6 +27,10 @@ export function workspaceTransforms({ interfaceScale, artboardZoom, canvas }) {
     interfaceScale: ui,
     chromeRemPixels: 16 * ui,
     artboardTransform: `scale(${zoom})`,
+    artboardViewport: Object.freeze({
+      width: ARTBOARD_BASE_WIDTH * zoom,
+      height: (ARTBOARD_BASE_WIDTH * canvas.height / canvas.width) * zoom,
+    }),
     exportGeometry: Object.freeze({ width: canvas.width, height: canvas.height }),
   })
 }

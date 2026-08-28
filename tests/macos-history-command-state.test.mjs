@@ -17,8 +17,16 @@ test('native history commands expose the projected undo and redo availability', 
   assert.match(app, /Button\("Redo"\)[\s\S]+?\.disabled\(!controller\.canRedo\)/)
 })
 
-test('native toolbar command names match their menu equivalents', () => {
+test('native toolbar keeps command names equal to their menu equivalents', () => {
   for (const label of ['Open Deck…', 'Close Deck', 'Export Review PDF…']) {
-    assert.equal(app.match(new RegExp(`Button\\("${label}"`, 'g'))?.length, 2)
+    assert.equal(app.match(new RegExp(`Button\\("${label}"`, 'g'))?.length, 1)
+    assert.equal(app.match(new RegExp(`Label\\("${label}"`, 'g'))?.length, 1)
   }
+})
+
+test('native toolbar becomes icon-led before scaled labels can clip', () => {
+  assert.match(app, /private struct AdaptiveToolbarLabelStyle: LabelStyle/)
+  assert.match(app, /if !compact \{\s+configuration\.title/)
+  assert.match(app, /AdaptiveToolbarLabelStyle\(compact: shellScale >= 1\.5\)/)
+  assert.match(app, /\.controlSize\(\.large\)/)
 })

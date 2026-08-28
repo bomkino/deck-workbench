@@ -12,8 +12,10 @@ const required = [
   'packages/deck-kernel/src/deck-kernel.ts',
   'packages/bridge-contract/bridge.contract.json',
   'scripts/build-macos.sh',
+  'scripts/build-macos-icon.sh',
   'scripts/verify-packaged-macos.sh',
   'scripts/verify-story-tracer-output.mjs',
+  'scripts/linux/runtime-package.json',
   'THIRD_PARTY.md',
   'LICENSE',
 ]
@@ -30,10 +32,15 @@ const workspaceJavaScript = contents.get('apps/macos/Resources/Workspace/workspa
 const kernel = contents.get('packages/deck-kernel/src/deck-kernel.ts')
 
 assert.deepEqual(packageJSON.dependencies, { electron: '44.0.0' })
+assert.equal(packageJSON.version, '0.0.1')
+assert.equal(JSON.parse(contents.get('scripts/linux/runtime-package.json')).version, packageJSON.version)
 assert.equal(packageJSON.devDependencies, undefined)
 assert.match(contents.get('LICENSE'), /GNU AFFERO GENERAL PUBLIC LICENSE/)
 assert.match(contents.get('apps/macos/Info.plist'), /<string>26\.0<\/string>/)
 assert.match(contents.get('apps/macos/Info.plist'), /dog\.pitch\.deck/)
+assert.match(contents.get('apps/macos/Info.plist'), /<key>CFBundleShortVersionString<\/key>\s*<string>0\.0\.1<\/string>/)
+assert.match(contents.get('apps/macos/Info.plist'), /<key>CFBundleIconFile<\/key>\s*<string>DeckWorkbench\.icns<\/string>/)
+assert.match(contents.get('scripts/build-macos-icon.sh'), /iconutil -c icns/)
 assert.match(workspace, /connect-src 'none'/)
 assert.match(workspace, /object-src 'none'/)
 assert.doesNotMatch(nativeSource, /URLSession|NWConnection|Network\.framework/)
