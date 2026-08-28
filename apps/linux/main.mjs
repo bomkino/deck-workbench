@@ -28,11 +28,13 @@ const allowedWorkspaceFiles = new Map([
   ['/index.html', 'index.html'],
   ['/styles.css', 'styles.css'],
   ['/workspace.js', 'workspace.js'],
+  ['/workbench-mark.svg', 'workbench-mark.svg'],
 ])
 const workspaceContentTypes = Object.freeze({
   'index.html': 'text/html; charset=utf-8',
   'styles.css': 'text/css; charset=utf-8',
   'workspace.js': 'text/javascript; charset=utf-8',
+  'workbench-mark.svg': 'image/svg+xml',
 })
 
 app.commandLine.appendSwitch('disable-background-networking')

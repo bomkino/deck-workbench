@@ -85,8 +85,8 @@ function workspaceLayoutMode({ viewportWidth: requestedViewportWidth, interfaceS
   if (!Number.isFinite(viewportWidth) || viewportWidth <= 0) throw new RangeError('Viewport width must be positive')
   if (!INTERFACE_SCALE_STEPS.includes(scale)) throw new RangeError('Interface Scale must use an allowed step')
   const remPixels = 16 * scale
-  if (viewportWidth < 30 * remPixels) return 'single-column'
-  if (viewportWidth < 77 * remPixels) return 'two-column'
+  if (viewportWidth < 50 * remPixels) return 'single-column'
+  if (viewportWidth < 88 * remPixels) return 'two-column'
   return 'four-column'
 }
 

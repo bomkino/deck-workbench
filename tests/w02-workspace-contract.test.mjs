@@ -8,6 +8,14 @@ const [html, styles, workspace] = await Promise.all([
   readFile(new URL('../apps/macos/Resources/Workspace/workspace.js', import.meta.url), 'utf8'),
 ])
 
+function ruleFor(selector) {
+  const start = styles.indexOf(`${selector} {`)
+  assert.notEqual(start, -1, `missing CSS rule: ${selector}`)
+  const end = styles.indexOf('}', start)
+  assert.notEqual(end, -1, `unterminated CSS rule: ${selector}`)
+  return styles.slice(start, end + 1)
+}
+
 test('minimal workspace exposes exactly three authored Pattern choices and stable-ID visual controls', () => {
   const patternSelect = html.slice(
     html.indexOf('<select id="pattern-choice"'),
@@ -53,6 +61,10 @@ test('Composition geometry maps Deck units to artboard percentages independently
     workspace.indexOf('function syncVisualControls'),
   )
   assert.doesNotMatch(renderComposition, /interfaceScale|artboardZoom/)
-  assert.match(styles, /#composition-layer \{ position: absolute; inset: 0; \}/)
-  assert.match(styles, /\.composition-element \{ position: absolute; overflow: hidden; \}/)
+  const layer = ruleFor('#composition-layer')
+  assert.match(layer, /position:\s*absolute;/)
+  assert.match(layer, /inset:\s*0;/)
+  const element = ruleFor('.composition-element')
+  assert.match(element, /position:\s*absolute;/)
+  assert.match(element, /overflow:\s*hidden;/)
 })
