@@ -622,6 +622,13 @@ enum PackagedTracer {
         else {
             throw WorkbenchFailure(name: "InvalidCommand", message: "Editorial Spine accessibility contract failed")
         }
+        if let scaleReflowDiagnostic = keyboardJourney["scaleReflowContract"],
+           JSONSerialization.isValidJSONObject(scaleReflowDiagnostic),
+           let diagnosticData = try? JSONSerialization.data(withJSONObject: scaleReflowDiagnostic, options: [.sortedKeys]),
+           let diagnosticText = String(data: diagnosticData, encoding: .utf8) {
+            print("DW-W01 scale contract: \(diagnosticText)")
+            fflush(stdout)
+        }
         guard let scaleReflow = keyboardJourney["scaleReflowContract"] as? [String: Any],
               scaleReflow["interfaceScale"] as? Double == 1.75,
               let viewportWidth = (scaleReflow["viewportWidth"] as? NSNumber)?.doubleValue,
