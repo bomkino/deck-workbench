@@ -35,7 +35,8 @@ registered with Launch Services and read back from the installed bundle.
 - Minimum system: macOS 26.0
 - `codesign --verify --deep --strict`: pass
 - Finder: canonical mark and version 0.0.1 visually confirmed on the installed
-  application. Dock rendering was not separately observed.
+  application. A later exact-main follow-up also confirmed the mark in the live
+  Dock.
 - Interface Scale: 80%, 125% and 175% inspected in the installed app. The
   compact native toolbar, responsive desk and essential actions remained
   usable; the machine preference was restored to 125%.
@@ -58,8 +59,8 @@ revision 13 with its structure, story, asset, design and crop intact.
 - Journal SHA-256:
   `4d8981588b4381e510411f5ff570c4aac410b2d07f140466e0a31db952cbe46e`
 - Writer lock: released after an explicit crash-stale-lock recovery and a clean
-  reopen/close cycle. The stale lock named a dead test process; it was preserved
-  temporarily at `/tmp/deck-workbench-final-acceptance.stale-lock.35311.json`.
+  reopen/close cycle. The stale lock named a dead test process; its temporary
+  recovery copy was moved recoverably to Trash after final-main acceptance.
 
 The same installed journey exported
 `/Users/kay/Documents/Deck Workbench Final Acceptance.pdf`.
@@ -90,9 +91,14 @@ The user explicitly deprioritized Linux and asked that the shared UTM state be
 handled carefully. Actual Garuda KDE/Wayland package launch and Mac–Garuda–Mac
 round-trip therefore remain open target-machine evidence, not failures.
 
-## Remaining manual accessibility checks
+## Final-main manual accessibility follow-up
 
-Automated semantics and measured target sizes passed. Manual VoiceOver reading
-order, Full Keyboard Access traversal, Increase Contrast, Reduce Motion and Dock
-icon acceptance remain unproved. Finder icon acceptance passed.
-
+The installed final-main app at
+`dd9b2cef1a116330452116674712cb0e60da3d67` passed a bounded keyboard-only
+open/traversal/scale/export-cancel journey while preserving revision 13. A
+VoiceOver core-control pass exposed concrete native and WebKit labels and kept
+the decorative mark silent. Increase Contrast and Reduce Motion were enabled,
+the Deck reopened and the interface remained usable; both preferences and
+VoiceOver were restored to their original off state. The canonical icon was
+visually confirmed in the live Dock. Exhaustive assistive-technology narration
+across every Inspector control remains outside this bounded local acceptance.
