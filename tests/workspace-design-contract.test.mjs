@@ -30,10 +30,12 @@ test('every baseline control exposes at least a 44 pixel target at every Interfa
   }
   assert.match(styles, /font-size: calc\(16px \* var\(--interface-scale\)\)/)
   assert.match(styles, /min-height: var\(--control-size\)/)
+  assert.match(styles, /button \{[\s\S]+?min-width: 44px;/)
+  assert.match(styles, /select \{[\s\S]+?height: var\(--control-size\);/)
   assert.match(styles, /--icon-size: 1\.375rem/)
   assert.doesNotMatch(styles, /min-height:\s*2\.(?:5|65)rem/)
   assert.match(styles, /input\[type="range"\][\s\S]+?min-height: var\(--control-size\)/)
-  assert.match(styles, /\.move-sequence,[\s\S]+?width: var\(--control-size\);[\s\S]+?min-height: var\(--control-size\);/)
+  assert.match(styles, /\.move-sequence,[\s\S]+?width: var\(--control-size\);[\s\S]+?min-width: var\(--control-size\);[\s\S]+?min-height: var\(--control-size\);[\s\S]+?flex: none;/)
   assert.match(styles, /\.section-row \{[\s\S]+?min-height: var\(--control-size\);/)
 })
 

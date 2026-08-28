@@ -67,6 +67,7 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  min-width: 44px;
   gap: 0.55rem;
   padding: 0.7rem 1rem;
   font-size: 0.82rem;
@@ -114,6 +115,7 @@ input:not([type="range"]) {
 }
 
 select {
+  height: var(--control-size);
   cursor: pointer;
 }
 
@@ -363,7 +365,7 @@ input[type="range"] {
 
 .sequence-actions button {
   flex: 1;
-  min-width: 0;
+  min-width: 44px;
   padding-inline: 0.55rem;
 }
 
@@ -438,7 +440,9 @@ input[type="range"] {
 .move-sequence,
 .remove-structure {
   width: var(--control-size);
+  min-width: var(--control-size);
   min-height: var(--control-size);
+  flex: none;
   padding: 0;
   color: var(--muted);
 }
@@ -753,7 +757,7 @@ input[type="range"] {
 }
 
 .align-actions button {
-  min-width: 0;
+  min-width: 44px;
   display: grid;
   gap: 0.35rem;
   padding-inline: 0.3rem;
