@@ -107,16 +107,19 @@ function scheduleWorkspaceFocusLease(target) {
   rememberWorkspaceFocus(target)
   const leaseId = ++workspaceFocusLease
   const interactionGeneration = workspaceInteractionGeneration
-  globalThis.setTimeout(() => {
-    if (
-      leaseId !== workspaceFocusLease
-      || interactionGeneration !== workspaceInteractionGeneration
-    ) return
-    const expected = expectedWorkspaceFocus() ?? target
-    const node = workspaceFocusNode(expected)
-    if (!node || document.activeElement === node) return
-    focusWorkspaceNode(node, expected)
-  }, 0)
+  const delays = [0, 16, 64, 250, 1000, 2000, 4000]
+  for (const delay of delays) {
+    globalThis.setTimeout(() => {
+      if (
+        leaseId !== workspaceFocusLease
+        || interactionGeneration !== workspaceInteractionGeneration
+      ) return
+      const expected = expectedWorkspaceFocus() ?? target
+      const node = workspaceFocusNode(expected)
+      if (!node || document.activeElement === node) return
+      focusWorkspaceNode(node, expected)
+    }, delay)
+  }
 }
 
 function restoreWorkspaceFocus(target, { lease = false } = {}) {
