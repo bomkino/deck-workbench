@@ -37,7 +37,7 @@ replaceBetween(
             const findSequenceSlide = () => [...document.querySelectorAll('#sequence-list [data-slide-id]')]
               .find((item) => item.dataset.slideId === openingSlideId);
             const waitForSemanticSequenceFocus = async (kind, id) => {
-              for (let attempt = 0; attempt < 20; attempt += 1) {
+              for (let attempt = 0; attempt < 120; attempt += 1) {
                 const item = kind === 'slide'
                   ? [...document.querySelectorAll('#sequence-list [data-slide-id]')]
                     .find((candidate) => candidate.dataset.slideId === id)
@@ -63,7 +63,12 @@ replaceBetween(
 
 replaceRequired(
   '            sequenceSlide.focus();',
-  "            if (!focusSequenceTarget({ kind: 'slide', id: openingSlideId })) throw new Error('Sequence composite could not focus the opening Slide');",
+  `            if (!focusSequenceTarget({ kind: 'slide', id: openingSlideId })) {
+              throw new Error('Sequence composite could not activate the opening Slide');
+            }
+            if (!await waitForSemanticSequenceFocus('slide', openingSlideId)) {
+              throw new Error('Sequence composite could not settle focus on the opening Slide');
+            }`,
   'initial Slide semantic focus',
 )
 replaceRequired(
@@ -93,7 +98,12 @@ replaceBetween(
 )
 replaceRequired(
   '            sequenceSection.focus();',
-  "            if (!focusSequenceTarget({ kind: 'section', id: openingSectionId })) throw new Error('Sequence composite could not focus the Opening Part');",
+  `            if (!focusSequenceTarget({ kind: 'section', id: openingSectionId })) {
+              throw new Error('Sequence composite could not activate the Opening Part');
+            }
+            if (!await waitForSemanticSequenceFocus('section', openingSectionId)) {
+              throw new Error('Sequence composite could not settle focus on the Opening Part');
+            }`,
   'initial Section semantic focus',
 )
 replaceRequired(
@@ -139,6 +149,9 @@ if (/document\.activeElement === (?:button|row)/.test(source)) {
 }
 if (!source.includes("sequenceOwner.getAttribute('aria-activedescendant')")) {
   throw new Error('Generated packaged tracer does not verify the stable Sequence owner')
+}
+if (!source.includes("could not settle focus on the opening Slide")) {
+  throw new Error('Generated packaged tracer does not separate activation from settled focus')
 }
 
 await mkdir(resolve(root, 'build/generated'), { recursive: true })
