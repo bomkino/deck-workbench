@@ -4,20 +4,28 @@ let workspaceExpectedFocus = null
 let workspaceExpectedFocusGeneration = 0
 let applyingWorkspaceFocus = false
 
+function semanticSequenceTargetForNode(active) {
+  if (!active || !elements.sequenceList.contains(active)) return null
+  const state = sequenceFocusState()
+  if (state.kind && state.id) return { sequenceKind: state.kind, sequenceId: state.id }
+  const item = active.closest?.('[data-sequence-kind]')
+    ?? active.closest?.('.slide-entry')?.querySelector?.('[data-sequence-kind="slide"]')
+  return item
+    ? { sequenceKind: item.dataset.sequenceKind, sequenceId: item.dataset.sequenceId }
+    : null
+}
+
 function workspaceFocusTarget(active) {
   if (!active || active === document.body || active === document.documentElement) return null
-  const slideId = active?.dataset?.slideId
-    ?? active?.closest?.('.slide-entry')?.querySelector?.('[data-slide-id]')?.dataset?.slideId
-    ?? null
-  const sectionId = active?.dataset?.sectionId
-    ?? active?.closest?.('[data-section-id]')?.dataset?.sectionId
-    ?? null
+  const sequence = active === elements.sequenceList
+    ? sequenceFocusState()
+    : semanticSequenceTargetForNode(active)
+  if (sequence?.kind && sequence?.id) return { sequenceKind: sequence.kind, sequenceId: sequence.id }
+  if (sequence?.sequenceKind && sequence?.sequenceId) return sequence
   const blockId = active?.dataset?.blockId ?? null
   const headline = active === elements.headline
-  if (!slideId && !sectionId && !blockId && !headline) return null
+  if (!blockId && !headline) return null
   return {
-    slideId,
-    sectionId,
     blockId,
     headline,
     selectionStart: typeof active?.selectionStart === 'number' ? active.selectionStart : null,
@@ -43,24 +51,26 @@ function expectedWorkspaceFocus() {
 
 function workspaceFocusNode(target) {
   if (!target) return null
+  if (target.sequenceKind && target.sequenceId) return elements.sequenceList
   if (target.blockId) return storyField(target.blockId)
   if (target.headline) return elements.headline
-  if (target.slideId) {
-    return [...elements.sequenceList.querySelectorAll('[data-slide-id]')]
-      .find((candidate) => candidate.dataset.slideId === target.slideId) ?? null
-  }
-  if (target.sectionId) {
-    return [...elements.sequenceList.querySelectorAll('[data-section-id]')]
-      .find((candidate) => candidate.dataset.sectionId === target.sectionId) ?? null
-  }
   return null
 }
 
 function focusWorkspaceNode(node, target) {
+  if (target?.sequenceKind && target?.sequenceId) {
+    const restored = focusSequenceTarget({ kind: target.sequenceKind, id: target.sequenceId })
+    if (restored) rememberWorkspaceFocus(target)
+    return restored
+  }
   if (!node || node.disabled || !node.isConnected) return false
   applyingWorkspaceFocus = true
   try {
-    node.focus()
+    try {
+      node.focus({ preventScroll: true })
+    } catch {
+      node.focus()
+    }
     if (
       target.selectionStart !== null
       && target.selectionStart !== undefined
@@ -107,17 +117,17 @@ function scheduleWorkspaceFocusLease(target) {
   rememberWorkspaceFocus(target)
   const leaseId = ++workspaceFocusLease
   const interactionGeneration = workspaceInteractionGeneration
-  const delays = [0, 16, 64, 250, 1000, 2000, 4000]
+  const delays = [0, 16, 64, 250]
   for (const delay of delays) {
     globalThis.setTimeout(() => {
-      if (
-        leaseId !== workspaceFocusLease
-        || interactionGeneration !== workspaceInteractionGeneration
-      ) return
+      if (leaseId !== workspaceFocusLease || interactionGeneration !== workspaceInteractionGeneration) return
       const expected = expectedWorkspaceFocus() ?? target
       const node = workspaceFocusNode(expected)
-      if (!node || document.activeElement === node) return
-      focusWorkspaceNode(node, expected)
+      const sequenceState = expected.sequenceKind ? sequenceFocusState() : null
+      const alreadyRestored = expected.sequenceKind
+        ? sequenceState?.ownerFocused && sequenceState.kind === expected.sequenceKind && sequenceState.id === expected.sequenceId
+        : document.activeElement === node
+      if (!alreadyRestored) focusWorkspaceNode(node, expected)
     }, delay)
   }
 }
@@ -197,10 +207,16 @@ async function planSlideMove(sectionId, slideId, direction, sourceKind) {
   const payload = slideMovePlan(canonicalStory, sectionId, slideId, direction)
   if (!payload) {
     setStatus(`Slide cannot move ${direction}`)
-    restoreWorkspaceFocus({ slideId }, { lease: true })
+    restoreWorkspaceFocus({ sequenceKind: 'slide', sequenceId: slideId }, { lease: true })
     return null
   }
-  return executeSequenceMove('slide.move', payload, slideId, { slideId }, sourceKind)
+  return executeSequenceMove(
+    'slide.move',
+    payload,
+    slideId,
+    { sequenceKind: 'slide', sequenceId: slideId },
+    sourceKind,
+  )
 }
 
 async function planSectionMove(sectionId, direction, sourceKind) {
@@ -209,10 +225,16 @@ async function planSectionMove(sectionId, direction, sourceKind) {
   const payload = sectionMovePlan(canonicalStory, sectionId, direction)
   if (!payload) {
     setStatus(`Part cannot move ${direction}`)
-    restoreWorkspaceFocus({ sectionId }, { lease: true })
+    restoreWorkspaceFocus({ sequenceKind: 'section', sequenceId: sectionId }, { lease: true })
     return null
   }
-  return executeSequenceMove('section.move', payload, selectedSlideId, { sectionId }, sourceKind)
+  return executeSequenceMove(
+    'section.move',
+    payload,
+    selectedSlideId,
+    { sequenceKind: 'section', sequenceId: sectionId },
+    sourceKind,
+  )
 }
 
 moveSlide = async function moveSlideFromCanonicalStory(sectionId, slideId, direction) {
@@ -231,7 +253,7 @@ moveSection = async function moveSectionFromCanonicalStory(sectionId, direction)
 }
 
 moveSectionByKeyboard = function moveSectionByKeyboardFromCanonicalStory(event, sectionId) {
-  if (event.target !== event.currentTarget) return
+  if (event.target !== event.currentTarget && event.target !== elements.sequenceList) return
   const direction = sequenceShortcut(event)
   if (!direction) return
   event.preventDefault()
