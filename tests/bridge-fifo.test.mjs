@@ -48,6 +48,13 @@ test('generated macOS bridge posts typed requests immediately and settles matchi
   assert.deepEqual(await first, { revision: 1 })
   assert.deepEqual(await second, { revision: 2 })
   assert.deepEqual(await third, { revision: 3 })
+  assert.equal(context.__deckBridgeStoryDocument, null)
+
+  const freshStory = context.deckBridge.query({ name: 'story.document', params: {} })
+  const freshRequest = posted.at(-1)
+  context.__deckBridgeReceive({ requestId: freshRequest.requestId, ok: true, result: { revision: 3, sections: [] } })
+  assert.deepEqual(await freshStory, { revision: 3, sections: [] })
+  assert.deepEqual(context.__deckBridgeStoryDocument, { revision: 3, sections: [] })
 })
 
 test('a synchronous post failure rejects only that request and cannot strand later work', async () => {
