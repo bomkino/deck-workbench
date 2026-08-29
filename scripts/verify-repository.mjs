@@ -88,7 +88,7 @@ assert.equal(lock.packages[''].version, packageJSON.version)
 assert.equal(lock.packages[''].dependencies.electron, packageJSON.dependencies.electron)
 assert.equal(
   packageJSON.scripts.verify,
-  'npm test && npm run verify:source && npm run verify:repository',
+  'npm test && npm run verify:source && npm run verify:repository && npm run verify:phased-preview',
 )
 assert.match(await readFile('THIRD_PARTY.md', 'utf8'), /\| Electron \| 44\.0\.0 \|/)
 
