@@ -3,6 +3,7 @@ let workspaceInteractionGeneration = 0
 let workspaceExpectedFocus = null
 let workspaceExpectedFocusGeneration = 0
 let applyingWorkspaceFocus = false
+let activeStoryFocusBlockId = null
 
 function semanticSequenceTargetForNode(active) {
   if (!active) return null
@@ -17,13 +18,22 @@ function semanticSequenceTargetForNode(active) {
     : null
 }
 
+function storyFocusState() {
+  const field = activeStoryFocusBlockId ? storyField(activeStoryFocusBlockId) : null
+  return Object.freeze({
+    blockId: activeStoryFocusBlockId,
+    ownerFocused: Boolean(field && document.activeElement === field),
+  })
+}
+
 function workspaceFocusTarget(active) {
   if (!active || active === document.body || active === document.documentElement) return null
   const sequence = semanticSequenceTargetForNode(active)
   if (sequence?.sequenceKind && sequence?.sequenceId) return sequence
-  const blockId = active?.dataset?.blockId ?? null
   const headline = active === elements.headline
-  if (!blockId && !headline) return null
+  const blockId = active?.dataset?.blockId ?? (headline ? projection?.headline?.id ?? null : null)
+  if (!blockId) return null
+  activeStoryFocusBlockId = blockId
   return {
     blockId,
     headline,
@@ -58,11 +68,13 @@ function workspaceFocusNode(target) {
 
 function focusWorkspaceNode(node, target) {
   if (target?.sequenceKind && target?.sequenceId) {
+    activeStoryFocusBlockId = null
     const restored = focusSequenceTarget({ kind: target.sequenceKind, id: target.sequenceId })
     if (restored) rememberWorkspaceFocus(target)
     return restored
   }
   if (!node || node.disabled || !node.isConnected) return false
+  if (target?.blockId) activeStoryFocusBlockId = target.blockId
   applyingWorkspaceFocus = true
   try {
     try {
@@ -86,7 +98,9 @@ function focusWorkspaceNode(node, target) {
   } finally {
     applyingWorkspaceFocus = false
   }
-  const restored = document.activeElement === node
+  const restored = target?.blockId
+    ? storyFocusState().blockId === target.blockId
+    : document.activeElement === node
   if (restored) rememberWorkspaceFocus(target)
   return restored
 }
@@ -100,6 +114,7 @@ function recordTrustedWorkspaceInteraction(event) {
   workspaceInteractionGeneration += 1
   workspaceExpectedFocus = null
   workspaceExpectedFocusGeneration = workspaceInteractionGeneration
+  activeStoryFocusBlockId = null
   cancelWorkspaceFocusLease()
 }
 
@@ -125,7 +140,9 @@ function scheduleWorkspaceFocusLease(target) {
       const sequenceState = expected.sequenceKind ? sequenceFocusState() : null
       const alreadyRestored = expected.sequenceKind
         ? sequenceState?.ownerFocused && sequenceState.kind === expected.sequenceKind && sequenceState.id === expected.sequenceId
-        : document.activeElement === node
+        : expected.blockId
+          ? storyFocusState().blockId === expected.blockId && Boolean(node?.isConnected)
+          : document.activeElement === node
       if (!alreadyRestored) focusWorkspaceNode(node, expected)
     }, delay)
   }
@@ -136,6 +153,34 @@ function restoreWorkspaceFocus(target, { lease = false } = {}) {
   const restored = focusWorkspaceNode(workspaceFocusNode(target), target)
   if (lease) scheduleWorkspaceFocusLease(target)
   return restored
+}
+
+const restoreStoryFocusWithoutSemanticIdentity = restoreStoryFocus
+restoreStoryFocus = function restoreStorySemanticFocus(blockId) {
+  const field = storyField(blockId)
+  if (!field) return false
+  activeStoryFocusBlockId = blockId
+  const target = {
+    blockId,
+    headline: projection?.headline?.id === blockId,
+    selectionStart: field.value.length,
+    selectionEnd: field.value.length,
+  }
+  rememberWorkspaceFocus(target)
+  restoreStoryFocusWithoutSemanticIdentity(blockId)
+  return storyFocusState().blockId === blockId
+}
+
+const handleStoryFieldKeydownWithoutSemanticIdentity = handleStoryFieldKeydown
+handleStoryFieldKeydown = function handleStoryFieldKeydownWithSemanticIdentity(event, blockId, field) {
+  activeStoryFocusBlockId = blockId
+  rememberWorkspaceFocus({
+    blockId,
+    headline: projection?.headline?.id === blockId,
+    selectionStart: typeof field.selectionStart === 'number' ? field.selectionStart : field.value.length,
+    selectionEnd: typeof field.selectionEnd === 'number' ? field.selectionEnd : field.value.length,
+  })
+  return handleStoryFieldKeydownWithoutSemanticIdentity(event, blockId, field)
 }
 
 const renderSequenceWithoutFocusPreservation = renderSequence
