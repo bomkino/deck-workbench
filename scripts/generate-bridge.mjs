@@ -51,6 +51,7 @@ const methods = contract.methods
 const javascript = `/* Generated from packages/bridge-contract/bridge.contract.json. Do not edit. */
 (() => {
   const pending = new Map()
+  let durableEpoch = 0
 
   function nextRequestId() {
     return globalThis.crypto?.randomUUID?.() ?? \`request-\${Date.now()}-\${Math.random()}\`
@@ -58,12 +59,13 @@ const javascript = `/* Generated from packages/bridge-contract/bridge.contract.j
 
   function invoke(method, payload) {
     if (method === 'deck.execute' || method === 'deck.undo' || method === 'deck.redo') {
+      durableEpoch += 1
       globalThis.__deckBridgeStoryDocument = null
       globalThis.__deckBridgeAssetCatalog = null
     }
     const requestId = nextRequestId()
     return new Promise((resolve, reject) => {
-      pending.set(requestId, { resolve, reject, method, payload })
+      pending.set(requestId, { resolve, reject, method, payload, epoch: durableEpoch })
       try {
         globalThis.webkit.messageHandlers.${contract.handler}.postMessage({ method, requestId, payload })
       } catch (error) {
@@ -83,10 +85,18 @@ ${methods}
     if (!request) return
     pending.delete(response.requestId)
     if (response.ok) {
-      if (request.method === 'deck.query' && request.payload?.name === 'story.document') {
+      if (
+        request.epoch === durableEpoch
+        && request.method === 'deck.query'
+        && request.payload?.name === 'story.document'
+      ) {
         globalThis.__deckBridgeStoryDocument = response.result
       }
-      if (request.method === 'deck.query' && request.payload?.name === 'asset.catalog') {
+      if (
+        request.epoch === durableEpoch
+        && request.method === 'deck.query'
+        && request.payload?.name === 'asset.catalog'
+      ) {
         globalThis.__deckBridgeAssetCatalog = response.result
       }
       request.resolve(response.result)
