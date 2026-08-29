@@ -7,6 +7,7 @@ final class BridgeCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDel
     private weak var webView: WKWebView?
     private let controller: DeckSessionController
     private var loadContinuation: CheckedContinuation<Void, Error>?
+    private let tracerMode = CommandLine.arguments.contains { $0.hasPrefix("--tracer-") }
 
     init(controller: DeckSessionController) {
         self.controller = controller
@@ -130,21 +131,27 @@ final class BridgeCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDel
               let method = BridgeMethod(rawValue: rawMethod),
               let payload = body["payload"] as? [String: Any]
         else {
+            trace("bridge malformed \(requestId)")
             try? await respond(
                 requestId: requestId,
                 failure: WorkbenchFailure(name: "InvalidCommand", message: "Unknown or malformed bridge method")
             )
             return
         }
+        trace("bridge receive \(method.rawValue) \(requestId)")
         do {
             let encoded = try JSONSerialization.data(withJSONObject: body)
             guard encoded.count <= 1_048_576 else {
                 throw WorkbenchFailure(name: "InvalidCommand", message: "Bridge payload exceeds 1 MiB")
             }
             let result = try await handle(method, payload: payload)
+            trace("bridge handled \(method.rawValue) \(requestId)")
             try await respond(requestId: requestId, result: result)
+            trace("bridge responded \(method.rawValue) \(requestId)")
         } catch {
-            try? await respond(requestId: requestId, failure: WorkbenchFailure.unexpected(error))
+            let failure = WorkbenchFailure.unexpected(error)
+            trace("bridge failed \(method.rawValue) \(requestId): \(failure.name) \(failure.message)")
+            try? await respond(requestId: requestId, failure: failure)
         }
     }
 
@@ -158,11 +165,13 @@ final class BridgeCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDel
             guard let name = payload["name"] as? String else {
                 throw WorkbenchFailure(name: "InvalidCommand", message: "Named query is required")
             }
+            trace("bridge query \(name)")
             return try controller.query(name: name, params: payload["params"] as? [String: Any] ?? [:])
         case .deckExecute:
             guard let command = payload["command"] as? [String: Any] else {
                 throw WorkbenchFailure(name: "InvalidCommand", message: "Typed Deck command is required")
             }
+            trace("bridge execute \(command["type"] as? String ?? "unknown")")
             return try controller.execute(command: command)
         case .deckUndo:
             return try controller.undo()
@@ -205,5 +214,11 @@ final class BridgeCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDel
             in: nil,
             contentWorld: .page
         )
+    }
+
+    private func trace(_ message: String) {
+        guard tracerMode else { return }
+        fputs("DW-BRIDGE \(message)\n", stderr)
+        fflush(stderr)
     }
 }
