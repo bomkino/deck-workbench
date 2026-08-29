@@ -36,7 +36,7 @@ function restoreWorkspaceFocus(target, { onlyIfLost = false } = {}) {
   else if (target.slideId) node = elements.sequenceList.querySelector(`[data-slide-id="${CSS.escape(target.slideId)}"]`)
   else if (target.sectionId) node = elements.sequenceList.querySelector(`[data-section-id="${CSS.escape(target.sectionId)}"]`)
   if (!node || node.disabled || !node.isConnected) return false
-  node.focus({ preventScroll: true })
+  node.focus()
   if (
     target.selectionStart !== null
     && target.selectionEnd !== null
@@ -77,3 +77,68 @@ window.deckBridge = Object.freeze({
     }
   },
 })
+
+async function executeSequenceMove(type, payload, requestedSlideId, focus, sourceKind) {
+  if (!projection) return null
+  cancelScheduledProjectionRefresh?.()
+  refreshGeneration += 1
+  setBusy(`Writing ${type}…`)
+  try {
+    await window.deckBridge.execute({
+      command: {
+        commandId: crypto.randomUUID(),
+        expectedRevision: projection.revision,
+        type,
+        payload,
+        source: { kind: sourceKind, label: 'Sequence reorder' },
+        issuedAt: new Date().toISOString(),
+      },
+    })
+    const nextProjection = await window.deckBridge.query({
+      name: 'slide.activeProjection',
+      params: requestedSlideId ? { slideId: requestedSlideId } : {},
+    })
+    const nextStory = await window.deckBridge.query({ name: 'story.document', params: {} })
+    projection = nextProjection
+    selectedSlideId = nextProjection.slide.id
+    storyDocument = nextStory
+    renderAll()
+    restoreWorkspaceFocus(focus)
+    return projection
+  } catch (error) {
+    renderAll()
+    setStatus(`${error.name ?? 'Error'}: ${error.message}`)
+    return null
+  }
+}
+
+moveSlide = async function moveSlideWithAtomicFocus(sectionId, slideId, direction) {
+  const payload = slideMovePlan(storyDocument, sectionId, slideId, direction)
+  if (!payload) return
+  await executeSequenceMove('slide.move', payload, slideId, { slideId }, 'ui')
+}
+
+moveSlideByKeyboard = function moveSlideByKeyboardWithAtomicFocus(event, sectionId, slideId) {
+  const direction = sequenceShortcut(event)
+  if (!direction) return
+  const payload = slideMovePlan(storyDocument, sectionId, slideId, direction)
+  if (!payload) return
+  event.preventDefault()
+  void executeSequenceMove('slide.move', payload, slideId, { slideId }, 'keyboard')
+}
+
+moveSection = async function moveSectionWithAtomicFocus(sectionId, direction) {
+  const payload = sectionMovePlan(storyDocument, sectionId, direction)
+  if (!payload) return
+  await executeSequenceMove('section.move', payload, selectedSlideId, { sectionId }, 'ui')
+}
+
+moveSectionByKeyboard = function moveSectionByKeyboardWithAtomicFocus(event, sectionId) {
+  if (event.target !== event.currentTarget) return
+  const direction = sequenceShortcut(event)
+  if (!direction) return
+  const payload = sectionMovePlan(storyDocument, sectionId, direction)
+  if (!payload) return
+  event.preventDefault()
+  void executeSequenceMove('section.move', payload, selectedSlideId, { sectionId }, 'keyboard')
+}
