@@ -53,6 +53,45 @@ function scheduleProjectionRefresh(slideId) {
   }, 0)
 }
 
+refreshWorkspace = async function refreshWorkspaceAtomically(requestedSlideId = selectedSlideId, focus = {}) {
+  const generation = ++refreshGeneration
+  try {
+    const nextStory = await window.deckBridge.query({ name: 'story.document', params: {} })
+    if (generation !== refreshGeneration) return projection
+    const orderedSlides = nextStory.sections.flatMap((section) => section.slides)
+    const fallbackSlideId = orderedSlides[0]?.id ?? null
+    const nextSelectedSlideId = orderedSlides.some((slide) => slide.id === requestedSlideId)
+      ? requestedSlideId
+      : fallbackSlideId
+    const nextProjection = nextSelectedSlideId
+      ? await window.deckBridge.query({ name: 'slide.activeProjection', params: { slideId: nextSelectedSlideId } })
+      : null
+    if (generation !== refreshGeneration) return projection
+    let nextAssetCatalog = []
+    if (nextProjection) {
+      try {
+        const result = await window.deckBridge.query({ name: 'asset.catalog', params: {} })
+        nextAssetCatalog = result.assets ?? []
+      } catch {
+        nextAssetCatalog = []
+      }
+    }
+    if (generation !== refreshGeneration) return projection
+    storyDocument = nextStory
+    selectedSlideId = nextSelectedSlideId
+    projection = nextProjection
+    assetCatalog = nextAssetCatalog
+    renderAll()
+    if (focus.slideId) elements.sequenceList.querySelector(`[data-slide-id="${CSS.escape(focus.slideId)}"]`)?.focus()
+    if (focus.sectionId) elements.sequenceList.querySelector(`[data-section-id="${CSS.escape(focus.sectionId)}"]`)?.focus()
+    return projection
+  } catch (error) {
+    setStatus(`${error.name ?? 'Error'}: ${error.message}`)
+    elements.workbench.setAttribute('aria-busy', 'false')
+    return null
+  }
+}
+
 renderProjection = function renderProjectionWithCancellableHydration(next) {
   projection = next
   selectedSlideId = next?.slide?.id ?? selectedSlideId
