@@ -648,9 +648,9 @@ async function executeBatch(operations, requestedSlideId = selectedSlideId) {
 }
 
 async function selectSlide(slideId) {
-  if (!findStoryLocation(slideId)) return
+  if (!slideId) return null
   pendingWorkspaceSlideId = slideId
-  await refreshWorkspace(slideId)
+  return refreshWorkspace(slideId)
 }
 
 async function historyAction(method, restoreFocusBlockId = null) {

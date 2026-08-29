@@ -316,9 +316,8 @@ enum PackagedTracer {
         fflush(stdout)
         let rawKeyboardJourney = try await controller.invokeWorkspaceForTracer(
             """
-            deckWorkbench.renderProjection(
-              await deckBridge.query({ name: 'slide.activeProjection', params: { slideId: secondSlideId } })
-            );
+            const selectedSlide = await deckWorkbench.selectSlide(secondSlideId);
+            if (selectedSlide?.slide?.id !== secondSlideId) throw new Error('Target Slide selection failed');
             const findBody = () => [...document.querySelectorAll('#additional-content textarea')]
               .find((field) => field.dataset.blockId === bodyBlockId);
             const waitForRevision = async (expected) => {

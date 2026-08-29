@@ -77,7 +77,7 @@ refreshWorkspace = async function refreshWorkspaceAtomically(requestedSlideId = 
       selectedSlideId = nextSelectedSlideId
       projection = nextProjection
       commitCuratePhaseSnapshot(nextCurateSnapshot)
-      if (pendingWorkspaceSlideId === nextSelectedSlideId) pendingWorkspaceSlideId = null
+      if (pendingWorkspaceSlideId === requestedSlideId) pendingWorkspaceSlideId = null
       renderAll()
       if (focus.slideId) elements.sequenceList.querySelector(`[data-slide-id="${CSS.escape(focus.slideId)}"]`)?.focus()
       if (focus.sectionId) elements.sequenceList.querySelector(`[data-section-id="${CSS.escape(focus.sectionId)}"]`)?.focus()
@@ -261,6 +261,7 @@ async function boot() {
 window.deckWorkbench = Object.freeze({
   renderProjection,
   clearProjection,
+  selectSlide,
   exportFrame() {
     activePhase = 'assemble'
     renderAll()
