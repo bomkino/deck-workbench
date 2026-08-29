@@ -5,15 +5,18 @@ import vm from 'node:vm'
 
 const source = await readFile(new URL('../build/generated/bridge.generated.js', import.meta.url), 'utf8')
 
-function bridgeHarness({ failFirstPost = false } = {}) {
+function bridgeHarness({ failFirstPost = false, timeoutMs = 10_000 } = {}) {
   const posted = []
   let shouldFail = failFirstPost
   let cancelledRefreshes = 0
   const context = {
+    __DECK_BRIDGE_TIMEOUT_MS: timeoutMs,
     crypto: { randomUUID: (() => { let index = 0; return () => `request-${++index}` })() },
     Error,
     Map,
     Promise,
+    Set,
+    Number,
     console,
     setTimeout,
     clearTimeout,
@@ -77,4 +80,22 @@ test('a synchronous post failure rejects that request and continues the queue', 
   assert.deepEqual(posted.map((request) => request.method), ['deck.undo'])
   context.__deckBridgeReceive({ requestId: posted[0].requestId, ok: true, result: { revision: 1 } })
   assert.deepEqual(await next, { revision: 1 })
+})
+
+test('a bounded request timeout identifies the exact seam and fences pending and future work', async () => {
+  const { context, posted } = bridgeHarness({ timeoutMs: 5 })
+  const active = context.deckBridge.query({ name: 'story.document', params: {} })
+  const queued = context.deckBridge.execute({ command: { type: 'content.update' } })
+  const results = await Promise.allSettled([active, queued])
+
+  assert.deepEqual(posted.map((request) => request.method), ['deck.query'])
+  for (const result of results) {
+    assert.equal(result.status, 'rejected')
+    assert.equal(result.reason.name, 'BridgeTimeout')
+    assert.match(result.reason.message, /deck\.query:story\.document/)
+  }
+  await assert.rejects(
+    context.deckBridge.redo(),
+    (error) => error.name === 'BridgeTimeout' && /deck\.query:story\.document/.test(error.message),
+  )
 })
