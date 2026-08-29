@@ -1,0 +1,73 @@
+name: WB Cloud Work Handover
+
+on:
+  push:
+    branches:
+      - codex/workbench-phased-rebuild
+    paths:
+      - CLOUD_WORK_HANDOVER_2026-08-29.md
+      - .github/workflows/wb-cloud-handover.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wb-cloud-handover-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Build exact source handover
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_root="handover/deck-workbench-cloud-work-handover"
+          rm -rf handover
+          mkdir -p "$package_root"
+
+          git archive --format=tar HEAD | tar -xf - -C "$package_root"
+
+          sed -i "s/__PACKAGED_COMMIT__/${GITHUB_SHA}/g" "$package_root/CLOUD_WORK_HANDOVER_2026-08-29.md"
+
+          cat > "$package_root/EXACT_STATE.txt" <<EOF
+          Repository: bomkino/deck-workbench
+          Branch: codex/workbench-phased-rebuild
+          Commit: ${GITHUB_SHA}
+          Base branch: main
+          Pull request: #6
+          Workflow run: ${GITHUB_RUN_ID}
+          Packaged at: $(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          Source form: complete tracked repository archive; .git, node_modules, build outputs and prior runtime packages excluded
+          EOF
+
+          (
+            cd "$package_root"
+            find . -type f ! -name HANDOVER_SHA256SUMS.txt -print0 \
+              | sort -z \
+              | xargs -0 sha256sum \
+              > HANDOVER_SHA256SUMS.txt
+          )
+
+          test -s "$package_root/CLOUD_WORK_HANDOVER_2026-08-29.md"
+          test -s "$package_root/EXACT_STATE.txt"
+          test -s "$package_root/HANDOVER_SHA256SUMS.txt"
+          test -f "$package_root/package.json"
+          test -f "$package_root/packages/workspace/app/index.html"
+          test -f "$package_root/docs/product/PHASED_WORKBENCH_CONSTITUTION.md"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: deck-workbench-cloud-work-handover-${{ github.sha }}
+          path: handover/
+          include-hidden-files: true
+          if-no-files-found: error
+          compression-level: 9
+          retention-days: 30
