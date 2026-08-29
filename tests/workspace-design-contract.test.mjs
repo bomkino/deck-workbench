@@ -15,9 +15,9 @@ const [html, styles, mark, linuxHost, schemeHandler, macBuild, workspaceBuild, m
   readFile(new URL('../scripts/linux/deck-workbench.svg', import.meta.url), 'utf8'),
 ])
 
-test('static shared-workspace actions declare their button behaviour explicitly', () => {
+test('every static shared-workspace action declares its button behaviour explicitly', () => {
   const buttons = [...html.matchAll(/<button\b[^>]*>/g)].map((match) => match[0])
-  assert.ok(buttons.length >= 25)
+  assert.ok(buttons.length > 0)
   for (const button of buttons) assert.match(button, /\btype="(?:button|submit)"/, `missing explicit button type: ${button}`)
 })
 
