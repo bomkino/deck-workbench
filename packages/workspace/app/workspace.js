@@ -13,6 +13,29 @@ function selectedPlanRecord() {
   return planRecordForSlide(slide, section)
 }
 
+const renderPlanEditorFromStory = renderPlanEditor
+renderPlanEditor = function renderPlanEditorWithProjectionFallback() {
+  if (storyDocument || !projection) return renderPlanEditorFromStory()
+  const fallbackSection = projection.section ?? {
+    id: projection.slide.sectionId ?? 'selected-part',
+    title: 'Selected Part',
+  }
+  const fallbackSlide = {
+    ...projection.slide,
+    contentBlocks: projection.contentBlocks ?? [],
+  }
+  storyDocument = {
+    deckTitle: projection.deckTitle,
+    revision: projection.revision,
+    sections: [{ ...fallbackSection, slides: [fallbackSlide] }],
+  }
+  try {
+    return renderPlanEditorFromStory()
+  } finally {
+    storyDocument = null
+  }
+}
+
 function bindWorkspaceEvents() {
   elements.phaseButtons.forEach((button) => button.addEventListener('click', () => setPhase(button.dataset.phase)))
   elements.undo.addEventListener('click', () => historyAction('undo'))
