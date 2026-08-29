@@ -22,11 +22,18 @@ button { min-width: 44px; }
   padding: 0;
   border: 0;
   border-radius: 0;
-  opacity: 0;
+  outline: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
   cursor: pointer;
   caret-color: transparent;
 }
 .slide-entry > .slide-row {
+  position: relative;
+  z-index: 1;
   pointer-events: none;
 }
 .slide-entry > .slide-focus-target:focus-visible + .slide-row {

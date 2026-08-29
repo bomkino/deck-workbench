@@ -17,7 +17,7 @@ test('production focus restoration remains semantic and does not inject shadow-D
   assert.doesNotMatch(focus, /attachShadow|sequence-focus-proxy|Object\.defineProperty\(node, 'focus'/)
 })
 
-test('packaged Slide rows use a real 44 pixel text-input focus primitive with button semantics', () => {
+test('packaged Slide rows use a rendered 44 pixel text-input focus primitive with button semantics', () => {
   assert.match(targets, /target\.type = 'text'/)
   assert.match(targets, /target\.readOnly = true/)
   assert.match(targets, /target\.setAttribute\('role', 'button'\)/)
@@ -27,6 +27,9 @@ test('packaged Slide rows use a real 44 pixel text-input focus primitive with bu
   assert.match(build, /'workspace-sequence-targets\.js',[\s\S]*'workspace-focus\.js'/)
   assert.match(hardening, /\.slide-entry > \.slide-focus-target/)
   assert.match(hardening, /min-height: 44px/)
+  assert.match(hardening, /background: transparent/)
+  assert.match(hardening, /-webkit-text-fill-color: transparent/)
+  assert.doesNotMatch(hardening, /\.slide-focus-target[\s\S]{0,500}opacity:\s*0/)
   assert.match(hardening, /\.slide-focus-target:focus-visible \+ \.slide-row/)
 })
 
