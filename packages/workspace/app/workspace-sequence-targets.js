@@ -98,8 +98,7 @@ function focusSequenceTarget(target, options = {}) {
       sequenceFocusOwner.focus()
     }
   }
-  return document.activeElement === sequenceFocusOwner
-    && sequenceFocusOwner.getAttribute('aria-activedescendant') === node.id
+  return sequenceFocusOwner.getAttribute('aria-activedescendant') === node.id
 }
 
 function semanticSequenceItems() {
