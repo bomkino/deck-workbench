@@ -92,6 +92,31 @@ function patchStoryDocumentFromProjection(next) {
   else section.slides.push(slide)
 }
 
+let pendingProjectionFocus = null
+
+function queueProjectionFocus(target) {
+  pendingProjectionFocus = target ? { ...target } : null
+}
+
+function applyPendingProjectionFocus() {
+  const target = pendingProjectionFocus
+  if (!target) return false
+  let restored = false
+  if (target.blockId) {
+    restored = restoreStoryFocus(target.blockId)
+  } else if (target.slideId) {
+    const node = elements.sequenceList.querySelector(`[data-slide-id="${CSS.escape(target.slideId)}"]`)
+    node?.focus({ preventScroll: true })
+    restored = document.activeElement === node
+  } else if (target.sectionId) {
+    const node = elements.sequenceList.querySelector(`[data-section-id="${CSS.escape(target.sectionId)}"]`)
+    node?.focus({ preventScroll: true })
+    restored = document.activeElement === node
+  }
+  if (restored) pendingProjectionFocus = null
+  return restored
+}
+
 renderProjection = function renderProjectionFromCanonicalCache(next) {
   projection = next
   selectedSlideId = next?.slide?.id ?? selectedSlideId
@@ -101,7 +126,26 @@ renderProjection = function renderProjectionFromCanonicalCache(next) {
   const cachedAssets = globalThis.__deckBridgeAssetCatalog
   if (cachedAssets?.assets) assetCatalog = cachedAssets.assets
   renderAll()
+  applyPendingProjectionFocus()
   return next
+}
+
+const executeStructuralWithoutProjectionFocus = executeStructural
+executeStructural = async function executeStructuralWithProjectionFocus(type, payload, requestedSlideId = selectedSlideId, options = {}) {
+  if (options.focus) queueProjectionFocus(options.focus)
+  return executeStructuralWithoutProjectionFocus(type, payload, requestedSlideId, options)
+}
+
+const updateContentBlockWithoutProjectionFocus = updateContentBlock
+updateContentBlock = async function updateContentBlockWithProjectionFocus(blockId, value, options = {}) {
+  if (options.restoreFocus) queueProjectionFocus({ blockId })
+  return updateContentBlockWithoutProjectionFocus(blockId, value, options)
+}
+
+const historyActionWithoutProjectionFocus = historyAction
+historyAction = async function historyActionWithProjectionFocus(method, restoreFocusBlockId = null) {
+  if (restoreFocusBlockId) queueProjectionFocus({ blockId: restoreFocusBlockId })
+  return historyActionWithoutProjectionFocus(method, restoreFocusBlockId)
 }
 
 function bindWorkspaceEvents() {
