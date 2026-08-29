@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+import { readFile, readlink } from 'node:fs/promises'
 
 const required = [
   'apps/macos/Info.plist',
@@ -7,10 +7,16 @@ const required = [
   'apps/macos/Sources/DeckKernelHost.swift',
   'apps/macos/Sources/PitchDeckDocumentStore.swift',
   'apps/macos/Sources/BridgeCoordinator.swift',
-  'apps/macos/Resources/Workspace/index.html',
-  'apps/macos/Resources/Workspace/workspace.js',
+  'packages/workspace/app/index.html',
+  'packages/workspace/app/styles.css',
+  'packages/workspace/app/workspace-core.js',
+  'packages/workspace/app/workspace-plan.js',
+  'packages/workspace/app/workspace-visual.js',
+  'packages/workspace/app/workspace-handoff.js',
+  'packages/workspace/app/workspace.js',
   'packages/deck-kernel/src/deck-kernel.ts',
   'packages/bridge-contract/bridge.contract.json',
+  'scripts/build-workspace.mjs',
   'scripts/build-macos.sh',
   'scripts/build-macos-icon.sh',
   'scripts/verify-packaged-macos.sh',
@@ -27,37 +33,65 @@ const nativeSource = [...contents.entries()]
   .filter(([path]) => path.endsWith('.swift'))
   .map(([, value]) => value)
   .join('\n')
-const workspace = contents.get('apps/macos/Resources/Workspace/index.html')
-const workspaceJavaScript = contents.get('apps/macos/Resources/Workspace/workspace.js')
+const workspaceHTML = contents.get('packages/workspace/app/index.html')
+const workspaceCore = contents.get('packages/workspace/app/workspace-core.js')
+const workspacePlan = contents.get('packages/workspace/app/workspace-plan.js')
+const workspaceVisual = contents.get('packages/workspace/app/workspace-visual.js')
+const workspaceBoot = contents.get('packages/workspace/app/workspace.js')
+const workspaceAll = [workspaceCore, workspacePlan, workspaceVisual, contents.get('packages/workspace/app/workspace-handoff.js'), workspaceBoot].join('\n')
 const kernel = contents.get('packages/deck-kernel/src/deck-kernel.ts')
 
 assert.deepEqual(packageJSON.dependencies, { electron: '44.0.0' })
 assert.equal(packageJSON.version, '0.0.1')
 assert.equal(JSON.parse(contents.get('scripts/linux/runtime-package.json')).version, packageJSON.version)
 assert.equal(packageJSON.devDependencies, undefined)
+assert.equal(
+  packageJSON.scripts.generate,
+  'node scripts/generate-bridge.mjs && node scripts/build-kernel.mjs && node scripts/build-workspace.mjs',
+)
 assert.match(contents.get('LICENSE'), /GNU AFFERO GENERAL PUBLIC LICENSE/)
 assert.match(contents.get('apps/macos/Info.plist'), /<string>26\.0<\/string>/)
 assert.match(contents.get('apps/macos/Info.plist'), /dog\.pitch\.deck/)
 assert.match(contents.get('apps/macos/Info.plist'), /<key>CFBundleShortVersionString<\/key>\s*<string>0\.0\.1<\/string>/)
 assert.match(contents.get('apps/macos/Info.plist'), /<key>CFBundleIconFile<\/key>\s*<string>DeckWorkbench\.icns<\/string>/)
 assert.match(contents.get('scripts/build-macos-icon.sh'), /iconutil -c icns/)
-assert.match(workspace, /connect-src 'none'/)
-assert.match(workspace, /object-src 'none'/)
+assert.match(workspaceHTML, /connect-src 'none'/)
+assert.match(workspaceHTML, /object-src 'none'/)
+assert.equal(workspaceHTML.match(/data-phase="(?:plan|curate|assemble|handoff)"/g)?.length, 4)
+assert.match(workspaceHTML, /id="sequence-list"/)
+assert.match(workspaceHTML, /id="plan-form"/)
+assert.match(workspaceHTML, /id="artboard"/)
+assert.match(workspaceHTML, /id="handoff-list"/)
+assert.doesNotMatch(workspaceHTML, /type="file"/)
 assert.doesNotMatch(nativeSource, /URLSession|NWConnection|Network\.framework/)
 assert.doesNotMatch(nativeSource, /runShell|querySQL|openArbitraryURL|genericIPC/)
 assert.equal(bridge.methods.length, 10)
 assert.equal(new Set(bridge.methods.map((method) => method.name)).size, 10)
 assert.match(contents.get('THIRD_PARTY.md'), /\| Electron \| 44\.0\.0 \|/)
 assert.match(kernel, /'content\.remove'/)
-assert.match(workspaceJavaScript, /executeStructural\('content\.remove'/)
-assert.match(workspaceJavaScript, /executeStructural\('section\.remove'/)
-assert.match(workspaceJavaScript, /executeStructural\('slide\.remove'/)
-assert.match(workspaceJavaScript, /normalized\.split\('\\n'\)\.map/)
-assert.match(workspaceJavaScript, /text\.length > 0 \? \[\{ type: 'text', text \}\] : \[\]/)
-const mapperStart = workspaceJavaScript.indexOf('function richText(value)')
-const mapperEnd = workspaceJavaScript.indexOf('\nfunction setBusy', mapperStart)
+assert.match(workspaceCore, /PLAN_BLOCK_ROLE = 'workbench-plan'/)
+assert.match(workspaceCore, /PLAN_BLOCK_KEY = 'workbench\.plan\.v1'/)
+assert.match(workspacePlan, /type: 'content\.add'/)
+assert.match(workspacePlan, /type: 'content\.update'/)
+assert.match(workspacePlan, /type: 'slide\.intent\.set'/)
+assert.match(workspacePlan, /executeStructural\('section\.remove'/)
+assert.match(workspaceVisual, /executeStructural\('designOption\.applyPattern'/)
+assert.match(workspaceVisual, /executeStructural\('element\.frame\.update'/)
+assert.match(workspaceVisual, /executeStructural\('element\.crop\.update'/)
+assert.match(workspaceVisual, /executeStructural\('asset\.reference\.add'/)
+assert.match(workspaceVisual, /executeStructural\('asset\.assign'/)
+assert.doesNotMatch(workspaceAll, /createObjectURL|readAsDataURL|webkit\.messageHandlers/)
+assert.match(workspaceBoot, /window\.deckWorkbench = Object\.freeze/)
+assert.match(workspaceBoot, /exportFrame\(\)/)
+assert.match(contents.get('scripts/build-workspace.mjs'), /packages\/workspace\/app/)
+assert.match(contents.get('scripts/build-workspace.mjs'), /build\/generated\/workspace/)
+assert.match(contents.get('scripts/build-macos.sh'), /build\/generated\/workspace\/index\.html/)
+assert.equal(await readlink('apps/macos/Resources/Workspace'), '../../../build/generated/workspace')
+
+const mapperStart = workspaceCore.indexOf('function richText(value)')
+const mapperEnd = workspaceCore.indexOf('\nfunction storyShortcut', mapperStart)
 assert.ok(mapperStart >= 0 && mapperEnd > mapperStart)
-const richText = Function(`"use strict"; ${workspaceJavaScript.slice(mapperStart, mapperEnd)}; return richText`)()
+const richText = Function(`"use strict"; ${workspaceCore.slice(mapperStart, mapperEnd)}; return richText`)()
 assert.deepEqual(richText('First\r\n\rThird'), {
   type: 'doc',
   content: [

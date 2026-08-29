@@ -2,13 +2,11 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
-const workspace = await readFile(new URL('../apps/macos/Resources/Workspace/workspace.js', import.meta.url), 'utf8')
+const workspace = await readFile(new URL('../packages/workspace/app/workspace-core.js', import.meta.url), 'utf8')
 const shortcutStart = workspace.indexOf('function storyShortcut(event, dirty)')
-const shortcutEnd = workspace.indexOf('\nfunction setBusy', shortcutStart)
+const shortcutEnd = workspace.indexOf('\nfunction sequenceShortcut', shortcutStart)
 assert.ok(shortcutStart >= 0 && shortcutEnd > shortcutStart)
-const storyShortcut = Function(
-  `"use strict"; ${workspace.slice(shortcutStart, shortcutEnd)}; return storyShortcut`,
-)()
+const storyShortcut = Function(`"use strict"; ${workspace.slice(shortcutStart, shortcutEnd)}; return storyShortcut`)()
 
 function key(overrides = {}) {
   return {

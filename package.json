@@ -8,7 +8,7 @@
     "node": ">=24.0.0"
   },
   "scripts": {
-    "generate": "node scripts/generate-bridge.mjs && node scripts/build-kernel.mjs",
+    "generate": "node scripts/generate-bridge.mjs && node scripts/build-kernel.mjs && node scripts/build-workspace.mjs",
     "install:electron": "install-electron",
     "build:linux": "scripts/linux/build-linux-x64.sh",
     "verify:linux": "scripts/linux/verify-packaged-linux.sh",

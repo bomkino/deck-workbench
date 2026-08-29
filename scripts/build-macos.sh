@@ -36,12 +36,11 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/Kernel" "$APP/Contents/R
 
 cp apps/macos/Info.plist "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :DeckWorkbenchCommit string $COMMIT_SHA" "$APP/Contents/Info.plist"
-cp apps/macos/Resources/Workspace/index.html "$APP/Contents/Resources/Workspace/index.html"
-cp apps/macos/Resources/Workspace/styles.css "$APP/Contents/Resources/Workspace/styles.css"
-cp apps/macos/Resources/Workspace/workspace.js "$APP/Contents/Resources/Workspace/workspace.js"
-cp apps/macos/Resources/Workspace/workbench-mark.svg "$APP/Contents/Resources/Workspace/workbench-mark.svg"
+cp build/generated/workspace/index.html "$APP/Contents/Resources/Workspace/index.html"
+cp build/generated/workspace/styles.css "$APP/Contents/Resources/Workspace/styles.css"
+cp build/generated/workspace/workspace.js "$APP/Contents/Resources/Workspace/workspace.js"
+cp build/generated/workspace/workbench-mark.svg "$APP/Contents/Resources/Workspace/workbench-mark.svg"
 scripts/build-macos-icon.sh "$APP/Contents/Resources/DeckWorkbench.icns"
-cp packages/workspace/src/scale-model.mjs "$APP/Contents/Resources/Workspace/scale-model.mjs"
 cp build/generated/bridge.generated.js "$APP/Contents/Resources/Workspace/bridge.generated.js"
 cp build/generated/deck-kernel.js "$APP/Contents/Resources/Kernel/deck-kernel.js"
 
