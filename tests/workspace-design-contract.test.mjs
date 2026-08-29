@@ -2,9 +2,10 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
-const [html, styles, mark, linuxHost, schemeHandler, macBuild, workspaceBuild, macIconBuild, macInfo, linuxIcon] = await Promise.all([
+const [html, styles, hardening, mark, linuxHost, schemeHandler, macBuild, workspaceBuild, macIconBuild, macInfo, linuxIcon] = await Promise.all([
   readFile(new URL('../packages/workspace/app/index.html', import.meta.url), 'utf8'),
   readFile(new URL('../packages/workspace/app/styles.css', import.meta.url), 'utf8'),
+  readFile(new URL('../packages/workspace/app/packaged-hardening.css', import.meta.url), 'utf8'),
   readFile(new URL('../packages/workspace/app/workbench-mark.svg', import.meta.url), 'utf8'),
   readFile(new URL('../apps/linux/main.mjs', import.meta.url), 'utf8'),
   readFile(new URL('../apps/macos/Sources/WorkspaceSchemeHandler.swift', import.meta.url), 'utf8'),
@@ -21,12 +22,15 @@ test('every static shared-workspace action declares its button behaviour explici
   for (const button of buttons) assert.match(button, /\btype="(?:button|submit)"/, `missing explicit button type: ${button}`)
 })
 
-test('every baseline control retains at least a 44 pixel target at every Interface Scale step', () => {
+test('every packaged control retains at least a 44 pixel target at every Interface Scale step', () => {
   const root = styles.match(/:root \{([\s\S]*?)\n\}/)?.[1] ?? ''
   assert.match(root, /--control-size:\s*max\(3\.25rem, 44px\)/)
   for (const scale of [0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75]) assert.ok(Math.max(3.25 * 16 * scale, 44) >= 44)
   assert.match(styles, /font-size: calc\(16px \* var\(--interface-scale\)\)/)
   assert.match(styles, /button, input, select, textarea, \.slide-row, \.section-row \{ min-height: var\(--control-size\); \}/)
+  assert.match(hardening, /select \{[\s\S]*-webkit-appearance: none;[\s\S]*height: var\(--control-size\);[\s\S]*min-height: var\(--control-size\);/)
+  assert.match(hardening, /padding-inline: 0\.8rem 2\.2rem/)
+  assert.match(hardening, /background-image:[\s\S]*linear-gradient/)
   assert.doesNotMatch(styles, /min-height:\s*2\.(?:5|65)rem/)
 })
 
