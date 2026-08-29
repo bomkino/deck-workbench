@@ -64,15 +64,21 @@ function focusWorkspaceNode(node, target) {
   return document.activeElement === node
 }
 
-function restoreWorkspaceFocus(target, { onlyIfLost = false, lease = false } = {}) {
-  if (!target || (onlyIfLost && !focusWasLost())) return false
-  const restored = focusWorkspaceNode(workspaceFocusNode(target), target)
-  if (!lease) return restored
+function scheduleWorkspaceFocusLease(target) {
   const leaseId = ++workspaceFocusLease
   globalThis.setTimeout(() => {
     if (leaseId !== workspaceFocusLease || !focusWasLost()) return
     focusWorkspaceNode(workspaceFocusNode(target), target)
   }, 0)
+}
+
+function restoreWorkspaceFocus(target, { onlyIfLost = false, lease = false } = {}) {
+  if (!target) return false
+  const node = workspaceFocusNode(target)
+  const restored = onlyIfLost && !focusWasLost()
+    ? document.activeElement === node
+    : focusWorkspaceNode(node, target)
+  if (lease) scheduleWorkspaceFocusLease(target)
   return restored
 }
 
@@ -106,7 +112,7 @@ window.deckBridge = Object.freeze({
     try {
       return await nativeDeckBridge.query(payload)
     } finally {
-      restoreWorkspaceFocus(target, { onlyIfLost: true })
+      restoreWorkspaceFocus(target, { onlyIfLost: true, lease: true })
     }
   },
 })
