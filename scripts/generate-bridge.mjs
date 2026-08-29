@@ -51,16 +51,34 @@ const methods = contract.methods
 const javascript = `/* Generated from packages/bridge-contract/bridge.contract.json. Do not edit. */
 (() => {
   const pending = new Map()
+  const queue = []
+  let activeRequestId = null
 
   function nextRequestId() {
     return globalThis.crypto?.randomUUID?.() ?? \`request-\${Date.now()}-\${Math.random()}\`
+  }
+
+  function pump() {
+    if (activeRequestId !== null || queue.length === 0) return
+    const request = queue.shift()
+    activeRequestId = request.requestId
+    try {
+      globalThis.webkit.messageHandlers.${contract.handler}.postMessage(request)
+    } catch (error) {
+      const pendingRequest = pending.get(request.requestId)
+      pending.delete(request.requestId)
+      activeRequestId = null
+      pendingRequest?.reject(error)
+      pump()
+    }
   }
 
   function invoke(method, payload) {
     const requestId = nextRequestId()
     return new Promise((resolve, reject) => {
       pending.set(requestId, { resolve, reject })
-      globalThis.webkit.messageHandlers.${contract.handler}.postMessage({ method, requestId, payload })
+      queue.push({ method, requestId, payload })
+      pump()
     })
   }
 
@@ -73,8 +91,10 @@ ${methods}
     const request = pending.get(response.requestId)
     if (!request) return
     pending.delete(response.requestId)
+    if (activeRequestId === response.requestId) activeRequestId = null
     if (response.ok) request.resolve(response.result)
     else request.reject(Object.assign(new Error(response.error?.message ?? 'Bridge request failed'), response.error))
+    pump()
   }
 })()
 `
