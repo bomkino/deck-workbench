@@ -212,7 +212,7 @@ struct WorkbenchRootView: View {
                     .lineLimit(1)
                     .accessibilityLabel("Document status")
                     .accessibilityValue(controller.status)
-                    .accessibilityLiveRegion(.polite)
+                    .accessibilityAddTraits(.updatesFrequently)
 
                 Button {
                     Task { await controller.perform { _ = try await controller.presentPDFExport() } }
