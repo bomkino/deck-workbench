@@ -578,7 +578,7 @@ function curateQueueLabel(state, unplacedCount = 0) {
 function renderCurateQueue() {
   const stateBySlideId = new Map(curateQueueProjection.map((item) => [item.slideId, item]))
   const records = []
-  const includedRecords = recordsFromStory().filter((record) => record.metadata.lifecycle === 'included')
+  const includedRecords = planRecords().filter((record) => record.metadata.lifecycle === 'included')
   let sequenceNumber = 1
   for (const record of includedRecords) {
       const queueItem = stateBySlideId.get(record.slide.id)
@@ -616,7 +616,7 @@ function renderCurateBrief() {
     syncFindMoreControls(null)
     return
   }
-  const includedRecords = recordsFromStory().filter((candidate) => candidate.metadata.lifecycle === 'included')
+  const includedRecords = planRecords().filter((candidate) => candidate.metadata.lifecycle === 'included')
   const selectedIndex = includedRecords.findIndex((candidate) => candidate.slide.id === record.slide.id)
   const selectedNumber = selectedIndex >= 0 ? selectedIndex + 1 : 0
   const copy = [record.headline, record.subheadline, record.body]
@@ -1326,7 +1326,7 @@ async function saveCurateFindMore() {
 
 function unresolvedCurateSlideIds() {
   const stateBySlideId = new Map(curateQueueProjection.map((item) => [item.slideId, item]))
-  return recordsFromStory()
+  return planRecords()
     .filter((record) => record.metadata.lifecycle === 'included')
     .filter((record) => curateQueueState(stateBySlideId.get(record.slide.id)) !== 'ready')
     .map((record) => record.slide.id)
@@ -1345,7 +1345,7 @@ async function moveToNextCurateIssue() {
 }
 
 async function moveToPreviousCurateSlide() {
-  const ids = recordsFromStory()
+  const ids = planRecords()
     .filter((record) => record.metadata.lifecycle === 'included')
     .map((record) => record.slide.id)
   if (!ids.length) return

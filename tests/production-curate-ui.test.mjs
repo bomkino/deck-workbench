@@ -120,10 +120,11 @@ test('Unplaced media blocks Ready and included Story order owns queue navigation
   assert.match(curate, /previousSlotKey \?\? decision\.previousAssignmentRole/)
   assert.match(curate, /\[elements\.primaryTray, elements\.alternateTray, elements\.shortlistTray, elements\.unplacedTray\]/)
   const renderQueue = functionSource(curate, 'renderCurateQueue', 'renderCurateBrief')
-  assert.match(renderQueue, /recordsFromStory\(\)\.filter\(\(record\) => record\.metadata\.lifecycle === 'included'\)/)
+  assert.match(renderQueue, /planRecords\(\)\.filter\(\(record\) => record\.metadata\.lifecycle === 'included'\)/)
   const unresolved = functionSource(curate, 'unresolvedCurateSlideIds', 'moveToNextCurateIssue')
-  assert.match(unresolved, /recordsFromStory\(\)/)
+  assert.match(unresolved, /planRecords\(\)/)
   assert.match(unresolved, /metadata\.lifecycle === 'included'/)
+  assert.doesNotMatch(curate, /recordsFromStory/)
 })
 
 test('empty or failed first media pages wait for an explicit retry', () => {
