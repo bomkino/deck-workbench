@@ -17,14 +17,15 @@ test('production focus restoration remains semantic and does not inject shadow-D
   assert.doesNotMatch(focus, /attachShadow|sequence-focus-proxy|Object\.defineProperty\(node, 'focus'/)
 })
 
-test('packaged Slide rows retain one keyed textarea focus primitive across reorder', () => {
+test('packaged Slide rows retain one keyed, visibly rendered text control across reorder', () => {
   assert.match(targets, /const sequenceNodeRegistry = new Map\(\)/)
   assert.match(targets, /function createSlideSequenceEntry\(slideId\)/)
   assert.match(targets, /document\.createElement\('textarea'\)/)
   assert.match(targets, /target\.rows = 1/)
-  assert.match(targets, /target\.value = ''/)
-  assert.match(targets, /target\.setAttribute\('role', 'button'\)/)
-  assert.match(targets, /target\.dataset\.slideId = slideId/)
+  assert.match(targets, /target\.value = 'Slide'/)
+  assert.match(targets, /target\.setAttribute\('aria-multiline', 'false'\)/)
+  assert.doesNotMatch(targets, /target\.setAttribute\('role', 'button'\)/)
+  assert.match(targets, /target\.dataset\.displayValue = displayValue/)
   assert.match(targets, /target\.addEventListener\('beforeinput', preventSequenceTargetMutation\)/)
   assert.match(targets, /event\.key === 'Enter' \|\| event\.key === ' '/)
   assert.match(targets, /moveSlideByKeyboard\(event, target\.dataset\.sectionId, target\.dataset\.slideId\)/)
@@ -36,10 +37,12 @@ test('packaged Slide rows retain one keyed textarea focus primitive across reord
   assert.ok(targetRule, 'missing packaged Slide focus-target rule')
   assert.match(targetRule, /min-height: 44px/)
   assert.match(targetRule, /background: transparent/)
-  assert.match(targetRule, /-webkit-text-fill-color: transparent/)
+  assert.match(targetRule, /color: var\(--ink\)/)
+  assert.match(targetRule, /-webkit-text-fill-color: currentColor/)
   assert.match(targetRule, /resize: none/)
   assert.doesNotMatch(targetRule, /opacity:\s*0/)
-  assert.match(hardening, /\.slide-focus-target:focus-visible \+ \.slide-row/)
+  assert.match(hardening, /\.slide-focus-target:focus-visible/)
+  assert.match(hardening, /\.slide-entry > \.slide-row \{\s*display: none;/)
 })
 
 test('packaged macOS keyboard journey enables and restores the standard keyboard UI mode', () => {
