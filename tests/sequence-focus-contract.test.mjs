@@ -25,11 +25,12 @@ test('packaged Slide rows use a rendered 44 pixel text-input focus primitive wit
   assert.match(targets, /event\.key === 'Enter' \|\| event\.key === ' '/)
   assert.match(targets, /moveSlideByKeyboard\(event, targetSectionId, slideId\)/)
   assert.match(build, /'workspace-sequence-targets\.js',[\s\S]*'workspace-focus\.js'/)
-  assert.match(hardening, /\.slide-entry > \.slide-focus-target/)
-  assert.match(hardening, /min-height: 44px/)
-  assert.match(hardening, /background: transparent/)
-  assert.match(hardening, /-webkit-text-fill-color: transparent/)
-  assert.doesNotMatch(hardening, /\.slide-focus-target[\s\S]{0,500}opacity:\s*0/)
+  const targetRule = hardening.match(/\.slide-entry > \.slide-focus-target \{([\s\S]*?)\n\}/)?.[1] ?? ''
+  assert.ok(targetRule, 'missing packaged Slide focus-target rule')
+  assert.match(targetRule, /min-height: 44px/)
+  assert.match(targetRule, /background: transparent/)
+  assert.match(targetRule, /-webkit-text-fill-color: transparent/)
+  assert.doesNotMatch(targetRule, /opacity:\s*0/)
   assert.match(hardening, /\.slide-focus-target:focus-visible \+ \.slide-row/)
 })
 
