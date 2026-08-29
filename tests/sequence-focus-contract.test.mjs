@@ -17,9 +17,9 @@ test('production focus restoration remains semantic and does not inject shadow-D
   assert.doesNotMatch(focus, /attachShadow|sequence-focus-proxy|Object\.defineProperty\(node, 'focus'/)
 })
 
-test('packaged Slide rows use a rendered editable text-input focus primitive while preventing text mutation', () => {
-  assert.match(targets, /target\.type = 'text'/)
-  assert.doesNotMatch(targets, /target\.readOnly = true/)
+test('packaged Slide rows use the same rendered textarea focus primitive as canonical copy fields', () => {
+  assert.match(targets, /document\.createElement\('textarea'\)/)
+  assert.match(targets, /target\.rows = 1/)
   assert.match(targets, /target\.value = ''/)
   assert.match(targets, /target\.setAttribute\('role', 'button'\)/)
   assert.match(targets, /target\.dataset\.slideId = slideId/)
@@ -32,6 +32,7 @@ test('packaged Slide rows use a rendered editable text-input focus primitive whi
   assert.match(targetRule, /min-height: 44px/)
   assert.match(targetRule, /background: transparent/)
   assert.match(targetRule, /-webkit-text-fill-color: transparent/)
+  assert.match(targetRule, /resize: none/)
   assert.doesNotMatch(targetRule, /opacity:\s*0/)
   assert.match(hardening, /\.slide-focus-target:focus-visible \+ \.slide-row/)
 })

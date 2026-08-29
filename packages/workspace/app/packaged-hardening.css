@@ -30,6 +30,9 @@ button { min-width: 44px; }
   -webkit-text-fill-color: transparent;
   cursor: pointer;
   caret-color: transparent;
+  resize: none;
+  overflow: hidden;
+  white-space: nowrap;
 }
 .slide-entry > .slide-row {
   position: relative;

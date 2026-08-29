@@ -9,8 +9,9 @@ function installSequenceFocusTargets() {
     if (!row || !sectionId) continue
     const slideId = row.dataset.slideId
     const targetSectionId = sectionId
-    const target = document.createElement('input')
-    target.type = 'text'
+    const target = document.createElement('textarea')
+    target.rows = 1
+    target.wrap = 'off'
     target.inputMode = 'none'
     target.autocomplete = 'off'
     target.spellcheck = false
