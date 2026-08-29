@@ -34,8 +34,9 @@ await writeFile(
   `/* Generated from packages/workspace/app. Do not edit. */\n${scripts.join('\n')}`,
 )
 
-for (const name of ['styles.css', 'workbench-mark.svg']) {
-  await writeFile(resolve(outputRoot, name), await readFile(resolve(sourceRoot, name)))
-}
+const styles = await readFile(resolve(sourceRoot, 'styles.css'), 'utf8')
+const hardening = await readFile(resolve(sourceRoot, 'packaged-hardening.css'), 'utf8')
+await writeFile(resolve(outputRoot, 'styles.css'), `${styles.trim()}\n\n/* Packaged host hardening */\n${hardening.trim()}\n`)
+await writeFile(resolve(outputRoot, 'workbench-mark.svg'), await readFile(resolve(sourceRoot, 'workbench-mark.svg')))
 
 console.log(`Built shared Workbench workspace: ${outputRoot}`)

@@ -1,0 +1,6 @@
+button { min-width: 44px; }
+
+@media print {
+  .phase-view { visibility: hidden !important; opacity: 0 !important; pointer-events: none !important; }
+  .assemble-phase { visibility: visible !important; opacity: 1 !important; pointer-events: auto !important; }
+}
