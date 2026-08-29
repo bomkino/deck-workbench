@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1" name="viewport"/>
+<meta content="Deck Workbench phased-rebuild interaction tracer" name="description"/>
+<title>Deck Workbench — Phased Rebuild Tracer</title>
+<link href="styles/base.css" rel="stylesheet"/><link href="styles/plan.css" rel="stylesheet"/><link href="styles/curate.css" rel="stylesheet"/><link href="styles/assemble.css" rel="stylesheet"/><link href="styles/handoff.css" rel="stylesheet"/><link href="styles/overlays.css" rel="stylesheet"/>
+</head>
+<body>
+<a class="skip-link" href="#phase-root">Skip to workspace</a>
+<div class="app-shell" id="app-shell">
+<header class="global-bar">
+<div class="brand-block">
+<div aria-hidden="true" class="brand-mark">W</div>
+<div>
+<p class="eyebrow">pitch.dog / Workbench tracer</p>
+<div class="project-line">
+<h1 id="project-title">Project</h1>
+<span id="project-version">v00</span>
+</div>
+</div>
+</div>
+<nav aria-label="Workbench phases" class="phase-nav">
+<button class="phase-button" data-phase="plan" type="button"><span>01</span><strong>Plan</strong><small>Copy + intent</small></button>
+<button class="phase-button" data-phase="curate" type="button"><span>02</span><strong>Curate</strong><small>Find + assign</small></button>
+<button class="phase-button" data-phase="assemble" type="button"><span>03</span><strong>Assemble</strong><small>Compose + direct</small></button>
+<button class="phase-button" data-phase="handoff" type="button"><span>04</span><strong>Handoff</strong><small>Review + package</small></button>
+</nav>
+<div class="global-actions">
+<div aria-label="History" class="history-actions" role="group">
+<button class="icon-button" id="undo-button" title="Undo" type="button">↶</button>
+<button class="icon-button" id="redo-button" title="Redo" type="button">↷</button>
+</div>
+<span aria-live="polite" class="save-state" id="save-state" role="status">Saved</span>
+<button class="quiet-button" id="reset-prototype" type="button">Reset tracer</button>
+</div>
+</header>
+<main class="phase-root" data-fragment-root="phases" id="phase-root" tabindex="-1"></main>
+</div>
+<script src="bootstrap.mjs" type="module"></script>
+<div id="overlay-root"></div>
+</body>
+</html>

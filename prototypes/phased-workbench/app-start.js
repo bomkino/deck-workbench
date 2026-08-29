@@ -1,0 +1,3 @@
+seedMediaDecisions()
+bindGlobalEvents()
+renderAll()

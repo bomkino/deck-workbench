@@ -1,0 +1,39 @@
+<dialog class="modal plan-editor-modal" id="plan-editor">
+<form method="dialog">
+<header class="modal-heading"><div><p class="panel-label">Edit Slide</p><h2 id="plan-editor-title">Slide</h2></div><button aria-label="Close" class="icon-button" value="cancel">×</button></header>
+<div class="modal-scroll">
+<div class="form-grid two-columns"><label><span>Internal title</span><input id="edit-internal-title" type="text"/></label><label><span>Part</span><select id="edit-part"></select></label></div>
+<label><span>Purpose</span><textarea id="edit-purpose" rows="3"></textarea></label>
+<div class="form-grid three-columns">
+<label><span>Lifecycle</span><select id="edit-lifecycle"><option value="included">Included</option><option value="skipped">Skipped</option><option value="cut">Cut Bin</option></select></label>
+<label><span>Text presence</span><select id="edit-text-presence"><option value="visible">Visible text</option><option value="no-on-slide-text">No on-Slide text</option><option value="undecided">Undecided</option></select></label>
+<label><span>Content Pattern</span><select id="edit-content-pattern"><option value="simple-copy">Simple Copy</option><option value="quote">Quote</option><option value="repeater">Repeater</option><option value="comparison">Comparison</option><option value="gallery-captions">Gallery Captions</option><option value="no-on-slide-text">No on-Slide Text</option><option value="custom">Custom</option></select></label>
+</div>
+<label><span>Visual Style</span><select id="edit-visual-style"><option value="undecided">Undecided</option><option value="text-only">Text Only</option><option value="full-bleed">Full Bleed</option><option value="full-bleed-overlay">Full Bleed + Overlay</option><option value="image-text">Image + Text</option><option value="diptych">Diptych</option><option value="triptych">Triptych</option><option value="gallery">Gallery</option><option value="custom">Custom</option></select></label>
+<div class="copy-fields">
+<div class="copy-field-editor" data-copy-role="headline"><div class="copy-field-heading"><strong>Headline</strong><select data-state-select=""><option value="present">Present</option><option value="intentionally-blank">Intentionally blank</option><option value="unreviewed">Unreviewed</option></select></div><textarea data-markdown-input="" rows="3"></textarea></div>
+<div class="copy-field-editor" data-copy-role="subheadline"><div class="copy-field-heading"><strong>Subheadline</strong><select data-state-select=""><option value="present">Present</option><option value="intentionally-blank">Intentionally blank</option><option value="unreviewed">Unreviewed</option></select></div><textarea data-markdown-input="" rows="3"></textarea></div>
+<div class="copy-field-editor" data-copy-role="body"><div class="copy-field-heading"><strong>Body</strong><select data-state-select=""><option value="present">Present</option><option value="intentionally-blank">Intentionally blank</option><option value="unreviewed">Unreviewed</option></select></div><textarea data-markdown-input="" rows="9"></textarea><small>Blank line = paragraph. Markdown links are preserved.</small></div>
+</div>
+<section class="supporting-items-editor" id="supporting-items-editor"></section>
+</div>
+<footer class="modal-actions"><button class="quiet-button" value="cancel">Cancel</button><button class="primary-button" id="save-slide-edit" value="default">Save Slide</button></footer>
+</form>
+</dialog>
+
+<dialog class="modal import-modal" id="import-dialog">
+<form method="dialog">
+<header class="modal-heading"><div><p class="panel-label">Plan intake</p><h2>Paste Workbench Markdown</h2></div><button aria-label="Close" class="icon-button" value="cancel">×</button></header>
+<div class="modal-scroll"><textarea id="import-markdown" rows="20" spellcheck="false"></textarea><div class="import-preview" id="import-preview"></div></div>
+<footer class="modal-actions"><button class="quiet-button" value="cancel">Cancel</button><button class="secondary-button" id="preview-import" type="button">Preview</button><button class="primary-button" disabled="" id="apply-import" value="default">Import Slides</button></footer>
+</form>
+</dialog>
+
+<dialog class="modal media-preview-modal" id="media-preview">
+<form method="dialog"><header class="modal-heading media-preview-heading"><div><p class="panel-label">Media Preview</p><h2 id="preview-media-title">Asset</h2></div><button aria-label="Close" class="icon-button" value="cancel">×</button></header><div class="media-preview-layout"><div class="preview-media-image" id="preview-media-image"></div><aside class="preview-media-actions" id="preview-media-actions"></aside></div></form>
+</dialog>
+
+<menu aria-hidden="true" class="context-menu" id="media-context-menu">
+<button data-context-action="preview" type="button">Open Preview</button><button data-context-action="shortlist" type="button">Shortlist for Slide</button><button data-context-action="select" type="button">Assign to next open slot</button><button data-context-action="alternate" type="button">Add as alternate</button><button data-context-action="reject" type="button">Reject for this Slide</button><hr/><button data-context-action="project-pick" type="button">Toggle Project Pick</button><button data-context-action="reveal" type="button">Reveal source</button>
+</menu>
+<div aria-live="polite" class="toast" id="toast" role="status"></div>

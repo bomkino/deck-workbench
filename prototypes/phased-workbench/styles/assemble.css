@@ -1,0 +1,338 @@
+/* Assemble */
+.assemble-view {
+  grid-template-columns: calc(220px * var(--ui-scale)) minmax(0, 1fr) calc(330px * var(--ui-scale));
+  grid-template-rows: minmax(0, 1fr) calc(140px * var(--ui-scale));
+  background: var(--stage);
+  color: var(--stage-text);
+}
+
+.assembly-slides {
+  grid-row: 1 / -1;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  border-right: 1px solid var(--stage-rule);
+  background: #151819;
+}
+
+.assembly-main {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.assembly-toolbar {
+  min-height: calc(58px * var(--ui-scale));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--stage-rule);
+  background: #121516;
+}
+
+.tool-group,
+.zoom-controls {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+
+.tool-group button,
+.zoom-controls button {
+  min-height: 38px;
+  padding-inline: 11px;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.tool-group button.is-active,
+.zoom-controls button.is-active {
+  background: var(--stage-text);
+  color: #111;
+}
+
+.zoom-controls span {
+  min-width: 48px;
+  text-align: center;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.stage-viewport {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 40%, rgb(255 255 255 / 0.045), transparent 34%),
+    #0a0c0d;
+}
+
+.stage-pan {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform-origin: 0 0;
+}
+
+.artboard {
+  position: relative;
+  width: 2576px;
+  height: 1080px;
+  overflow: hidden;
+  background: #111;
+  box-shadow: 0 40px 120px rgb(0 0 0 / 0.65);
+  transform-origin: 0 0;
+  user-select: none;
+}
+
+.image-layer,
+.gradient-layer,
+.pitch-grid,
+.interaction-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.image-layer {
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  transform-origin: center;
+  cursor: move;
+}
+
+.gradient-layer {
+  pointer-events: none;
+  z-index: 2;
+}
+
+.text-stack {
+  position: absolute;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 26px;
+  min-width: 240px;
+  min-height: 120px;
+  padding: 0;
+  color: #fff;
+  cursor: move;
+  outline: 0;
+}
+
+.text-stack.is-selected::after {
+  content: "";
+  position: absolute;
+  inset: -14px;
+  border: 4px solid #fff;
+  pointer-events: none;
+}
+
+.text-role {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.headline-role {
+  font-size: 128px;
+  font-weight: 680;
+  line-height: 0.94;
+  letter-spacing: -0.055em;
+}
+
+.subheadline-role {
+  font-size: 60px;
+  font-weight: 610;
+  line-height: 1.04;
+  letter-spacing: -0.025em;
+}
+
+.body-role {
+  font-size: 32px;
+  font-weight: 430;
+  line-height: 1.42;
+  letter-spacing: -0.006em;
+  column-fill: balance;
+}
+
+.resize-handle {
+  position: absolute;
+  right: -28px;
+  bottom: -28px;
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  min-height: 36px;
+  border: 4px solid #111;
+  background: #fff;
+  cursor: nwse-resize;
+}
+
+.pitch-grid {
+  z-index: 6;
+  pointer-events: none;
+}
+
+.interaction-overlay {
+  z-index: 7;
+  pointer-events: none;
+}
+
+.interaction-overlay .gradient-handle,
+.interaction-overlay .gradient-line {
+  pointer-events: all;
+}
+
+.gradient-line {
+  stroke: #fff;
+  stroke-width: 5;
+  filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.8));
+}
+
+.gradient-handle {
+  fill: #fff;
+  stroke: #111;
+  stroke-width: 5;
+  cursor: grab;
+}
+
+.slide-annotations {
+  position: absolute;
+  left: 18px;
+  top: 18px;
+  z-index: 8;
+  display: flex;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.annotation-pill {
+  padding: 8px 11px;
+  background: rgb(0 0 0 / 0.78);
+  color: #fff;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.artboard.clean-preview .pitch-grid,
+.artboard.clean-preview .interaction-overlay,
+.artboard.clean-preview .resize-handle,
+.artboard.clean-preview .slide-annotations,
+.artboard.clean-preview .text-stack::after {
+  display: none !important;
+}
+
+.assembly-inspector {
+  grid-column: 3;
+  grid-row: 1;
+  overflow: auto;
+  border-left: 1px solid var(--stage-rule);
+  background: #171a1c;
+}
+
+.assembly-inspector > header {
+  padding: calc(18px * var(--ui-scale));
+  border-bottom: 1px solid var(--stage-rule);
+}
+
+.assembly-inspector > header h2 {
+  margin-top: 5px;
+  font-size: calc(24px * var(--ui-scale));
+}
+
+.assembly-inspector > header p:last-child {
+  margin-top: 8px;
+  color: #adb5b8;
+  font-size: calc(10px * var(--ui-scale));
+  line-height: 1.4;
+}
+
+.assembly-inspector details {
+  border-bottom: 1px solid var(--stage-rule);
+}
+
+.assembly-inspector summary {
+  padding: calc(14px * var(--ui-scale)) calc(18px * var(--ui-scale));
+  cursor: pointer;
+  font-size: calc(11px * var(--ui-scale));
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.inspector-section {
+  display: grid;
+  gap: 12px;
+  padding: 0 calc(18px * var(--ui-scale)) calc(18px * var(--ui-scale));
+}
+
+.field-label {
+  font-size: calc(10px * var(--ui-scale));
+  font-weight: 750;
+}
+
+.token-row {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.token-row button {
+  min-width: 0;
+  min-height: 36px;
+  padding: 0;
+  font-size: calc(8px * var(--ui-scale));
+  font-weight: 800;
+}
+
+.token-row button.is-active {
+  background: #fff;
+  color: #111;
+}
+
+.two-button-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.preset-grid button {
+  min-height: 38px;
+  padding: 5px;
+  font-size: calc(9px * var(--ui-scale));
+}
+
+.preset-grid button.is-active {
+  background: #fff;
+  color: #111;
+}
+
+.switch-row {
+  display: flex;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.switch-row input {
+  width: auto;
+}
+
+.assembly-tray {
+  grid-column: 2 / 4;
+  grid-row: 2;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
