@@ -7,7 +7,7 @@
       content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' pitchdog-asset:; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#eef2f3" />
+    <meta name="theme-color" content="#e7edef" />
     <title>Deck Workbench</title>
     <link rel="icon" href="workbench-mark.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="styles.css" />
@@ -38,7 +38,7 @@
           <button type="button" data-phase="plan" aria-current="page"><span>01</span><strong>Plan</strong><small>Copy + intent</small></button>
           <button type="button" data-phase="curate"><span>02</span><strong>Curate</strong><small>Find + assign</small></button>
           <button type="button" data-phase="assemble"><span>03</span><strong>Assemble</strong><small>Compose + direct</small></button>
-          <button type="button" data-phase="handoff"><span>04</span><strong>Handoff</strong><small>Review + package</small></button>
+          <button type="button" data-phase="handoff"><span>04</span><strong>Handoff</strong><small>Review + PDF proof</small></button>
         </nav>
 
         <div class="toolbar-actions" aria-label="History and interface controls">
@@ -63,7 +63,7 @@
       </header>
 
       <section id="phase-workspaces" class="editorial-spine phase-workspaces" tabindex="-1">
-        <section class="phase-view plan-phase" data-phase-view="plan" aria-label="Plan phase">
+        <section class="phase-view plan-phase" data-phase-view="plan" aria-label="Plan phase" tabindex="-1">
           <nav class="sequence panel" aria-label="Deck sequence">
             <div class="panel-heading sequence-heading">
               <div>
@@ -112,11 +112,18 @@
                 <p class="panel-label">Selected Slide</p>
                 <h2 id="plan-editor-heading">No Slide selected</h2>
               </div>
-              <p id="revision" class="revision">Revision —</p>
+              <div class="editor-state">
+                <p id="plan-draft-state" class="plan-draft-state" role="status" aria-live="polite">Saved</p>
+                <p id="revision" class="revision">Revision —</p>
+              </div>
             </div>
             <div id="plan-empty" class="empty-workspace">
               <strong>Create or open a Deck.</strong>
               <p>Workbench begins after the writing has been divided into Slides.</p>
+              <div class="empty-actions">
+                <button id="create-deck" class="primary-action" type="button">New Deck…</button>
+                <button id="open-deck" type="button">Open Deck…</button>
+              </div>
             </div>
             <form id="plan-form" class="plan-form" hidden>
               <div class="form-row two-up">
@@ -135,15 +142,7 @@
                 <textarea id="slide-purpose" rows="3" placeholder="What must this Slide accomplish?"></textarea>
               </label>
 
-              <div class="form-row three-up">
-                <label>
-                  <span>Lifecycle</span>
-                  <select id="slide-lifecycle">
-                    <option value="included">Included</option>
-                    <option value="skipped">Skipped</option>
-                    <option value="cut">Cut Bin</option>
-                  </select>
-                </label>
+              <div class="form-row two-up">
                 <label>
                   <span>Text presence</span>
                   <select id="text-presence">
@@ -185,15 +184,15 @@
                 <div class="subheading-row">
                   <div>
                     <p class="panel-label">Exact copy</p>
-                    <h3 id="copy-heading">Markdown-preserving fields</h3>
+                    <h3 id="copy-heading">Exact Slide copy</h3>
                   </div>
-                  <p>Blank line = paragraph. Markdown links remain source text.</p>
+                  <p>Line breaks and Markdown links stay exactly as written.</p>
                 </div>
 
                 <label class="story-field primary-copy-field">
                   <span class="copy-label-row"><strong>Headline</strong><select id="headline-state" aria-label="Headline state"><option value="present">Present</option><option value="intentionally-blank">Intentionally blank</option><option value="unreviewed">Unreviewed</option></select></span>
                   <textarea id="headline" rows="5" disabled aria-describedby="save-state" placeholder="Create or open a Deck to begin."></textarea>
-                  <button id="commit-headline" type="button" disabled>Commit headline</button>
+                  <button id="commit-headline" type="button" disabled hidden>Commit headline</button>
                 </label>
 
                 <div id="additional-content" class="additional-content"></div>
@@ -215,7 +214,7 @@
           </aside>
         </section>
 
-        <section class="phase-view curate-phase" data-phase-view="curate" aria-label="Curate phase" aria-hidden="true">
+        <section class="phase-view curate-phase" data-phase-view="curate" aria-label="Curate phase" aria-hidden="true" tabindex="-1">
           <nav class="curate-queue panel" aria-labelledby="curate-queue-heading">
             <div class="panel-heading curate-queue-heading">
               <div>
@@ -234,14 +233,15 @@
           </nav>
 
           <section class="curate-main panel" aria-labelledby="media-wall-heading">
+            <h2 id="media-wall-heading" class="visually-hidden">Project media</h2>
             <header class="media-toolbar">
               <label class="media-search-control">
                 <span>Search media</span>
                 <input id="media-search" type="search" placeholder="Filename, folder, title or note" autocomplete="off" />
               </label>
               <label>
-                <span>Root</span>
-                <select id="media-root-filter" aria-label="Media Root"></select>
+                <span>Folder</span>
+                <select id="media-root-filter" aria-label="Media folder"></select>
               </label>
               <label>
                 <span>Type</span>
@@ -282,29 +282,35 @@
             </header>
 
             <div class="media-source-bar" aria-label="Media source controls">
-              <span id="media-root-status">No media Root authorised.</span>
+              <span id="media-root-status">No media folder connected.</span>
               <div>
-                <button id="authorise-media-root" type="button">Authorise Root…</button>
-                <button id="reconnect-media-root" type="button" disabled>Reconnect…</button>
-                <button id="scan-media-root" type="button" disabled>Scan</button>
-                <button id="reveal-media-source" type="button" disabled>Reveal source</button>
+                <button id="authorise-media-root" class="primary-action" type="button">Choose folder…</button>
+                <button id="reconnect-media-root" type="button" disabled>Locate…</button>
+                <button id="scan-media-root" type="button" disabled>Rescan</button>
+                <button id="reveal-media-source" type="button" disabled>Show folder</button>
               </div>
             </div>
 
             <div class="media-action-bar" aria-label="Focused Asset actions">
-              <span id="focused-asset-summary">No Asset focused</span>
-              <div class="project-media-actions" role="group" aria-label="Project-level Asset judgment">
-                <button id="toggle-project-pick" type="button" disabled aria-pressed="false">Project Pick</button>
-                <label><span>Project rating</span><select id="project-rating" disabled><option value="0">Unrated</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></label>
-                <label><span>Project review</span><select id="project-review" disabled><option value="unreviewed">Unreviewed</option><option value="keep">Keep</option><option value="maybe">Maybe</option><option value="reject">Reject</option></select></label>
+              <div class="media-action-heading">
+                <span id="focused-asset-summary">No Asset selected</span>
+                <details class="project-media-judgment">
+                  <summary>Project review</summary>
+                  <div class="project-media-actions" role="group" aria-label="Project-level Asset judgment">
+                    <button id="toggle-project-pick" type="button" disabled aria-pressed="false">Project Pick</button>
+                    <label><span>Rating</span><select id="project-rating" disabled><option value="0">Unrated</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></label>
+                    <label><span>Review</span><select id="project-review" disabled><option value="unreviewed">Unreviewed</option><option value="keep">Keep</option><option value="maybe">Maybe</option><option value="reject">Reject</option></select></label>
+                  </div>
+                </details>
               </div>
               <div class="slide-media-actions" role="group" aria-label="Current-Slide Asset decision">
+                <span class="action-scope">For this Slide</span>
                 <button id="preview-media" type="button" disabled aria-keyshortcuts="Space">Preview</button>
                 <button id="shortlist-media" type="button" disabled aria-keyshortcuts="S">Shortlist</button>
-                <button id="assign-primary-media" type="button" disabled aria-keyshortcuts="M">Primary</button>
-                <button id="alternate-media" type="button" disabled aria-keyshortcuts="A">Alternate</button>
-                <button id="reject-slide-media" type="button" disabled aria-keyshortcuts="X">Reject here</button>
-                <button id="clear-slide-media" type="button" disabled aria-keyshortcuts="Shift+X">Clear decision</button>
+                <button id="assign-primary-media" class="primary-action" type="button" disabled aria-keyshortcuts="M">Assign primary</button>
+                <button id="alternate-media" type="button" disabled aria-keyshortcuts="A">Use as alternate</button>
+                <button id="reject-slide-media" class="danger-action" type="button" disabled aria-keyshortcuts="X">Reject for Slide</button>
+                <button id="clear-slide-media" class="quiet-action" type="button" disabled aria-keyshortcuts="Shift+X">Clear Slide choice</button>
                 <button id="toggle-compare-media" type="button" disabled aria-pressed="false">Add to Compare</button>
                 <button id="open-media-compare" type="button" disabled aria-keyshortcuts="C">Compare <span id="compare-count">0</span></button>
               </div>
@@ -312,10 +318,10 @@
 
             <div class="media-grid-shell">
               <p id="media-keyboard-help" class="visually-hidden">Arrow keys navigate media. Space opens Preview. S shortlists. M assigns the next open primary slot. A adds an Alternate. X rejects only for this Slide. Shift X clears the current-Slide decision. Number keys zero through five set the project rating. N moves to the next unresolved Slide. P moves to the previous Slide. Plus and minus change thumbnail density. C opens Compare.</p>
-              <textarea id="media-focus-owner" class="media-focus-owner" rows="1" wrap="off" readonly role="grid" aria-label="Project media keyboard navigation" aria-describedby="media-keyboard-help" aria-readonly="true" aria-multiselectable="true" inputmode="none">No media loaded</textarea>
+              <div id="media-focus-owner" class="media-focus-owner" tabindex="0" role="listbox" aria-label="Project media keyboard navigation" aria-describedby="media-keyboard-help">No media loaded</div>
               <div id="media-scroll" class="media-scroll" tabindex="-1">
                 <div id="media-canvas" class="media-canvas"></div>
-                <div id="media-wall-state" class="media-wall-state" role="status" aria-live="polite">Authorise a project media Root to begin.</div>
+                <div id="media-wall-state" class="media-wall-state" role="status" aria-live="polite">Choose a project media folder to begin.</div>
               </div>
             </div>
           </section>
@@ -325,13 +331,15 @@
               <div><p class="panel-label">Selected Slide</p><h2 id="curate-brief-heading">No Slide selected</h2></div>
             </div>
             <div id="curate-brief-content" class="curate-brief-content"></div>
-            <form id="find-more-form" class="find-more-form">
-              <p class="panel-label">Find More Media</p>
-              <label><span>State</span><select id="find-more-state" disabled><option value="not-needed">Not needed</option><option value="needed">Needed</option><option value="resolved">Resolved</option><option value="waived">Waived</option></select></label>
-              <label><span>Existing Primary</span><select id="find-more-primary-status" disabled><option value="none">None</option><option value="temporary">Temporary</option><option value="usable">Usable</option><option value="approved">Approved</option></select></label>
-              <label><span>Research brief</span><textarea id="find-more-brief" rows="4" disabled placeholder="What exact media is still needed?"></textarea></label>
-              <button id="save-find-more" type="submit" disabled>Save Find More</button>
-            </form>
+            <details id="find-more-panel" class="find-more-panel">
+              <summary><span>Find more media</span><strong id="find-more-summary">Not needed</strong></summary>
+              <form id="find-more-form" class="find-more-form">
+                <label><span>State</span><select id="find-more-state" disabled><option value="not-needed">Not needed</option><option value="needed">Needed</option><option value="resolved">Resolved</option><option value="waived">Waived</option></select></label>
+                <label><span>Existing Primary</span><select id="find-more-primary-status" disabled><option value="none">None</option><option value="temporary">Temporary</option><option value="usable">Usable</option><option value="approved">Approved</option></select></label>
+                <label><span>Research brief</span><textarea id="find-more-brief" rows="4" disabled placeholder="What exact media is still needed?"></textarea></label>
+                <button id="save-find-more" class="primary-action" type="submit" disabled>Save Find More</button>
+              </form>
+            </details>
           </aside>
 
           <footer class="curate-tray panel" aria-label="Selected Slide media tray">
@@ -342,7 +350,7 @@
           </footer>
         </section>
 
-        <section class="phase-view assemble-phase stage" data-phase-view="assemble" aria-label="Assemble phase" aria-hidden="true">
+        <section class="phase-view assemble-phase stage" data-phase-view="assemble" aria-label="Assemble phase" aria-hidden="true" tabindex="-1">
           <header class="stage-toolbar">
             <div><p class="panel-label">03 / Assemble</p><h2>Rough visual direction</h2></div>
             <div class="stage-controls">
@@ -380,30 +388,30 @@
               </div>
             </section>
             <fieldset class="crop-controls" disabled>
-              <legend>Normalised image crop</legend>
-              <label><span>X</span><input id="crop-x" type="number" min="0" max="1" step="0.01" value="0" /></label>
-              <label><span>Y</span><input id="crop-y" type="number" min="0" max="1" step="0.01" value="0" /></label>
-              <label><span>W</span><input id="crop-width" type="number" min="0.01" max="1" step="0.01" value="1" /></label>
-              <label><span>H</span><input id="crop-height" type="number" min="0.01" max="1" step="0.01" value="1" /></label>
+              <legend>Image crop · percent</legend>
+              <label><span>Left</span><input id="crop-x" type="number" min="0" max="100" step="1" value="0" inputmode="decimal" /></label>
+              <label><span>Top</span><input id="crop-y" type="number" min="0" max="100" step="1" value="0" inputmode="decimal" /></label>
+              <label><span>Width</span><input id="crop-width" type="number" min="1" max="100" step="1" value="100" inputmode="decimal" /></label>
+              <label><span>Height</span><input id="crop-height" type="number" min="1" max="100" step="1" value="100" inputmode="decimal" /></label>
               <button id="apply-crop" type="button">Apply crop</button>
             </fieldset>
           </aside>
         </section>
 
-        <section class="phase-view handoff-phase" data-phase-view="handoff" aria-label="Handoff phase" aria-hidden="true">
+        <section class="phase-view handoff-phase" data-phase-view="handoff" aria-label="Handoff phase" aria-hidden="true" tabindex="-1">
           <header class="phase-introduction panel">
             <p class="panel-label">04 / Handoff</p>
-            <h2>Can the designer proceed without reconstructing us?</h2>
-            <p>Concrete Plan readiness now. Full designer packaging follows after Curate and Assemble production slices.</p>
+            <h2>What still blocks the next person?</h2>
+            <p>This pre-alpha checks Plan readiness and exports the active Slide as a PDF proof. A full designer package is not available yet.</p>
           </header>
           <section class="handoff-review panel">
             <div id="handoff-summary" class="handoff-summary"></div>
             <div id="handoff-list" class="handoff-list"></div>
           </section>
           <aside class="handoff-actions panel">
-            <p class="panel-label">Current export</p>
-            <h3>One-page PDF proof</h3>
-            <p>The existing native PDF route remains intact while the full Handoff package is built.</p>
+            <p class="panel-label">Available now</p>
+            <h3>Active Slide PDF proof</h3>
+            <p>Use this for review only. It is not a designer handoff package.</p>
             <button id="export-pdf" class="primary-action" type="button" disabled>Export active Slide PDF</button>
           </aside>
         </section>
@@ -437,7 +445,6 @@
         <button type="button" role="menuitem" data-media-context-action="compare">Add to Compare</button>
         <button type="button" role="menuitem" data-media-context-action="reveal">Reveal source</button>
       </div>
-      <p id="curate-status" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></p>
     </main>
   </body>
 </html>

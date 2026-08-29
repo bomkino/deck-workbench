@@ -2,7 +2,7 @@
 
 ## Status
 
-In progress on `codex/workbench-phased-rebuild`.
+Source slice complete; packaged acceptance remains open.
 
 This is the next production gate after the shared Plan workspace. It replaces the neutral Asset-reference placeholder with a durable, source-authorized Curate workflow while preserving the schema-1 Deck, journalled history and ten-method native bridge.
 
@@ -77,6 +77,6 @@ The packaged gate requires the same exact commit to pass macOS and Ubuntu packag
 
 The source slice implements the Deck-owned Curate commands/projections, Deck-bound portable catalogue, conservative reconciliation, bounded revision-pinned queries, 10,240-Asset virtual-wall fixture, four-region renderer, and native root/session seams. This is not yet the packaged Production Curate acceptance claim.
 
-The combined candidate tree passed generation, 218/218 portable tests, source-contract verification, repository verification and the self-contained phased-preview gate on 2026-08-29. The exact command evidence and claim boundary are recorded in `docs/evidence/WB-F02-PRODUCTION-CURATE-SOURCE-2026-08-29.md`.
+The release candidate passed generation, 225/225 portable tests, source-contract verification, repository verification and the self-contained phased-preview gate on 2026-08-29. The exact command evidence and claim boundary are recorded in `docs/evidence/WB-F02-PRODUCTION-CURATE-SOURCE-2026-08-29.md`.
 
 The gate remains open until production Job/cancellation state and crash recovery are implemented, host platform observations are removed from the portable catalogue boundary, large-history interaction cost is bounded, and target-machine evidence proves bounded generated previews, package reopen with a real authorised Root on both macOS and Ubuntu, cross-host Deck/catalog round-trip, and the exact-head packaged journey. The package scripts record Curate as `unverified` unless an authentic native journey result is supplied; source tests cannot promote that state.

@@ -141,7 +141,25 @@ async function renderProjection(projection) {
   )
 }
 
+async function flushWorkspaceDrafts() {
+  if (!activePackagePath || !mainWindow || mainWindow.isDestroyed()) return { saved: true }
+  const result = await mainWindow.webContents.executeJavaScript(
+    'globalThis.deckWorkbench.saveDrafts()',
+    true,
+  )
+  if (result?.saved !== true) {
+    throw namedError('UnsavedWorkspaceDraft', 'Save the highlighted Slide draft before leaving this Deck')
+  }
+  return result
+}
+
+async function saveDocument() {
+  await flushWorkspaceDrafts()
+  return utility.request('document.save')
+}
+
 async function createDocument(packagePath) {
+  await flushWorkspaceDrafts()
   const projection = await utility.request('document.create', {
     packagePath,
     seed: seedFor(basename(packagePath, '.pitchdeck')),
@@ -160,6 +178,7 @@ async function createDocument(packagePath) {
 }
 
 async function openDocument(packagePath) {
+  await flushWorkspaceDrafts()
   const projection = await utility.request('document.open', { packagePath })
   try {
     await activateMediaSession(packagePath)
@@ -277,6 +296,7 @@ async function presentPDFExport() {
     filters: [{ name: 'PDF', extensions: ['pdf'] }],
   })
   if (result.canceled || !result.filePath) throw namedError('JobCancelled', 'PDF export was cancelled')
+  await flushWorkspaceDrafts()
   await exportOnePagePDF(result.filePath)
   return { url: pathToFileURL(result.filePath).href }
 }
@@ -572,8 +592,34 @@ async function createWindow({ hidden = false } = {}) {
   window.webContents.on('will-navigate', (event, target) => {
     if (target !== 'pitchdog-ui://workspace/index.html') event.preventDefault()
   })
-  await window.loadURL('pitchdog-ui://workspace/index.html')
-  return window
+  let allowClose = false
+  window.on('close', (event) => {
+    if (hidden || allowClose || !activePackagePath || quitAfterCheckpoint) return
+    event.preventDefault()
+    if (pendingQuit) return
+    pendingQuit = flushWorkspaceDrafts()
+      .then(() => utility.request('document.close'))
+      .then(() => {
+        activePackagePath = null
+        abandonMediaSession()
+        quitAfterCheckpoint = true
+        allowClose = true
+        window.close()
+      })
+      .catch((error) => {
+        pendingQuit = null
+        return presentNativeFailure(error)
+      })
+  })
+  mainWindow = window
+  try {
+    await window.loadURL('pitchdog-ui://workspace/index.html')
+    return window
+  } catch (error) {
+    if (mainWindow === window) mainWindow = null
+    if (!window.isDestroyed()) window.destroy()
+    throw error
+  }
 }
 
 async function invokeInWorkspace(javaScriptName, payload = {}) {
@@ -940,7 +986,7 @@ function installMenu() {
       submenu: [
         { label: 'New Deck…', accelerator: 'CmdOrCtrl+N', click: () => void performNativeAction(presentNewDocument, presentNativeFailure) },
         { label: 'Open Deck…', accelerator: 'CmdOrCtrl+O', click: () => void performNativeAction(presentOpenDocument, presentNativeFailure) },
-        { label: 'Save', accelerator: 'CmdOrCtrl+S', click: () => void performNativeAction(() => utility.request('document.save'), presentNativeFailure) },
+        { label: 'Save', accelerator: 'CmdOrCtrl+S', click: () => void performNativeAction(saveDocument, presentNativeFailure) },
         { label: 'Close Deck', accelerator: 'CmdOrCtrl+W', click: () => void performNativeAction(closeDocument, presentNativeFailure) },
         { type: 'separator' },
         { label: 'Export PDF…', click: () => void performNativeAction(presentPDFExport, presentNativeFailure) },
@@ -978,6 +1024,7 @@ function installMenu() {
 
 async function closeDocument() {
   if (!activePackagePath) return
+  await flushWorkspaceDrafts()
   await utility.request('document.close')
   abandonMediaSession()
   activePackagePath = null
@@ -1065,16 +1112,18 @@ async function start() {
 
 app.on('window-all-closed', () => app.quit())
 app.on('before-quit', (event) => {
-  abandonMediaSession()
   if (!utility || quitAfterCheckpoint) {
+    abandonMediaSession()
     if (utility) utility.shutdown()
     return
   }
   event.preventDefault()
   if (pendingQuit) return
-  pendingQuit = utility.request('document.close')
+  pendingQuit = flushWorkspaceDrafts()
+    .then(() => utility.request('document.close'))
     .then(() => {
       quitAfterCheckpoint = true
+      abandonMediaSession()
       utility.shutdown()
       app.quit()
     })

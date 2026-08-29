@@ -70,6 +70,20 @@ final class BridgeCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDel
         )
     }
 
+    func saveDrafts() async throws -> [String: Any] {
+        guard let webView else { throw WorkbenchFailure(name: "WorkspaceUnavailable", message: "WebView is unavailable") }
+        let raw = try await webView.callAsyncJavaScript(
+            "return await deckWorkbench.saveDrafts()",
+            arguments: [:],
+            in: nil,
+            contentWorld: .page
+        )
+        guard let result = raw as? [String: Any] else {
+            throw WorkbenchFailure(name: "WorkspaceUnavailable", message: "Workspace draft result is invalid")
+        }
+        return result
+    }
+
     func writeOnePagePDF(to destination: URL) async throws {
         guard let webView else { throw WorkbenchFailure(name: "WorkspaceUnavailable", message: "WebView is unavailable") }
         let rawFrame = try await webView.callAsyncJavaScript(

@@ -18,6 +18,14 @@ function semanticSequenceTargetForNode(active) {
     : null
 }
 
+function semanticMapTargetForNode(active) {
+  const action = active?.closest?.('[data-map-action]')
+  const card = action?.closest?.('[data-map-slide-id]')
+  return action && card
+    ? { mapSlideId: card.dataset.mapSlideId, mapAction: action.dataset.mapAction }
+    : null
+}
+
 function storyFocusState() {
   const field = activeStoryFocusBlockId ? storyField(activeStoryFocusBlockId) : null
   return Object.freeze({
@@ -30,6 +38,8 @@ function workspaceFocusTarget(active) {
   if (!active || active === document.body || active === document.documentElement) return null
   const sequence = semanticSequenceTargetForNode(active)
   if (sequence?.sequenceKind && sequence?.sequenceId) return sequence
+  const map = semanticMapTargetForNode(active)
+  if (map?.mapSlideId && map?.mapAction) return map
   if (active === elements.mediaFocusOwner && curateFocusedAssetId()) {
     return { mediaAssetId: curateFocusedAssetId() }
   }
@@ -64,6 +74,11 @@ function expectedWorkspaceFocus() {
 function workspaceFocusNode(target) {
   if (!target) return null
   if (target.sequenceKind && target.sequenceId) return sequenceFocusElement()
+  if (target.mapSlideId && target.mapAction) {
+    return elements.deckMap.querySelector(
+      `[data-map-slide-id="${CSS.escape(target.mapSlideId)}"] [data-map-action="${CSS.escape(target.mapAction)}"]`,
+    )
+  }
   if (target.mediaAssetId) return elements.mediaFocusOwner
   if (target.blockId) return storyField(target.blockId)
   if (target.headline) return elements.headline
@@ -76,6 +91,9 @@ function focusWorkspaceNode(node, target) {
     const restored = focusSequenceTarget({ kind: target.sequenceKind, id: target.sequenceId })
     if (restored) rememberWorkspaceFocus(target)
     return restored
+  }
+  if (target?.mapSlideId && target?.mapAction) {
+    activeStoryFocusBlockId = null
   }
   if (target?.mediaAssetId) {
     activeStoryFocusBlockId = null
@@ -133,7 +151,14 @@ document.addEventListener('keydown', recordTrustedWorkspaceInteraction, true)
 document.addEventListener('focusin', (event) => {
   if (applyingWorkspaceFocus) return
   const target = workspaceFocusTarget(event.target)
-  if (target) rememberWorkspaceFocus(target)
+  if (target) {
+    rememberWorkspaceFocus(target)
+    return
+  }
+  workspaceExpectedFocus = null
+  workspaceExpectedFocusGeneration = workspaceInteractionGeneration
+  activeStoryFocusBlockId = null
+  cancelWorkspaceFocusLease()
 }, true)
 
 function scheduleWorkspaceFocusLease(target) {
@@ -204,6 +229,13 @@ const renderPlanEditorWithoutFocusPreservation = renderPlanEditor
 renderPlanEditor = function renderPlanEditorWithFocusPreservation() {
   const target = captureWorkspaceFocus() ?? expectedWorkspaceFocus()
   renderPlanEditorWithoutFocusPreservation()
+  restoreWorkspaceFocus(target)
+}
+
+const renderDeckMapWithoutFocusPreservation = renderDeckMap
+renderDeckMap = function renderDeckMapWithFocusPreservation() {
+  const target = captureWorkspaceFocus() ?? expectedWorkspaceFocus()
+  renderDeckMapWithoutFocusPreservation()
   restoreWorkspaceFocus(target)
 }
 

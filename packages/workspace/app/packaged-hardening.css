@@ -61,10 +61,6 @@ select {
   background: var(--ink);
   color: var(--paper-strong);
 }
-.sequence-list .slide-row[aria-disabled="true"] {
-  opacity: 0.48;
-}
-
 @media print {
   .phase-view { visibility: hidden !important; opacity: 0 !important; pointer-events: none !important; }
   .assemble-phase { visibility: visible !important; opacity: 1 !important; pointer-events: auto !important; }

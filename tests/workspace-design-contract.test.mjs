@@ -2,11 +2,12 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
-const [html, styles, hardening, mark, linuxHost, schemeHandler, macBuild, workspaceBuild, macIconBuild, macInfo, linuxIcon] = await Promise.all([
+const [html, styles, hardening, mark, workspace, linuxHost, schemeHandler, macBuild, workspaceBuild, macIconBuild, macInfo, linuxIcon] = await Promise.all([
   readFile(new URL('../packages/workspace/app/index.html', import.meta.url), 'utf8'),
   readFile(new URL('../packages/workspace/app/styles.css', import.meta.url), 'utf8'),
   readFile(new URL('../packages/workspace/app/packaged-hardening.css', import.meta.url), 'utf8'),
   readFile(new URL('../packages/workspace/app/workbench-mark.svg', import.meta.url), 'utf8'),
+  readFile(new URL('../packages/workspace/app/workspace.js', import.meta.url), 'utf8'),
   readFile(new URL('../apps/linux/main.mjs', import.meta.url), 'utf8'),
   readFile(new URL('../apps/macos/Sources/WorkspaceSchemeHandler.swift', import.meta.url), 'utf8'),
   readFile(new URL('../scripts/build-macos.sh', import.meta.url), 'utf8'),
@@ -24,8 +25,8 @@ test('every static shared-workspace action declares its button behaviour explici
 
 test('every packaged control retains at least a 44 pixel target at every Interface Scale step', () => {
   const root = styles.match(/:root \{([\s\S]*?)\n\}/)?.[1] ?? ''
-  assert.match(root, /--control-size:\s*max\(3\.25rem, 44px\)/)
-  for (const scale of [0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75]) assert.ok(Math.max(3.25 * 16 * scale, 44) >= 44)
+  assert.match(root, /--control-size:\s*max\(2\.75rem, 44px\)/)
+  for (const scale of [0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75]) assert.ok(Math.max(2.75 * 16 * scale, 44) >= 44)
   assert.match(styles, /font-size: calc\(16px \* var\(--interface-scale\)\)/)
   assert.match(styles, /button, input, select, textarea, \.slide-row, \.section-row \{ min-height: var\(--control-size\); \}/)
   assert.match(hardening, /select \{[\s\S]*-webkit-appearance: none;[\s\S]*height: var\(--control-size\);[\s\S]*min-height: var\(--control-size\);/)
@@ -74,4 +75,12 @@ test('hierarchy is four task-specific mini-apps rather than a generic dashboard'
   assert.match(styles, /border-bottom: 2px solid var\(--rule\)/)
   assert.match(styles, /radial-gradient\(circle at 50% 40%/)
   assert.doesNotMatch(styles, /border-radius:\s*(?:0\.)?[5-9]\d?rem/)
+})
+
+test('empty Plan state offers direct New and Open actions', () => {
+  assert.match(html, /id="create-deck"[^>]+type="button"[^>]*>New Deck…<\/button>/)
+  assert.match(html, /id="open-deck"[^>]+type="button"[^>]*>Open Deck…<\/button>/)
+  assert.match(workspace, /presentDocumentAction\('create', 'Creating Deck…'\)/)
+  assert.match(workspace, /presentDocumentAction\('open', 'Opening Deck…'\)/)
+  assert.match(workspace, /error\?\.name === 'JobCancelled'/)
 })

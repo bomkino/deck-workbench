@@ -634,9 +634,9 @@ enum PackagedTracer {
               let documentWidth = (scaleReflow["documentWidth"] as? NSNumber)?.doubleValue,
               documentWidth <= viewportWidth + 1,
               scaleReflow["layout1440At150"] as? String == "two-column",
-              scaleReflow["layout1440At175"] as? String == "two-column",
+              scaleReflow["layout1440At175"] as? String == "single-column",
               scaleReflow["layout1512At150"] as? String == "two-column",
-              scaleReflow["layout1512At175"] as? String == "two-column",
+              scaleReflow["layout1512At175"] as? String == "single-column",
               let targetSizesByScale = scaleReflow["targetSizesByScale"] as? [[String: Any]],
               targetSizesByScale.count == 7,
               targetSizesByScale.allSatisfy({ (($0["targetCount"] as? NSNumber)?.intValue ?? 0) > 0

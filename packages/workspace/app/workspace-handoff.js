@@ -4,7 +4,9 @@ function bindHandoffEvents() {
     if (!row) return
     selectedSlideId = row.dataset.handoffSlideId
     activePhase = 'plan'
-    void refreshWorkspace(selectedSlideId)
+    void refreshWorkspace(selectedSlideId).then((next) => {
+      if (next?.slide?.id === selectedSlideId) elements.internalTitle.focus({ preventScroll: true })
+    })
   })
   elements.exportPDF.addEventListener('click', async () => {
     if (!projection) return
@@ -25,6 +27,9 @@ function renderHandoff() {
   const included = records.filter((record) => record.metadata.lifecycle === 'included')
   const counts = { ready: 0, review: 0, blocked: 0 }
   for (const record of included) counts[planReadiness(record).state] += 1
+  elements.exportPDF.textContent = projection
+    ? `Export ${projection.slide?.internalTitle ?? projection.headline?.plainText ?? 'active Slide'} PDF`
+    : 'Export active Slide PDF'
   elements.handoffSummary.innerHTML = [
     summaryChip(included.length, 'Included'),
     summaryChip(counts.ready, 'Ready'),
@@ -41,7 +46,7 @@ function renderHandoff() {
     const number = record.metadata.lifecycle === 'included' ? String(page++).padStart(2, '0') : '—'
     return `<button class="handoff-row" data-handoff-slide-id="${escapeAttribute(record.slide.id)}" type="button">
       <strong>${number}</strong>
-      <span><strong>${escapeHTML(record.metadata.internalTitle || 'Untitled Slide')}</strong><small>${escapeHTML(record.metadata.purpose || readiness.issues[0]?.message || 'Purpose not written.')}</small></span>
+      <span><strong>${escapeHTML(record.metadata.internalTitle || 'Untitled Slide')}</strong><small>${escapeHTML(readiness.issues[0]?.message || record.metadata.purpose || 'No current blocker.')}</small></span>
       <span class="readiness-pill ${readiness.state}">${readiness.state}</span>
     </button>`
   }).join('')

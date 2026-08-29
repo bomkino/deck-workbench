@@ -7,7 +7,9 @@ A local-first, story-first application for prototyping, reviewing and handing of
 
 ## Status
 
-Pre-alpha. `main` is the canonical source branch. `DW-T00` proves the first integrated Apple-Silicon Story Document tracer. The bounded `DW-W01` work adds durable Deck/Section/Slide structure, ordering, intent and semantic Content Blocks. `DW-G01` adds a sandboxed Electron/utility-process Linux shell and exact x86-64 tarball, Arch-package and AppImage gates on Ubuntu/X11.
+Pre-alpha. `main` is the canonical source branch. The shared Workbench now centres four task workspaces: Plan, Curate, Assemble and Handoff. Production Plan uses the durable Deck command seam and protects unsaved work per Slide. The bounded Production Curate source slice adds an authorised, progressively loaded media workflow while keeping project judgment separate from per-Slide decisions. Assemble remains an authored preview surface; Handoff reviews readiness and exports the active Slide PDF only.
+
+`DW-T00` proves the first integrated Apple-Silicon Story Document tracer. `DW-W01` adds durable Deck/Section/Slide structure, ordering, intent and semantic Content Blocks. `DW-G01` adds a sandboxed Electron/utility-process Linux shell and exact x86-64 tarball, Arch-package and AppImage gates on Ubuntu/X11. Production Curate's authentic packaged Root/reopen journey remains explicitly unverified, so this release is not a production-readiness claim.
 
 The automated macOS and Ubuntu package journeys are binding repository gates. Target-machine Garuda/KDE/Wayland and interactive macOS accessibility checks are explicitly waived for source promotion to `main`; they remain unverified and are not release claims. See [`docs/03-build/RELEASE_DEFINITION.md`](docs/03-build/RELEASE_DEFINITION.md).
 
@@ -86,4 +88,4 @@ Deck Workbench is designed to work offline and collect nothing. Private decks, c
 
 ## Interface character
 
-Workbench uses an oversized editorial desk rather than a compact dashboard: 48 px baseline controls, scale-aware spacing, hard rules, a light paper workspace, and a dark focused stage. Interface Scale changes the complete chrome geometry while Artboard Zoom remains independent. The project mark follows the pitch.dog illustration law: one imperfect frame, one impossible coral cord, and enough negative space to stay legible at favicon size.
+Workbench uses an editorial desk rather than a generic dashboard: a 44 px physical control floor, compact scale-aware working chrome, hard rules, a light paper workspace, and a dark focused stage. Interface Scale changes the complete chrome geometry while Artboard Zoom remains independent. The project mark follows the pitch.dog illustration law: one imperfect frame, one impossible coral cord, and enough negative space to stay legible at favicon size.

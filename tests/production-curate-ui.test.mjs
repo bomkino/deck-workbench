@@ -41,7 +41,7 @@ test('Production Curate renders four stable regions and bounded host-owned previ
     assert.match(html, new RegExp(`id="${id}"`))
   }
   assert.match(styles, /grid-template-areas: "queue wall brief" "tray tray tray"/)
-  assert.match(styles, /grid-template-rows: minmax\(0, 1fr\) minmax\(9\.5rem, 24vh\)/)
+  assert.match(styles, /grid-template-rows: minmax\(0, 1fr\) minmax\(7rem, 16vh\)/)
   assert.match(html, /img-src 'self' pitchdog-asset:/)
   assert.doesNotMatch(html, /img-src[^;]*(?:data:|blob:)/)
   assert.match(curate, /candidate\.startsWith\('pitchdog-asset:'\)/)
@@ -85,6 +85,8 @@ test('focus within a mounted media window preserves keyed cards and preview imag
   assert.match(reconcile, /staleCard\.remove\(\)/)
   const updateCard = functionSource(curate, 'updateCurateMediaCard', 'createCurateMediaCard')
   assert.match(updateCard, /card\.dataset\.renderSignature === signature/)
+  assert.match(curate, /function curateMediaCardRenderSignature[\s\S]*curateCompareIds\.includes\(asset\.id\)/)
+  assert.doesNotMatch(html, /id="curate-status"/)
 })
 
 test('Curate uses exact bridge seams and keeps project judgment separate from current-Slide decisions', () => {
@@ -173,7 +175,12 @@ test('cross-Slide phase entry publishes only matching bounded-retry snapshots', 
 })
 
 test('media focus remains a stable composite while cards recycle', () => {
-  assert.match(html, /id="media-focus-owner"[\s\S]*role="grid"[\s\S]*aria-describedby="media-keyboard-help"/)
+  assert.match(html, /id="media-focus-owner"[\s\S]*role="listbox"[\s\S]*aria-describedby="media-keyboard-help"/)
+  assert.doesNotMatch(html, /aria-multiselectable/)
+  assert.match(curate, /card\.setAttribute\('role', 'option'\)/)
+  assert.match(curate, /const active = card\.dataset\.assetId === curateFocusedMediaId[\s\S]*aria-selected', String\(active\)/)
+  assert.match(curate, /aria-posinset/)
+  assert.match(curate, /aria-setsize/)
   assert.match(curate, /aria-activedescendant/)
   assert.match(curate, /aria-owns/)
   assert.match(curate, /ArrowLeft/)
@@ -223,13 +230,13 @@ test('context actions and deferred media-root operations cannot strand or cross 
 })
 
 test('default four-region layout keeps Curate controls inside the 1440px wall', () => {
-  assert.match(styles, /\.media-toolbar \{[^}]*grid-template-columns: repeat\(12, minmax\(0, 1fr\)\)/)
+  assert.match(styles, /\.media-toolbar \{[^}]*grid-template-columns: minmax\(12rem, 2fr\) repeat\(4, minmax\(6rem, 1fr\)\) minmax\(8rem, 1\.2fr\) auto/)
   assert.match(styles, /\.media-toolbar > label \{ min-width: 0;/)
   assert.match(styles, /\.media-source-bar \{[^}]*flex-wrap: wrap/)
-  assert.match(styles, /\.project-media-actions, \.slide-media-actions \{[^}]*flex-wrap: wrap/)
-  assert.match(styles, /\.media-action-bar \{[^}]*grid-template-columns: minmax\(10rem, 0\.6fr\) minmax\(0, 1fr\)/)
+  assert.match(styles, /\.slide-media-actions \{[^}]*flex-wrap: wrap/)
+  assert.match(styles, /\.media-action-bar \{[^}]*grid-template-columns: minmax\(10rem, 0\.44fr\) minmax\(0, 1fr\)/)
   assert.doesNotMatch(styles, /\.media-action-bar \{[^}]*auto auto/)
-  assert.match(styles, /\.slide-media-actions \{ grid-column: 1 \/ -1; \}/)
+  assert.match(styles, /\.project-media-judgment \{ position: relative;/)
 })
 
 test('shared workspace build preserves Curate script order', () => {

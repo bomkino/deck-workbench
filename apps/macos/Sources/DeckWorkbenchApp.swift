@@ -1,6 +1,33 @@
+import AppKit
 import SwiftUI
 
+@MainActor
+final class WorkbenchAppDelegate: NSObject, NSApplicationDelegate {
+    weak var controller: DeckSessionController?
+    private var terminationPending = false
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard controller?.hasDocument == true else { return .terminateNow }
+        if terminationPending { return .terminateLater }
+        terminationPending = true
+        Task { @MainActor in
+            do {
+                try await controller?.closeDocument()
+                sender.reply(toApplicationShouldTerminate: true)
+            } catch {
+                if let controller {
+                    await controller.perform { throw error }
+                }
+                terminationPending = false
+                sender.reply(toApplicationShouldTerminate: false)
+            }
+        }
+        return .terminateLater
+    }
+}
+
 struct DeckWorkbenchApp: App {
+    @NSApplicationDelegateAdaptor(WorkbenchAppDelegate.self) private var appDelegate
     @StateObject private var controller: DeckSessionController
 
     init() {
@@ -11,6 +38,7 @@ struct DeckWorkbenchApp: App {
             fatalError(WorkbenchFailure.unexpected(error).errorDescription ?? "Deck Workbench could not start")
         }
         _controller = StateObject(wrappedValue: initializedController)
+        appDelegate.controller = initializedController
     }
 
     var body: some Scene {
@@ -30,13 +58,14 @@ struct DeckWorkbenchApp: App {
                 }
                 .keyboardShortcut("o")
                 Button("Save") {
-                    Task { await controller.perform { try controller.save() } }
+                    Task { await controller.perform { try await controller.saveFromUser() } }
                 }
                     .keyboardShortcut("s")
                     .disabled(!controller.hasDocument)
                 Button("Close Deck") {
                     Task { await controller.perform { try await controller.closeDocument() } }
                 }
+                .keyboardShortcut("w")
                 .disabled(!controller.hasDocument)
             }
             CommandGroup(replacing: .undoRedo) {
@@ -140,12 +169,14 @@ struct WorkbenchRootView: View {
                 .accessibilityLabel("Open Deck")
 
                 Button {
-                    Task { await controller.perform { try controller.save() } }
+                    Task { await controller.perform { try await controller.saveFromUser() } }
                 } label: {
                     Label("Save", systemImage: "square.and.arrow.down")
                         .frame(minWidth: 44, minHeight: 44)
                 }
                 .disabled(!controller.hasDocument)
+                .help("Save the current Deck")
+                .accessibilityLabel("Save Deck")
 
                 Button {
                     Task { await controller.perform { try await controller.closeDocument() } }
@@ -154,6 +185,8 @@ struct WorkbenchRootView: View {
                         .frame(minWidth: 44, minHeight: 44)
                 }
                 .disabled(!controller.hasDocument)
+                .help("Close the current Deck")
+                .accessibilityLabel("Close Deck")
 
                 Divider()
                     .frame(height: 24 * shellScale)
@@ -179,6 +212,7 @@ struct WorkbenchRootView: View {
                     .lineLimit(1)
                     .accessibilityLabel("Document status")
                     .accessibilityValue(controller.status)
+                    .accessibilityLiveRegion(.polite)
 
                 Button {
                     Task { await controller.perform { _ = try await controller.presentPDFExport() } }
@@ -187,6 +221,8 @@ struct WorkbenchRootView: View {
                         .frame(minWidth: 44, minHeight: 44)
                 }
                 .disabled(!controller.hasDocument)
+                .help("Export the active Slide as a review PDF")
+                .accessibilityLabel("Export active Slide review PDF")
             }
             .buttonStyle(.bordered)
             .labelStyle(AdaptiveToolbarLabelStyle(compact: shellScale >= 1.5))

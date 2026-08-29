@@ -46,6 +46,16 @@ test('Linux BrowserWindow contract denies renderer privileges', async () => {
   assert.match(source, /appendSwitch\('disable-background-networking'\)/)
   assert.match(source, /webRequest\.onBeforeRequest/)
   assert.equal(source.includes('net.fetch('), false)
+
+  const createWindow = source.slice(
+    source.indexOf('async function createWindow'),
+    source.indexOf('async function invokeInWorkspace'),
+  )
+  assert.ok(
+    createWindow.indexOf('mainWindow = window') < createWindow.indexOf("await window.loadURL('pitchdog-ui://workspace/index.html')"),
+    'the workspace window must be trusted before its first boot-time bridge call',
+  )
+  assert.match(createWindow, /if \(mainWindow === window\) mainWindow = null/)
 })
 
 test('utility FIFO admits one concurrent revision and leaves a replayable journal', async (t) => {
@@ -197,6 +207,12 @@ test('every asynchronous native menu action uses the shared failure presenter', 
   assert.match(menu, /setInterfaceScaleFromMenu\(value\), presentNativeFailure/)
   assert.match(source, /status\.textContent =/)
   assert.match(source, /dialog\.showMessageBox\(mainWindow/)
+  assert.match(source, /async function flushWorkspaceDrafts\(\)[\s\S]*deckWorkbench\.saveDrafts\(\)/)
+  assert.match(menu, /label: 'Save'[\s\S]*performNativeAction\(saveDocument, presentNativeFailure\)/)
+  assert.match(source, /async function closeDocument\(\) \{[\s\S]*await flushWorkspaceDrafts\(\)[\s\S]*document\.close/)
+  assert.match(source, /async function presentPDFExport\(\)[\s\S]*showSaveDialog[\s\S]*if \(result\.canceled[\s\S]*await flushWorkspaceDrafts\(\)[\s\S]*exportOnePagePDF/)
+  assert.match(source, /app\.on\('before-quit'[\s\S]*flushWorkspaceDrafts\(\)[\s\S]*document\.close/)
+  assert.match(source, /window\.on\('close'[\s\S]*event\.preventDefault\(\)[\s\S]*flushWorkspaceDrafts\(\)[\s\S]*window\.close\(\)/)
 })
 
 test('packaged tracer exposes deterministic create and fresh-process reopen phases', async () => {

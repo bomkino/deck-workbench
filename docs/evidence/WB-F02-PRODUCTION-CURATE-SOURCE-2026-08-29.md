@@ -36,10 +36,10 @@ The Deck-bound `media/catalog.json` preserves stable Asset, Source, Source Revis
 
 | Command | Exit | Result |
 |---|---:|---|
-| `npm run verify` | 0 | generation passed; 218/218 tests passed; source contract, repository rules and self-contained phased preview passed |
+| `npm run verify` | 0 | generation passed; 225/225 tests passed; source contract, repository rules and self-contained phased preview passed |
 | `git diff --check` | 0 | no whitespace errors |
 
-Focused adversarial runs also passed: kernel 41/41, native media-host 26/26 and Production Curate UI 13/13. The complete 218-test run is the binding local source result.
+Focused adversarial runs also passed: kernel 41/41, native media-host 26/26 and Production Curate UI 13/13. The complete 225-test run is the binding local source result.
 
 ## Packaged artifact
 
@@ -61,7 +61,7 @@ Independent adversarial review found and the candidate fixed:
 - ambiguous Workbench Plan blocks and forged undo/redo replay identities;
 - contradictory packaged-journey evidence accepted by the verifier.
 
-The final HIGH-only renderer review reported no remaining blocker or high-severity finding.
+A fresh user-journey review then found and fixed draft loss, scaled-layout clipping, ambiguous action hierarchy, hidden state, composite-focus errors and overclaimed Handoff language. The follow-up evidence is recorded in `WORKBENCH-UI-UX-RELEASE-PASS-2026-08-29.md`.
 
 ## Honest status
 

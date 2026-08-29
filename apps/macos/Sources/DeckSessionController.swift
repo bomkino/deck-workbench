@@ -11,6 +11,7 @@ extension UTType {
 protocol WorkspaceProjectionSink: AnyObject {
     func renderProjection(_ projection: [String: Any]) async throws
     func clearProjection() async throws
+    func saveDrafts() async throws -> [String: Any]
     func writeOnePagePDF(to destination: URL) async throws
 }
 
@@ -71,7 +72,8 @@ final class DeckSessionController: ObservableObject {
         }
     }
 
-    func createDocument(at url: URL, title: String = "Tracer Deck") throws -> [String: Any] {
+    func createDocument(at url: URL, title: String? = nil) throws -> [String: Any] {
+        let resolvedTitle = title ?? url.deletingPathExtension().lastPathComponent
         let candidateKernel = try DeckKernelHost(kernelURL: kernelURL)
         var candidateMedia: MediaCatalogSession?
         let seed: [String: Any] = [
@@ -79,7 +81,7 @@ final class DeckSessionController: ObservableObject {
             "sectionId": UUID().uuidString.lowercased(),
             "slideId": UUID().uuidString.lowercased(),
             "blockId": UUID().uuidString.lowercased(),
-            "title": title,
+            "title": resolvedTitle,
             "initialHeadline": "Untitled Story",
         ]
         let checkpoint = try candidateKernel.createInitialCheckpoint(seed: seed)
@@ -96,7 +98,7 @@ final class DeckSessionController: ObservableObject {
                 kernel: candidateKernel,
                 store: createdStore,
                 mediaSession: media,
-                title: title,
+                title: resolvedTitle,
                 status: "Created \(createdStore.packageURL.lastPathComponent)",
                 projection: projection
             )
@@ -275,8 +277,14 @@ final class DeckSessionController: ObservableObject {
         status = "Checkpoint saved at revision \(store.currentRevision)"
     }
 
+    func saveFromUser() async throws {
+        try await flushWorkspaceDrafts()
+        try save()
+    }
+
     func closeDocument() async throws {
         guard hasDocument, let store else { return }
+        try await flushWorkspaceDrafts()
         try save()
         try store.close()
         mediaSession?.revoke()
@@ -335,6 +343,7 @@ final class DeckSessionController: ObservableObject {
         guard await response(for: panel, tracerDestination: tracerDestination) == .OK, let url = panel.url else {
             throw WorkbenchFailure(name: "JobCancelled", message: "Deck creation was cancelled")
         }
+        try await flushWorkspaceDrafts()
         let projection = try createDocument(at: url)
         try await workspace?.renderProjection(projection)
         return projection
@@ -350,6 +359,7 @@ final class DeckSessionController: ObservableObject {
         guard await response(for: panel) == .OK, let url = panel.url else {
             throw WorkbenchFailure(name: "JobCancelled", message: "Open was cancelled")
         }
+        try await flushWorkspaceDrafts()
         let projection = try openDocument(at: url)
         try await workspace?.renderProjection(projection)
         return projection
@@ -367,6 +377,7 @@ final class DeckSessionController: ObservableObject {
         guard await response(for: panel) == .OK, let url = panel.url else {
             throw WorkbenchFailure(name: "JobCancelled", message: "PDF export was cancelled")
         }
+        try await flushWorkspaceDrafts()
         try await workspace.writeOnePagePDF(to: url)
         status = "Exported one-page PDF"
         return url
@@ -376,6 +387,7 @@ final class DeckSessionController: ObservableObject {
         guard hasDocument, let workspace else {
             throw WorkbenchFailure(name: "WorkspaceUnavailable", message: "Workspace is not ready for PDF export")
         }
+        try await flushWorkspaceDrafts()
         try await workspace.writeOnePagePDF(to: destination)
         status = "Exported one-page PDF"
     }
@@ -490,6 +502,20 @@ final class DeckSessionController: ObservableObject {
             "acknowledgement": acknowledgement,
             "projection": projection,
         ]
+    }
+
+    private func flushWorkspaceDrafts() async throws {
+        guard hasDocument else { return }
+        guard let workspace else {
+            throw WorkbenchFailure(name: "WorkspaceUnavailable", message: "Workspace is not ready to save Slide drafts")
+        }
+        let result = try await workspace.saveDrafts()
+        guard result["saved"] as? Bool == true else {
+            throw WorkbenchFailure(
+                name: "UnsavedWorkspaceDraft",
+                message: "Save the highlighted Slide draft before leaving this Deck"
+            )
+        }
     }
 
     private func activate(

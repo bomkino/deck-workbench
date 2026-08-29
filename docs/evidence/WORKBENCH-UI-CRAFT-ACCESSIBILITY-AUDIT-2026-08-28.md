@@ -2,6 +2,8 @@
 
 Date: 2026-08-28
 
+Historical scope note: this receipt describes the earlier exact-main tracer. Current phased-workspace measurements and claims are superseded by `WORKBENCH-UI-UX-RELEASE-PASS-2026-08-29.md`; target-machine assistive-technology acceptance for the phased candidate remains unverified.
+
 This is the durable internal review record required before final packaging. It separates source inspection, rendered-pixel judgment, automated runtime evidence, and manual acceptance. Final installed-app evidence is recorded separately.
 
 ## pitch.dog illustration verdict

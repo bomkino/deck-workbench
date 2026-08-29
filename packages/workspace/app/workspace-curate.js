@@ -93,8 +93,7 @@ let curateFocusedMediaId = null
 let curateQueueFilter = 'all'
 let curateTargetSlotKey = null
 let curateCompareIds = []
-let curateFindMoreDirty = false
-let curateFindMoreSlideId = null
+const curateFindMoreDrafts = new Map()
 let curateVirtualFrame = 0
 let curateResizeObserver = null
 let curateSearchTimer = 0
@@ -297,8 +296,6 @@ function commitCuratePhaseSnapshot(snapshot) {
   if (priorSlideId !== nextSlideId) {
     curateFocusedMediaId = curateLastFocusBySlide.get(nextSlideId) ?? curateFocusedMediaId
     curateTargetSlotKey = null
-    curateFindMoreDirty = false
-    curateFindMoreSlideId = null
   }
   if (
     (priorCatalogRevision !== null && curateCatalogRevision !== priorCatalogRevision)
@@ -337,6 +334,7 @@ function clearCurateState() {
   curateQueueUnplacedCounts = new Map()
   curateDocumentDeckId = null
   curateRenderedWindowKey = ''
+  curateFindMoreDrafts.clear()
   closeCurateOverlays()
 }
 
@@ -641,22 +639,35 @@ function syncFindMoreControls(findMore) {
   for (const control of [elements.findMoreState, elements.findMorePrimaryStatus, elements.findMoreBrief]) {
     control.disabled = !enabled
   }
-  elements.saveFindMore.disabled = !enabled
+  elements.saveFindMore.disabled = !enabled || !curateFindMoreDrafts.has(selectedSlideId)
   if (!enabled) {
     elements.findMoreState.value = 'not-needed'
     elements.findMorePrimaryStatus.value = 'none'
     elements.findMoreBrief.value = ''
-    curateFindMoreDirty = false
-    curateFindMoreSlideId = null
+    elements.findMoreSummary.textContent = 'Not needed'
     return
   }
-  if (!curateFindMoreDirty || curateFindMoreSlideId !== selectedSlideId) {
-    elements.findMoreState.value = findMore.state
-    elements.findMorePrimaryStatus.value = findMore.existingPrimaryStatus
-    elements.findMoreBrief.value = findMore.brief
-    curateFindMoreSlideId = selectedSlideId
-    curateFindMoreDirty = false
+  const draft = curateFindMoreDrafts.get(selectedSlideId) ?? findMore
+  elements.findMoreState.value = draft.state
+  elements.findMorePrimaryStatus.value = draft.existingPrimaryStatus
+  elements.findMoreBrief.value = draft.brief
+  elements.findMoreSummary.textContent = String(elements.findMoreState.value).replaceAll('-', ' ')
+}
+
+function normalizedFindMoreValue(value) {
+  return {
+    state: String(value?.state ?? 'not-needed'),
+    existingPrimaryStatus: String(value?.existingPrimaryStatus ?? 'none'),
+    brief: String(value?.brief ?? ''),
   }
+}
+
+function findMoreValuesEqual(left, right) {
+  const normalizedLeft = normalizedFindMoreValue(left)
+  const normalizedRight = normalizedFindMoreValue(right)
+  return normalizedLeft.state === normalizedRight.state
+    && normalizedLeft.existingPrimaryStatus === normalizedRight.existingPrimaryStatus
+    && normalizedLeft.brief === normalizedRight.brief
 }
 
 function slotDisplayName(slot) {
@@ -690,6 +701,7 @@ function renderCurateTrays() {
   const decisions = curateSlideProjection?.decisions ?? []
   const renderDecisionTray = (state, target) => {
     const matches = decisions.filter((entry) => normalizedSlideDecision(entry)?.state === state)
+    const emptyLabel = { alternate: 'No alternates', shortlisted: 'No shortlist', unplaced: 'No unplaced media' }[state]
     target.innerHTML = matches.length
       ? matches.map((entry) => {
         const decision = normalizedSlideDecision(entry)
@@ -698,7 +710,7 @@ function renderCurateTrays() {
           : state
         return `<button class="tray-item" type="button" data-tray-asset-id="${escapeAttribute(entry.assetReferenceId)}"><strong>${escapeHTML(durableAssetLabel(entry.assetReferenceId, entry.assetReference))}</strong><small>${escapeHTML(detail)}</small></button>`
       }).join('')
-      : `<div class="tray-item is-empty"><strong>No ${escapeHTML(state === 'shortlisted' ? 'shortlisted media' : state === 'alternate' ? 'Alternates' : 'unplaced media')}</strong><small>Decisions for this Slide appear here.</small></div>`
+      : `<div class="tray-item is-empty"><strong>${escapeHTML(emptyLabel)}</strong><small>None for this Slide.</small></div>`
   }
   renderDecisionTray('alternate', elements.alternateTray)
   renderDecisionTray('shortlisted', elements.shortlistTray)
@@ -710,7 +722,7 @@ function renderCurateRootControls() {
   elements.mediaRootFilter.replaceChildren()
   const allOption = document.createElement('option')
   allOption.value = 'all'
-  allOption.textContent = curateRoots.length ? 'All Roots' : 'No Roots'
+  allOption.textContent = curateRoots.length ? 'All folders' : 'No folders'
   elements.mediaRootFilter.append(allOption)
   for (const root of curateRoots) {
     const option = document.createElement('option')
@@ -730,11 +742,11 @@ function renderCurateRootControls() {
     elements.mediaRootStatus.textContent = `${root.label} · ${String(root.availability).replaceAll('_', ' ')} · ${root.assetCount} Assets${root.missingCount ? ` · ${root.missingCount} missing` : ''}`
   } else if (curateRoots.length) {
     const available = curateRoots.filter((candidate) => candidate.availability === 'available').length
-    elements.mediaRootStatus.textContent = `${curateRoots.length} Roots · ${available} available`
+    elements.mediaRootStatus.textContent = `${curateRoots.length} folders · ${available} available`
   } else {
     elements.mediaRootStatus.textContent = curateSnapshotErrors.length
-      ? `Media Roots unavailable: ${curateSnapshotErrors.join('; ')}`
-      : 'No media Root authorised.'
+      ? `Media folders unavailable: ${curateSnapshotErrors.join('; ')}`
+      : 'No media folder connected.'
   }
 }
 
@@ -745,9 +757,7 @@ function renderCurateActions() {
   const decision = asset ? curateDecisionForAsset(asset.id) : null
   const slots = curateSlideProjection?.slots ?? []
   const hasAssignableSlot = slots.length > 0
-  elements.focusedAssetSummary.textContent = asset
-    ? `${asset.label} · Project judgment / current-Slide decision`
-    : 'No Asset focused'
+  elements.focusedAssetSummary.textContent = asset ? asset.label : 'No Asset selected'
   elements.toggleProjectPick.disabled = !enabled
   elements.toggleProjectPick.setAttribute('aria-pressed', String(Boolean(judgment.projectPick)))
   elements.toggleProjectPick.textContent = judgment.projectPick ? 'Project Picked' : 'Project Pick'
@@ -758,7 +768,13 @@ function renderCurateActions() {
   elements.previewMedia.disabled = !enabled
   elements.shortlistMedia.disabled = !enabled
   elements.assignPrimaryMedia.disabled = !enabled || !hasAssignableSlot
-  elements.assignPrimaryMedia.title = hasAssignableSlot ? 'Assign to the next open or activated named slot' : 'This Slide has no media slots'
+  const targetSlot = slots.find((slot) => slot.key === curateTargetSlotKey)
+    ?? slots.find((slot) => !slot.selected)
+    ?? slots[0]
+  elements.assignPrimaryMedia.textContent = targetSlot
+    ? `${targetSlot.selected ? 'Replace' : 'Assign to'} ${slotDisplayName(targetSlot)}`
+    : 'Assign primary'
+  elements.assignPrimaryMedia.title = hasAssignableSlot ? 'Assign to the named slot shown on this button' : 'This Slide has no media slots'
   elements.alternateMedia.disabled = !enabled
   elements.rejectSlideMedia.disabled = !enabled
   elements.clearSlideMedia.disabled = !enabled || !decision || decision.state === 'considered'
@@ -825,7 +841,7 @@ function curateVirtualMetrics(assetCount = filteredCurateAssets().length) {
     columns,
     overscanRows: CURATE_MEDIA_OVERSCAN_ROWS,
   })
-  return Object.freeze({ viewportWidth, density, columns, cardWidth, cardHeight, rowHeight, ...window })
+  return Object.freeze({ total: assetCount, viewportWidth, density, columns, cardWidth, cardHeight, rowHeight, ...window })
 }
 
 function mediaAssetStateText(asset) {
@@ -875,14 +891,15 @@ function curateMediaCardRenderSignature(asset) {
     judgment.review,
     judgment.projectPick,
     decision,
+    curateCompareIds.includes(asset.id),
   ])
 }
 
 function positionCurateMediaCard(card, index, metrics) {
   const row = Math.floor(index / metrics.columns)
   const column = index % metrics.columns
-  card.setAttribute('aria-rowindex', String(row + 1))
-  card.setAttribute('aria-colindex', String(column + 1))
+  card.setAttribute('aria-posinset', String(index + 1))
+  card.setAttribute('aria-setsize', String(metrics.total))
   card.style.setProperty('--card-left', `${CURATE_MEDIA_GAP + column * (metrics.cardWidth + CURATE_MEDIA_GAP)}px`)
   card.style.setProperty('--card-top', `${CURATE_MEDIA_GAP + row * metrics.rowHeight}px`)
   card.style.setProperty('--card-width', `${metrics.cardWidth}px`)
@@ -894,14 +911,24 @@ function updateCurateMediaCard(card, asset, index, metrics) {
   card.id = curateMediaCardId(asset.id)
   card.className = 'media-card'
   card.dataset.assetId = asset.id
-  card.setAttribute('role', 'gridcell')
+  card.setAttribute('role', 'option')
   const signature = curateMediaCardRenderSignature(asset)
   if (card.dataset.renderSignature === signature) return card
   card.dataset.renderSignature = signature
   const decision = curateDecisionForAsset(asset.id)
   const judgment = curateJudgmentForAsset(asset.id)
+  const compared = curateCompareIds.includes(asset.id)
   const stateText = mediaAssetStateText(asset)
-  const descriptors = [asset.mediaKind, asset.availability, judgment.projectPick ? 'Project Pick' : '', decision?.state ?? '']
+  const descriptors = [
+    asset.mediaKind,
+    asset.availability,
+    asset.displayPath,
+    judgment.rating ? `Rating ${judgment.rating} of 5` : '',
+    judgment.review !== 'unreviewed' ? `Project review ${judgment.review}` : '',
+    judgment.projectPick ? 'Project Pick' : '',
+    decision?.state ? `Slide decision ${String(decision.state).replaceAll('-', ' ')}` : '',
+    compared ? 'Selected for Compare' : '',
+  ]
     .filter(Boolean)
     .join(', ')
   card.setAttribute('aria-label', `${asset.label}. ${descriptors}`)
@@ -914,7 +941,10 @@ function updateCurateMediaCard(card, asset, index, metrics) {
   title.textContent = asset.label
   const badges = document.createElement('span')
   badges.className = 'media-badges'
+  if (judgment.rating) badges.append(curateMediaBadge(`${judgment.rating}/5`, 'project'))
+  if (judgment.review !== 'unreviewed') badges.append(curateMediaBadge(judgment.review, 'project'))
   if (judgment.projectPick) badges.append(curateMediaBadge('Pick', 'project'))
+  if (compared) badges.append(curateMediaBadge('Compare', 'compare'))
   if (decision?.state) badges.append(curateMediaBadge(decision.state === 'selected' ? 'Selected' : decision.state, decision.state === 'selected' ? 'selected' : 'slide'))
   const path = document.createElement('small')
   path.textContent = stateText ? `${asset.displayPath} · ${stateText}` : asset.displayPath
@@ -966,8 +996,9 @@ function reconcileCurateMediaCards(assets, metrics) {
 function updateCurateMediaActivePresentation() {
   const mountedCards = [...elements.mediaCanvas.querySelectorAll(':scope > [data-asset-id]')]
   for (const card of mountedCards) {
-    card.dataset.active = String(card.dataset.assetId === curateFocusedMediaId)
-    card.setAttribute('aria-selected', String(curateCompareIds.includes(card.dataset.assetId)))
+    const active = card.dataset.assetId === curateFocusedMediaId
+    card.dataset.active = String(active)
+    card.setAttribute('aria-selected', String(active))
   }
   const mountedIds = mountedCards.map((card) => card.id)
   if (mountedIds.length) elements.mediaFocusOwner.setAttribute('aria-owns', mountedIds.join(' '))
@@ -992,12 +1023,20 @@ function renderMediaWallState(assets) {
   if (!projection) message = 'Create or open a Deck to curate media.'
   else if (curateMediaLoading) message = `Loading media… ${curateAssets.length} descriptors available.`
   else if (curateMediaError) message = curateMediaError
-  else if (!curateRoots.length) message = 'Authorise a project media Root to begin.'
+  else if (!curateRoots.length) message = 'Choose a project media folder to begin.'
   else if (!assets.length && curateAssets.length) message = 'No matching media in the loaded catalogue pages.'
   else if (!assets.length) message = 'No media is available from the selected Root.'
   else if (curateMediaNextOffset !== null) {
     message = `${assets.length} matching in ${curateAssets.length} loaded of ${curateMediaTotal} total${hasClientFilter ? ' · filters apply to loaded pages' : ''}.`
   } else message = `${assets.length} matching Assets.`
+  const action = !curateMediaLoading && curateMediaError
+    ? 'retry'
+    : !curateMediaLoading && curateMediaNextOffset !== null
+      ? 'more'
+      : ''
+  const signature = `${message}\u001f${action}`
+  if (elements.mediaWallState.dataset.signature === signature) return
+  elements.mediaWallState.dataset.signature = signature
   elements.mediaWallState.replaceChildren(document.createTextNode(message))
   if (!curateMediaLoading && curateMediaError) {
     const retry = document.createElement('button')
@@ -1018,14 +1057,13 @@ function renderMediaWallState(assets) {
 
 function renderCurateMediaWall() {
   const assets = filteredCurateAssets()
+  elements.mediaFocusOwner.tabIndex = assets.length ? 0 : -1
   if (curateFocusedMediaId && !assets.some((asset) => asset.id === curateFocusedMediaId)) {
     curateFocusedMediaId = assets[0]?.id ?? null
   }
   if (!curateFocusedMediaId && assets.length) curateFocusedMediaId = assets[0].id
   const metrics = curateVirtualMetrics(assets.length)
   elements.mediaCanvas.style.height = `${Math.max(elements.mediaScroll.clientHeight, metrics.rowCount * metrics.rowHeight + CURATE_MEDIA_GAP)}px`
-  elements.mediaFocusOwner.setAttribute('aria-rowcount', String(metrics.rowCount))
-  elements.mediaFocusOwner.setAttribute('aria-colcount', String(metrics.columns))
   const windowKey = curateMediaWindowKey(assets, metrics)
   if (windowKey !== curateRenderedWindowKey) {
     reconcileCurateMediaCards(assets, metrics)
@@ -1039,13 +1077,13 @@ function renderCurateMediaWall() {
   }
   updateCurateMediaActivePresentation()
   const focusedAsset = selectedCurateAsset()
-  elements.mediaFocusOwner.value = focusedAsset
+  elements.mediaFocusOwner.textContent = focusedAsset
     ? `${focusedAsset.label}. Arrow keys navigate; Space previews; S shortlists; M assigns.`
     : 'No media loaded'
-  elements.mediaFocusOwner.setSelectionRange(0, 0)
-  elements.mediaCount.textContent = curateMediaNextOffset === null
+  const mediaCount = curateMediaNextOffset === null
     ? `${assets.length} Assets`
     : `${assets.length} shown · ${curateAssets.length}/${curateMediaTotal} loaded`
+  if (elements.mediaCount.textContent !== mediaCount) elements.mediaCount.textContent = mediaCount
   renderMediaWallState(assets)
   renderCurateActions()
   if (
@@ -1060,7 +1098,7 @@ function renderCurateMediaWall() {
 }
 
 function scheduleCurateVirtualRender() {
-  if (curateVirtualFrame) cancelAnimationFrame(curateVirtualFrame)
+  if (curateVirtualFrame) return
   curateVirtualFrame = requestAnimationFrame(() => {
     curateVirtualFrame = 0
     renderCurateMediaWall()
@@ -1129,7 +1167,6 @@ function changeCurateDensity(delta) {
 }
 
 function setCurateLiveStatus(message) {
-  elements.curateStatus.textContent = message
   setStatus(message)
 }
 
@@ -1241,18 +1278,22 @@ function renderCurateCompare() {
     if (!asset) continue
     const card = document.createElement('article')
     card.className = 'compare-card'
+    const titleId = `compare-title-${curateDomToken(asset.id)}`
+    card.setAttribute('aria-labelledby', titleId)
     const thumb = document.createElement('div')
     thumb.className = 'media-thumb'
     appendCurateThumbnail(thumb, asset, `Preview of ${asset.label}`)
     const footer = document.createElement('footer')
-    const title = document.createElement('strong')
+    const title = document.createElement('h3')
+    title.id = titleId
     title.textContent = asset.label
     const detail = document.createElement('small')
     detail.textContent = `${asset.mediaKind} · ${asset.availability} · ${asset.displayPath}`
     const remove = document.createElement('button')
     remove.type = 'button'
     remove.dataset.removeCompareId = asset.id
-    remove.textContent = 'Remove from Compare'
+    remove.textContent = 'Remove'
+    remove.setAttribute('aria-label', `Remove ${asset.label} from Compare`)
     footer.append(title, detail, remove)
     card.append(thumb, footer)
     elements.compareMediaGrid.append(card)
@@ -1309,19 +1350,53 @@ async function executeMediaRootCommand(type, payload, sourceLabel) {
 
 async function saveCurateFindMore() {
   if (!projection || !selectedSlideId) return
-  const value = {
+  const targetSlideId = selectedSlideId
+  const value = normalizedFindMoreValue({
     state: elements.findMoreState.value,
     existingPrimaryStatus: elements.findMorePrimaryStatus.value,
     brief: elements.findMoreBrief.value,
+  })
+  if (findMoreValuesEqual(value, curateSlideProjection?.findMoreMedia)) {
+    curateFindMoreDrafts.delete(targetSlideId)
+    updateWorkspaceDraftStatus()
+    setCurateLiveStatus('No Find More Media changes')
+    return true
   }
   const result = await executeCurateCommand('curate.findMore.set', {
-    slideId: selectedSlideId,
+    slideId: targetSlideId,
     value,
   }, 'Save Find More Media')
   if (result) {
-    curateFindMoreDirty = false
-    curateFindMoreSlideId = selectedSlideId
+    curateFindMoreDrafts.delete(targetSlideId)
+    updateWorkspaceDraftStatus()
   }
+}
+
+async function saveAllCurateFindMoreDrafts() {
+  const drafts = [...curateFindMoreDrafts.entries()].map(([slideId, value]) => [slideId, structuredClone(value)])
+  let savedCount = 0
+  for (const [slideId, value] of drafts) {
+    const current = await window.deckBridge.query({ name: 'curate.slide', params: { slideId } })
+    if (findMoreValuesEqual(value, current?.findMoreMedia)) {
+      curateFindMoreDrafts.delete(slideId)
+      continue
+    }
+    const result = await executeStructural('curate.findMore.set', { slideId, value }, selectedSlideId, {
+      sourceLabel: 'Save Find More draft',
+      preserveCurrentSelection: true,
+    })
+    if (!result) {
+      await enterPhaseForSlide('curate', slideId)
+      elements.findMorePanel.open = true
+      elements.findMoreBrief.focus({ preventScroll: true })
+      return { saved: false, count: savedCount }
+    }
+    curateFindMoreDrafts.delete(slideId)
+    savedCount += 1
+  }
+  if (activePhase === 'curate') renderCurateBrief()
+  updateWorkspaceDraftStatus()
+  return { saved: true, count: savedCount }
 }
 
 function unresolvedCurateSlideIds() {
@@ -1451,7 +1526,14 @@ function bindCurateEvents() {
   elements.nextCurateIssue.addEventListener('click', () => void moveToNextCurateIssue())
   elements.curateSlideQueue.addEventListener('click', (event) => {
     const button = event.target.closest('[data-curate-slide-id]')
-    if (button) void enterPhaseForSlide('curate', button.dataset.curateSlideId)
+    if (!button) return
+    const slideId = button.dataset.curateSlideId
+    void enterPhaseForSlide('curate', slideId).then((entered) => {
+      if (!entered || activePhase !== 'curate') return
+      elements.curateSlideQueue
+        .querySelector(`[data-curate-slide-id="${CSS.escape(slideId)}"]`)
+        ?.focus({ preventScroll: true })
+    })
   })
 
   elements.mediaSearch.addEventListener('input', () => {
@@ -1518,8 +1600,21 @@ function bindCurateEvents() {
 
   for (const control of [elements.findMoreState, elements.findMorePrimaryStatus, elements.findMoreBrief]) {
     control.addEventListener('input', () => {
-      curateFindMoreDirty = true
-      curateFindMoreSlideId = selectedSlideId
+      if (selectedSlideId) {
+        const value = normalizedFindMoreValue({
+          state: elements.findMoreState.value,
+          existingPrimaryStatus: elements.findMorePrimaryStatus.value,
+          brief: elements.findMoreBrief.value,
+        })
+        if (findMoreValuesEqual(value, curateSlideProjection?.findMoreMedia)) {
+          curateFindMoreDrafts.delete(selectedSlideId)
+        } else {
+          curateFindMoreDrafts.set(selectedSlideId, value)
+        }
+        elements.saveFindMore.disabled = !curateFindMoreDrafts.has(selectedSlideId)
+      }
+      elements.findMoreSummary.textContent = String(elements.findMoreState.value).replaceAll('-', ' ')
+      updateWorkspaceDraftStatus()
     })
   }
   elements.findMoreForm.addEventListener('submit', (event) => {
@@ -1532,6 +1627,10 @@ function bindCurateEvents() {
       if (slot) {
         curateTargetSlotKey = slot.dataset.slotKey
         renderCurateTrays()
+        elements.primaryTray
+          .querySelector(`[data-slot-key="${CSS.escape(curateTargetSlotKey)}"]`)
+          ?.focus({ preventScroll: true })
+        renderCurateActions()
       }
       const assetButton = event.target.closest('[data-tray-asset-id]')
       if (assetButton && !focusCurateAsset(assetButton.dataset.trayAssetId)) {
@@ -1550,10 +1649,16 @@ function bindCurateEvents() {
   elements.compareMediaGrid.addEventListener('click', (event) => {
     const remove = event.target.closest('[data-remove-compare-id]')
     if (!remove) return
+    const priorIndex = curateCompareIds.indexOf(remove.dataset.removeCompareId)
     curateCompareIds = curateCompareIds.filter((id) => id !== remove.dataset.removeCompareId)
     renderCurateCompare()
     renderCurateActions()
-    if (curateCompareIds.length < 2 && elements.mediaCompare.open) elements.mediaCompare.close()
+    if (curateCompareIds.length < 2 && elements.mediaCompare.open) {
+      elements.mediaCompare.close()
+    } else {
+      const successors = [...elements.compareMediaGrid.querySelectorAll('[data-remove-compare-id]')]
+      successors[Math.min(priorIndex, successors.length - 1)]?.focus({ preventScroll: true })
+    }
   })
   elements.mediaContextMenu.addEventListener('click', (event) => {
     const action = event.target.closest('[data-media-context-action]')?.dataset.mediaContextAction

@@ -107,10 +107,10 @@ function syncVisualControls(next) {
   const canCrop = selected?.kind === 'image' && Boolean(assignment)
   elements.cropControls.disabled = !canCrop
   const crop = selected?.crop ?? { x: 0, y: 0, width: 1, height: 1 }
-  elements.cropX.value = String(crop.x)
-  elements.cropY.value = String(crop.y)
-  elements.cropWidth.value = String(crop.width)
-  elements.cropHeight.value = String(crop.height)
+  elements.cropX.value = String(Math.round(crop.x * 100))
+  elements.cropY.value = String(Math.round(crop.y * 100))
+  elements.cropWidth.value = String(Math.round(crop.width * 100))
+  elements.cropHeight.value = String(Math.round(crop.height * 100))
 }
 
 async function applySelectedPattern() {
@@ -138,10 +138,10 @@ async function alignSelectedElement(alignment) {
 async function applySelectedCrop() {
   if (!projection) return
   const payload = imageCropPlan(projection, elements.visualElement.value, {
-    x: elements.cropX.value,
-    y: elements.cropY.value,
-    width: elements.cropWidth.value,
-    height: elements.cropHeight.value,
+    x: Number(elements.cropX.value) / 100,
+    y: Number(elements.cropY.value) / 100,
+    width: Number(elements.cropWidth.value) / 100,
+    height: Number(elements.cropHeight.value) / 100,
   })
   if (!payload) {
     setStatus('InvalidCommand: Crop must stay inside normalised source bounds')

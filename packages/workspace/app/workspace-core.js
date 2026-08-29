@@ -113,7 +113,7 @@ function workspaceLayoutMode({ viewportWidth: requestedViewportWidth, interfaceS
   if (!Number.isFinite(viewportWidth) || viewportWidth <= 0) throw new RangeError('Viewport width must be positive')
   if (!INTERFACE_SCALE_STEPS.includes(scale)) throw new RangeError('Interface Scale must use an allowed step')
   const remPixels = 16 * scale
-  if (viewportWidth < 50 * remPixels) return 'single-column'
+  if (viewportWidth < 56 * remPixels) return 'single-column'
   if (viewportWidth < 88 * remPixels) return 'two-column'
   return 'four-column'
 }
@@ -382,12 +382,14 @@ const elements = {
   deckMap: document.querySelector('#deck-map'),
   planEditorHeading: document.querySelector('#plan-editor-heading'),
   revision: document.querySelector('#revision'),
+  planDraftState: document.querySelector('#plan-draft-state'),
   planEmpty: document.querySelector('#plan-empty'),
+  createDeck: document.querySelector('#create-deck'),
+  openDeck: document.querySelector('#open-deck'),
   planForm: document.querySelector('#plan-form'),
   internalTitle: document.querySelector('#internal-title'),
   partSelect: document.querySelector('#part-select'),
   slidePurpose: document.querySelector('#slide-purpose'),
-  slideLifecycle: document.querySelector('#slide-lifecycle'),
   textPresence: document.querySelector('#text-presence'),
   contentPattern: document.querySelector('#content-pattern'),
   slideIntent: document.querySelector('#slide-intent'),
@@ -434,8 +436,10 @@ const elements = {
   mediaWallState: document.querySelector('#media-wall-state'),
   curateBriefHeading: document.querySelector('#curate-brief-heading'),
   curateBriefContent: document.querySelector('#curate-brief-content'),
+  findMorePanel: document.querySelector('#find-more-panel'),
   findMoreForm: document.querySelector('#find-more-form'),
   findMoreState: document.querySelector('#find-more-state'),
+  findMoreSummary: document.querySelector('#find-more-summary'),
   findMorePrimaryStatus: document.querySelector('#find-more-primary-status'),
   findMoreBrief: document.querySelector('#find-more-brief'),
   saveFindMore: document.querySelector('#save-find-more'),
@@ -452,7 +456,6 @@ const elements = {
   mediaCompare: document.querySelector('#media-compare'),
   compareMediaGrid: document.querySelector('#compare-media-grid'),
   mediaContextMenu: document.querySelector('#media-context-menu'),
-  curateStatus: document.querySelector('#curate-status'),
   stageScroll: document.querySelector('#stage-scroll'),
   artboardShell: document.querySelector('#artboard-shell'),
   artboard: document.querySelector('#artboard'),
@@ -492,7 +495,7 @@ let refreshGeneration = 0
 let pendingWorkspaceSlideId = null
 
 function setStatus(message) {
-  elements.saveState.textContent = message
+  if (elements.saveState.textContent !== message) elements.saveState.textContent = message
 }
 
 function setBusy(message) {
@@ -504,7 +507,7 @@ function setBusy(message) {
 
 function setIdle() {
   elements.workbench.setAttribute('aria-busy', 'false')
-  if (projection) setStatus('Durable and projected')
+  if (projection) updateWorkspaceDraftStatus()
   else setStatus('No document session')
 }
 
@@ -539,20 +542,21 @@ function renderAll() {
   elements.addSection.disabled = !projection
   elements.addSlide.disabled = !projection
   elements.exportPDF.disabled = !projection
-  renderPlan()
-  renderCurate()
-  renderAssemble()
-  renderHandoff()
+  if (activePhase === 'plan') renderPlan()
+  else if (activePhase === 'curate') renderCurate()
+  else if (activePhase === 'assemble') renderAssemble()
+  else renderHandoff()
   applyScales()
   setIdle()
 }
 
 function setPhase(phase) {
   if (!['plan', 'curate', 'assemble', 'handoff'].includes(phase)) return
+  if (phase === activePhase) return
   if (phase !== 'curate') closeCurateOverlays()
   activePhase = phase
   renderAll()
-  elements.phaseWorkspaces.focus({ preventScroll: true })
+  elements.phaseViews.find((view) => view.dataset.phaseView === phase)?.focus({ preventScroll: true })
 }
 
 async function refreshWorkspace(requestedSlideId = selectedSlideId, focus = {}) {
@@ -571,8 +575,8 @@ async function refreshWorkspace(requestedSlideId = selectedSlideId, focus = {}) 
     }
     if (generation !== refreshGeneration) return projection
     renderAll()
-    if (focus.slideId) elements.sequenceList.querySelector(`[data-slide-id="${CSS.escape(focus.slideId)}"]`)?.focus()
-    if (focus.sectionId) elements.sequenceList.querySelector(`[data-section-id="${CSS.escape(focus.sectionId)}"]`)?.focus()
+    if (focus.slideId) focusSequenceTarget({ kind: 'slide', id: focus.slideId })
+    if (focus.sectionId) focusSequenceTarget({ kind: 'section', id: focus.sectionId })
     return projection
   } catch (error) {
     setStatus(`${error.name ?? 'Error'}: ${error.message}`)

@@ -79,8 +79,8 @@ refreshWorkspace = async function refreshWorkspaceAtomically(requestedSlideId = 
       commitCuratePhaseSnapshot(nextCurateSnapshot)
       if (pendingWorkspaceSlideId === requestedSlideId) pendingWorkspaceSlideId = null
       renderAll()
-      if (focus.slideId) elements.sequenceList.querySelector(`[data-slide-id="${CSS.escape(focus.slideId)}"]`)?.focus()
-      if (focus.sectionId) elements.sequenceList.querySelector(`[data-section-id="${CSS.escape(focus.sectionId)}"]`)?.focus()
+      if (focus.slideId) focusSequenceTarget({ kind: 'slide', id: focus.slideId })
+      if (focus.sectionId) focusSequenceTarget({ kind: 'section', id: focus.sectionId })
       return projection
     }
     return projection
@@ -94,10 +94,19 @@ refreshWorkspace = async function refreshWorkspaceAtomically(requestedSlideId = 
 
 async function enterPhaseForSlide(phase, slideId = selectedSlideId) {
   if (!['plan', 'curate', 'assemble', 'handoff'].includes(phase)) return false
-  if (slideId) {
+  if (slideId && (slideId !== selectedSlideId || projection?.slide?.id !== slideId)) {
+    const priorPhase = activePhase
+    if (phase !== 'curate') closeCurateOverlays()
+    activePhase = phase
     pendingWorkspaceSlideId = slideId
     const next = await refreshWorkspace(slideId)
-    if (!next || next.slide?.id !== slideId) return false
+    if (!next || next.slide?.id !== slideId) {
+      activePhase = priorPhase
+      renderAll()
+      return false
+    }
+    if (phase !== priorPhase) elements.phaseViews.find((view) => view.dataset.phaseView === phase)?.focus({ preventScroll: true })
+    return true
   }
   setPhase(phase)
   return true
@@ -122,11 +131,40 @@ function patchStoryDocumentFromProjection(next) {
 
 let pendingProjectionFocus = null
 
+function workspaceDraftSummary({ capturePlan = true } = {}) {
+  if (capturePlan) captureCurrentPlanDraft()
+  const plan = planDraftDeltas.size
+  const findMore = curateFindMoreDrafts.size
+  return { plan, findMore, total: plan + findMore }
+}
+
+function updateWorkspaceDraftStatus(options = {}) {
+  if (!projection) {
+    setStatus('No document session')
+    return workspaceDraftSummary({ capturePlan: false })
+  }
+  const summary = workspaceDraftSummary(options)
+  setStatus(summary.total
+    ? `${summary.total} unsaved Slide draft${summary.total === 1 ? '' : 's'}`
+    : 'All changes saved')
+  return summary
+}
+
+async function saveWorkspaceDrafts() {
+  const before = workspaceDraftSummary()
+  const plan = await saveAllPlanDrafts()
+  if (!plan.saved) return { saved: false, before, plan, findMore: { saved: false, count: 0 } }
+  const findMore = await saveAllCurateFindMoreDrafts()
+  const after = workspaceDraftSummary()
+  return { saved: findMore.saved && after.total === 0, before, after, plan, findMore }
+}
+
 const clearProjectionWithoutRefreshInvalidation = clearProjection
 clearProjection = function clearProjectionAndInvalidateRefresh() {
   refreshGeneration += 1
   pendingWorkspaceSlideId = null
   pendingProjectionFocus = null
+  clearPlanDrafts()
   return clearProjectionWithoutRefreshInvalidation()
 }
 
@@ -141,13 +179,9 @@ function applyPendingProjectionFocus() {
   if (target.blockId) {
     restored = restoreStoryFocus(target.blockId)
   } else if (target.slideId) {
-    const node = elements.sequenceList.querySelector(`[data-slide-id="${CSS.escape(target.slideId)}"]`)
-    node?.focus({ preventScroll: true })
-    restored = document.activeElement === node
+    restored = focusSequenceTarget({ kind: 'slide', id: target.slideId })
   } else if (target.sectionId) {
-    const node = elements.sequenceList.querySelector(`[data-section-id="${CSS.escape(target.sectionId)}"]`)
-    node?.focus({ preventScroll: true })
-    restored = document.activeElement === node
+    restored = focusSequenceTarget({ kind: 'section', id: target.sectionId })
   }
   if (restored) pendingProjectionFocus = null
   return restored
@@ -174,6 +208,7 @@ renderProjection = function renderProjectionFromCanonicalCache(next) {
   if (documentChanged) {
     refreshGeneration += 1
     clearCurateState()
+    clearPlanDrafts()
     storyDocument = null
     selectedSlideId = null
     pendingWorkspaceSlideId = null
@@ -209,6 +244,8 @@ historyAction = async function historyActionWithProjectionFocus(method, restoreF
 }
 
 function bindWorkspaceEvents() {
+  elements.createDeck.addEventListener('click', () => void presentDocumentAction('create', 'Creating Deck…'))
+  elements.openDeck.addEventListener('click', () => void presentDocumentAction('open', 'Opening Deck…'))
   elements.phaseButtons.forEach((button) => button.addEventListener('click', () => void enterPhaseForSlide(button.dataset.phase)))
   elements.undo.addEventListener('click', () => historyAction('undo'))
   elements.redo.addEventListener('click', () => historyAction('redo'))
@@ -223,11 +260,10 @@ function bindWorkspaceEvents() {
   })
   bindPlanEvents()
   bindCurateEvents()
-  elements.cutSlide.addEventListener('click', (event) => {
-    event.stopImmediatePropagation()
+  elements.cutSlide.addEventListener('click', () => {
     const record = selectedPlanRecord()
-    if (record) void setSlideLifecycle(record.slide.id, record.metadata.lifecycle === 'cut' ? 'included' : 'cut')
-  }, { capture: true })
+    if (record) void setSlideLifecycle(record.slide.id, record.metadata.lifecycle === 'cut' ? 'included' : 'cut', 'editor')
+  })
   bindVisualEvents()
   elements.fitArtboard.textContent = 'Fit Artboard'
   bindHandoffEvents()
@@ -241,6 +277,20 @@ function bindWorkspaceEvents() {
   window.addEventListener('resize', applyScales)
 }
 
+async function presentDocumentAction(method, busyLabel) {
+  setBusy(busyLabel)
+  try {
+    await window.deckBridge[method]()
+    setIdle()
+  } catch (error) {
+    if (error?.name === 'JobCancelled') {
+      setIdle()
+      return
+    }
+    setStatus(`${error?.name ?? 'Error'}: ${error?.message ?? 'Document action failed'}`)
+  }
+}
+
 async function boot() {
   bindWorkspaceEvents()
   try {
@@ -252,9 +302,15 @@ async function boot() {
     projection = next
     selectedSlideId = next.slide.id
     await refreshWorkspace(selectedSlideId)
-  } catch {
+  } catch (error) {
     applyScales()
     renderAll()
+    const documentUnavailable = error?.name === 'DocumentUnavailable'
+      || String(error?.message ?? '').includes('DocumentUnavailable:')
+    const message = documentUnavailable
+      ? 'No document session'
+      : `${error?.name ?? 'Error'}: ${error?.message ?? 'Workbench could not load'}`
+    setStatus(message)
   }
 }
 
@@ -276,6 +332,8 @@ window.deckWorkbench = Object.freeze({
   projection() {
     return projection
   },
+  draftSummary: workspaceDraftSummary,
+  saveDrafts: saveWorkspaceDrafts,
   phase() {
     return activePhase
   },

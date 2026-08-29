@@ -256,11 +256,15 @@ function updateSlideSequenceEntry(entry, section, slide, pageNumber, story) {
   row.dataset.slideId = slide.id
   row.dataset.sequenceId = slide.id
   row.dataset.sectionId = section.id
-  row.setAttribute('aria-label', `Slide ${pageNumber}: ${slide.headline?.plainText || slide.intent}`)
+  const lifecycleLabel = record.metadata.lifecycle === 'included'
+    ? `Slide ${pageNumber}`
+    : record.metadata.lifecycle === 'skipped'
+      ? 'Skipped Slide'
+      : 'Cut Bin Slide'
+  row.setAttribute('aria-label', `${lifecycleLabel}: ${displayLabel}`)
   if (selectedSlideId === slide.id) row.setAttribute('aria-current', 'page')
   else row.removeAttribute('aria-current')
-  if (record.metadata.lifecycle !== 'included') row.setAttribute('aria-disabled', 'true')
-  else row.removeAttribute('aria-disabled')
+  row.dataset.lifecycle = record.metadata.lifecycle
 
   row.className = `slide-row${selectedSlideId === slide.id ? ' selected' : ''}`
   row.querySelector('.slide-number').textContent = displayNumber
@@ -278,7 +282,7 @@ function updateSlideSequenceEntry(entry, section, slide, pageNumber, story) {
     move.className = 'move-sequence'
     move.dataset.direction = direction
     move.textContent = direction === 'up' ? '↑' : '↓'
-    move.setAttribute('aria-label', `Move Slide ${pageNumber} ${direction}`)
+    move.setAttribute('aria-label', `Move ${lifecycleLabel}: ${displayLabel} ${direction}`)
     move.addEventListener('click', () => moveSlide(section.id, slide.id, direction))
     tools.append(move)
   }
