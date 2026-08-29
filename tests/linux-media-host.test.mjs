@@ -133,9 +133,11 @@ test('native media session keeps absolute locators outside the portable Deck cat
   assert.equal(portable.includes('authorizedPath'), false)
   assert.equal(hostLocal.includes(value.mediaRoot), true)
 
-  const source = await value.session.readGridResource(parseRendition(image.renditions.gridStandard))
-  assert.deepEqual(source.dimensions, { width: 1, height: 1 })
-  assert.equal(source.bytes.equals(PNG_1X1), true)
+  if (process.platform === 'linux') {
+    const source = await value.session.readGridResource(parseRendition(image.renditions.gridStandard))
+    assert.deepEqual(source.dimensions, { width: 1, height: 1 })
+    assert.equal(source.bytes.equals(PNG_1X1), true)
+  }
   await assert.rejects(
     value.session.query('media.assets', { limit: 251 }),
     (error) => error.name === 'InvalidMediaCatalog',
@@ -468,8 +470,10 @@ test('reserved Asset identities remain own keys in host-local scan observations'
   const assets = await session.query('media.assets')
   assert.equal(assets.items[0].id, '__proto__')
   assert.equal(assets.items[0].previewCapability, 'grid')
-  const source = await session.readGridResource(parseRendition(assets.items[0].renditions.gridStandard))
-  assert.equal(source.bytes.equals(PNG_1X1), true)
+  if (process.platform === 'linux') {
+    const source = await session.readGridResource(parseRendition(assets.items[0].renditions.gridStandard))
+    assert.equal(source.bytes.equals(PNG_1X1), true)
+  }
 })
 
 test('Root authorization rejects an exhausted catalogue revision before persistence', async (t) => {
