@@ -137,7 +137,7 @@ const javascript = `/* Generated from packages/bridge-contract/bridge.contract.j
         : null
       pending.set(requestId, { resolve, reject, timeoutId, label })
       queue.push({ method, requestId, payload })
-      pump()
+      schedulePump()
     })
   }
 
