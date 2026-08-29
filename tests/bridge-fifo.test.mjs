@@ -8,6 +8,7 @@ const source = await readFile(new URL('../build/generated/bridge.generated.js', 
 function bridgeHarness({ failFirstPost = false } = {}) {
   const posted = []
   let shouldFail = failFirstPost
+  let cancelledRefreshes = 0
   const context = {
     crypto: { randomUUID: (() => { let index = 0; return () => `request-${++index}` })() },
     Error,
@@ -16,6 +17,11 @@ function bridgeHarness({ failFirstPost = false } = {}) {
     console,
     setTimeout,
     clearTimeout,
+    deckWorkbench: {
+      cancelScheduledRefresh() {
+        cancelledRefreshes += 1
+      },
+    },
     webkit: {
       messageHandlers: {
         deckWorkbench: {
@@ -32,17 +38,18 @@ function bridgeHarness({ failFirstPost = false } = {}) {
   }
   context.globalThis = context
   vm.runInNewContext(source, context)
-  return { context, posted }
+  return { context, posted, cancelledRefreshes: () => cancelledRefreshes }
 }
 
 const nextTurn = () => new Promise((resolve) => setTimeout(resolve, 0))
 
-test('generated macOS bridge admits one request at a time without re-entering the response callback', async () => {
-  const { context, posted } = bridgeHarness()
+test('generated macOS bridge cancels stale hydration and admits one request at a time without response re-entry', async () => {
+  const { context, posted, cancelledRefreshes } = bridgeHarness()
   const first = context.deckBridge.query({ name: 'story.document', params: {} })
   const second = context.deckBridge.execute({ command: { type: 'content.update' } })
   const third = context.deckBridge.undo()
 
+  assert.equal(cancelledRefreshes(), 3)
   assert.deepEqual(posted.map((request) => request.method), ['deck.query'])
 
   context.__deckBridgeReceive({ requestId: posted[0].requestId, ok: true, result: { revision: 1 } })
