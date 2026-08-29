@@ -11,11 +11,12 @@ function installSequenceFocusTargets() {
     const targetSectionId = sectionId
     const target = document.createElement('input')
     target.type = 'text'
-    target.readOnly = true
     target.inputMode = 'none'
+    target.autocomplete = 'off'
+    target.spellcheck = false
     target.className = 'slide-focus-target'
     target.dataset.slideId = slideId
-    target.value = row.getAttribute('aria-label') ?? ''
+    target.value = ''
     target.setAttribute('role', 'button')
     for (const attribute of ['aria-label', 'aria-current', 'aria-keyshortcuts', 'aria-disabled']) {
       const value = row.getAttribute(attribute)
@@ -25,6 +26,14 @@ function installSequenceFocusTargets() {
     row.removeAttribute('data-slide-id')
     row.tabIndex = -1
     row.setAttribute('aria-hidden', 'true')
+    const preventTextMutation = (event) => {
+      event.preventDefault()
+      target.value = ''
+    }
+    target.addEventListener('beforeinput', preventTextMutation)
+    target.addEventListener('paste', preventTextMutation)
+    target.addEventListener('drop', preventTextMutation)
+    target.addEventListener('input', () => { target.value = '' })
     target.addEventListener('click', () => selectSlide(slideId))
     target.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' || event.key === ' ') {

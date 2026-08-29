@@ -17,11 +17,13 @@ test('production focus restoration remains semantic and does not inject shadow-D
   assert.doesNotMatch(focus, /attachShadow|sequence-focus-proxy|Object\.defineProperty\(node, 'focus'/)
 })
 
-test('packaged Slide rows use a rendered 44 pixel text-input focus primitive with button semantics', () => {
+test('packaged Slide rows use a rendered editable text-input focus primitive while preventing text mutation', () => {
   assert.match(targets, /target\.type = 'text'/)
-  assert.match(targets, /target\.readOnly = true/)
+  assert.doesNotMatch(targets, /target\.readOnly = true/)
+  assert.match(targets, /target\.value = ''/)
   assert.match(targets, /target\.setAttribute\('role', 'button'\)/)
   assert.match(targets, /target\.dataset\.slideId = slideId/)
+  assert.match(targets, /target\.addEventListener\('beforeinput', preventTextMutation\)/)
   assert.match(targets, /event\.key === 'Enter' \|\| event\.key === ' '/)
   assert.match(targets, /moveSlideByKeyboard\(event, targetSectionId, slideId\)/)
   assert.match(build, /'workspace-sequence-targets\.js',[\s\S]*'workspace-focus\.js'/)
