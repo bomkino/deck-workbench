@@ -25,6 +25,7 @@ fi
 
 cd "$REPOSITORY_ROOT"
 npm run generate
+node scripts/build-packaged-tracer.mjs
 
 if ! git diff --quiet || ! git diff --cached --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
   echo "ExactCommitGate: refusing to package a dirty working tree as $COMMIT_SHA" >&2
@@ -44,6 +45,11 @@ scripts/build-macos-icon.sh "$APP/Contents/Resources/DeckWorkbench.icns"
 cp build/generated/bridge.generated.js "$APP/Contents/Resources/Workspace/bridge.generated.js"
 cp build/generated/deck-kernel.js "$APP/Contents/Resources/Kernel/deck-kernel.js"
 
+MACOS_SOURCES=()
+while IFS= read -r source; do
+  MACOS_SOURCES+=("$source")
+done < <(find apps/macos/Sources -maxdepth 1 -name '*.swift' ! -name 'PackagedTracer.swift' -print | sort)
+
 swiftc \
   -O \
   -target arm64-apple-macosx26.0 \
@@ -56,7 +62,8 @@ swiftc \
   -framework UniformTypeIdentifiers \
   -framework WebKit \
   build/generated/GeneratedBridge.swift \
-  apps/macos/Sources/*.swift \
+  build/generated/PackagedTracer.swift \
+  "${MACOS_SOURCES[@]}" \
   -o "$APP/Contents/MacOS/DeckWorkbench"
 
 plutil -lint "$APP/Contents/Info.plist"
