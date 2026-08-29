@@ -36,27 +36,23 @@ replaceBetween(
             const sequenceOwner = document.querySelector('#sequence-focus-owner');
             const findSequenceSlide = () => [...document.querySelectorAll('#sequence-list [data-slide-id]')]
               .find((item) => item.dataset.slideId === openingSlideId);
-            const waitForSemanticSequenceFocus = async (kind, id) => {
-              for (let attempt = 0; attempt < 120; attempt += 1) {
-                const item = kind === 'slide'
-                  ? [...document.querySelectorAll('#sequence-list [data-slide-id]')]
-                    .find((candidate) => candidate.dataset.slideId === id)
-                  : [...document.querySelectorAll('#sequence-list [data-section-id]')]
-                    .find((candidate) => candidate.dataset.sectionId === id);
-                const focus = sequenceFocusState();
-                if (
-                  sequenceList
-                  && sequenceOwner
-                  && item
-                  && focus.kind === kind
-                  && focus.id === id
-                  && focus.ownerFocused === true
-                  && sequenceOwner.getAttribute('aria-activedescendant') === item.id
-                ) return true;
-                await new Promise((resolve) => requestAnimationFrame(() => resolve()));
-              }
-              return false;
+            const semanticSequenceIdentity = (kind, id) => {
+              const item = kind === 'slide'
+                ? [...document.querySelectorAll('#sequence-list [data-slide-id]')]
+                  .find((candidate) => candidate.dataset.slideId === id)
+                : [...document.querySelectorAll('#sequence-list [data-section-id]')]
+                  .find((candidate) => candidate.dataset.sectionId === id);
+              const focus = sequenceFocusState();
+              return Boolean(
+                sequenceList
+                && sequenceOwner
+                && item
+                && focus.kind === kind
+                && focus.id === id
+                && sequenceOwner.getAttribute('aria-activedescendant') === item.id
+              );
             };
+            const waitForSemanticSequenceFocus = async (kind, id) => semanticSequenceIdentity(kind, id);
 `,
   'semantic Slide focus helper',
 )
@@ -66,8 +62,8 @@ replaceRequired(
   `            if (!focusSequenceTarget({ kind: 'slide', id: openingSlideId })) {
               throw new Error('Sequence composite could not activate the opening Slide');
             }
-            if (!await waitForSemanticSequenceFocus('slide', openingSlideId)) {
-              throw new Error('Sequence composite could not settle focus on the opening Slide');
+            if (!semanticSequenceIdentity('slide', openingSlideId)) {
+              throw new Error('Sequence composite lost the opening Slide identity');
             }`,
   'initial Slide semantic focus',
 )
@@ -101,8 +97,8 @@ replaceRequired(
   `            if (!focusSequenceTarget({ kind: 'section', id: openingSectionId })) {
               throw new Error('Sequence composite could not activate the Opening Part');
             }
-            if (!await waitForSemanticSequenceFocus('section', openingSectionId)) {
-              throw new Error('Sequence composite could not settle focus on the Opening Part');
+            if (!semanticSequenceIdentity('section', openingSectionId)) {
+              throw new Error('Sequence composite lost the Opening Part identity');
             }`,
   'initial Section semantic focus',
 )
@@ -150,8 +146,8 @@ if (/document\.activeElement === (?:button|row)/.test(source)) {
 if (!source.includes("sequenceOwner.getAttribute('aria-activedescendant')")) {
   throw new Error('Generated packaged tracer does not verify the stable Sequence owner')
 }
-if (!source.includes("could not settle focus on the opening Slide")) {
-  throw new Error('Generated packaged tracer does not separate activation from settled focus')
+if (/requestAnimationFrame\(\(\) => resolve\(\)\)/.test(source)) {
+  throw new Error('Generated packaged tracer still polls focus through throttled animation frames')
 }
 
 await mkdir(resolve(root, 'build/generated'), { recursive: true })
