@@ -83,6 +83,7 @@ const javascript = `/* Generated from packages/bridge-contract/bridge.contract.j
   }
 
   function invoke(method, payload) {
+    globalThis.deckWorkbench?.cancelScheduledRefresh?.()
     const requestId = nextRequestId()
     return new Promise((resolve, reject) => {
       pending.set(requestId, { resolve, reject })
