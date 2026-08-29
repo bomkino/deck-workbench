@@ -55,7 +55,6 @@ function updateSectionSequenceRow(row, section, story) {
 
 function preventSequenceTargetMutation(event) {
   event.preventDefault()
-  event.currentTarget.value = ''
 }
 
 function createSlideSequenceEntry(slideId) {
@@ -70,13 +69,15 @@ function createSlideSequenceEntry(slideId) {
   target.spellcheck = false
   target.className = 'slide-focus-target'
   target.dataset.slideId = slideId
-  target.value = ''
+  target.value = 'Slide'
   target.tabIndex = 0
-  target.setAttribute('role', 'button')
+  target.setAttribute('aria-multiline', 'false')
   target.addEventListener('beforeinput', preventSequenceTargetMutation)
   target.addEventListener('paste', preventSequenceTargetMutation)
   target.addEventListener('drop', preventSequenceTargetMutation)
-  target.addEventListener('input', () => { target.value = '' })
+  target.addEventListener('input', (event) => {
+    event.currentTarget.value = event.currentTarget.dataset.displayValue ?? 'Slide'
+  })
   target.addEventListener('click', () => selectSlide(target.dataset.slideId))
   target.addEventListener('keydown', (event) => {
     if (event.key === 'Enter' || event.key === ' ') {
@@ -105,11 +106,15 @@ function updateSlideSequenceEntry(entry, section, slide, pageNumber, story) {
   const target = entry.querySelector('.slide-focus-target')
   const visual = entry.querySelector('.slide-row')
   const tools = entry.querySelector('.slide-tools')
+  const displayNumber = record.metadata.lifecycle === 'included' ? String(pageNumber).padStart(2, '0') : '—'
+  const displayLabel = record.metadata.internalTitle || slide.headline?.plainText || slide.intent
+  const displayValue = `${displayNumber}  ${displayLabel}  ${readiness.toUpperCase()}`
 
   entry.dataset.sequenceSlideEntry = slide.id
   target.dataset.slideId = slide.id
   target.dataset.sectionId = section.id
-  target.value = ''
+  target.dataset.displayValue = displayValue
+  target.value = displayValue
   target.setAttribute('aria-label', `Slide ${pageNumber}: ${slide.headline?.plainText || slide.intent}`)
   target.setAttribute('aria-keyshortcuts', 'Alt+ArrowUp Alt+ArrowDown')
   if (selectedSlideId === slide.id) target.setAttribute('aria-current', 'page')
@@ -118,10 +123,8 @@ function updateSlideSequenceEntry(entry, section, slide, pageNumber, story) {
   else target.removeAttribute('aria-disabled')
 
   visual.className = `slide-row${selectedSlideId === slide.id ? ' selected' : ''}`
-  visual.querySelector('.slide-number').textContent = record.metadata.lifecycle === 'included'
-    ? String(pageNumber).padStart(2, '0')
-    : '—'
-  visual.querySelector('[data-slide-label]').textContent = record.metadata.internalTitle || slide.headline?.plainText || slide.intent
+  visual.querySelector('.slide-number').textContent = displayNumber
+  visual.querySelector('[data-slide-label]').textContent = displayLabel
   const status = visual.querySelector('.sequence-status')
   status.className = `sequence-status ${readiness}`
   status.textContent = readiness
