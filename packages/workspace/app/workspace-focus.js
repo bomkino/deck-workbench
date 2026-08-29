@@ -41,9 +41,46 @@ function expectedWorkspaceFocus() {
     : null
 }
 
+function installDelegatedFocusHost(node) {
+  if (!node || node.shadowRoot || typeof node.attachShadow !== 'function') return node
+  const shadow = node.attachShadow({ mode: 'open', delegatesFocus: true })
+  const style = document.createElement('style')
+  style.textContent = `
+    :host { position: relative; }
+    input {
+      position: absolute;
+      inline-size: 1px;
+      block-size: 1px;
+      min-inline-size: 1px;
+      min-block-size: 1px;
+      inset: 0 auto auto 0;
+      margin: 0;
+      padding: 0;
+      border: 0;
+      opacity: 0;
+      pointer-events: none;
+    }
+    slot { display: contents; }
+  `
+  const proxy = document.createElement('input')
+  proxy.type = 'text'
+  proxy.readOnly = true
+  proxy.tabIndex = 0
+  proxy.className = 'sequence-focus-proxy'
+  proxy.autocomplete = 'off'
+  proxy.spellcheck = false
+  proxy.setAttribute('aria-label', node.getAttribute('aria-label') ?? 'Sequence focus target')
+  const slot = document.createElement('slot')
+  shadow.append(style, proxy, slot)
+  return node
+}
+
 function makeWorkspaceNodeFocusable(node) {
   if (!node) return null
-  if (node.matches?.('[data-slide-id], [data-section-id]')) node.tabIndex = 0
+  if (node.matches?.('[data-slide-id], [data-section-id]')) {
+    node.tabIndex = 0
+    if (node.tagName !== 'BUTTON') installDelegatedFocusHost(node)
+  }
   return node
 }
 
@@ -67,7 +104,7 @@ function replaceNativeSlideButton(button, sectionId) {
     moveSlideByKeyboard(event, sectionId, slideId)
   })
   button.replaceWith(row)
-  return row
+  return installDelegatedFocusHost(row)
 }
 
 function ensureSequenceKeyboardFocusability() {
@@ -76,6 +113,7 @@ function ensureSequenceKeyboardFocusability() {
     if (child.matches?.('[data-section-id]')) {
       sectionId = child.dataset.sectionId
       child.tabIndex = 0
+      installDelegatedFocusHost(child)
       continue
     }
     const button = child.querySelector?.('button.slide-row[data-slide-id]')
