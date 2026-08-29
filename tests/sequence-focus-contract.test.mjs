@@ -17,15 +17,20 @@ test('production focus restoration remains semantic and does not inject shadow-D
   assert.doesNotMatch(focus, /attachShadow|sequence-focus-proxy|Object\.defineProperty\(node, 'focus'/)
 })
 
-test('packaged Slide rows use the same rendered textarea focus primitive as canonical copy fields', () => {
+test('packaged Slide rows retain one keyed textarea focus primitive across reorder', () => {
+  assert.match(targets, /const sequenceNodeRegistry = new Map\(\)/)
+  assert.match(targets, /function createSlideSequenceEntry\(slideId\)/)
   assert.match(targets, /document\.createElement\('textarea'\)/)
   assert.match(targets, /target\.rows = 1/)
   assert.match(targets, /target\.value = ''/)
   assert.match(targets, /target\.setAttribute\('role', 'button'\)/)
   assert.match(targets, /target\.dataset\.slideId = slideId/)
-  assert.match(targets, /target\.addEventListener\('beforeinput', preventTextMutation\)/)
+  assert.match(targets, /target\.addEventListener\('beforeinput', preventSequenceTargetMutation\)/)
   assert.match(targets, /event\.key === 'Enter' \|\| event\.key === ' '/)
-  assert.match(targets, /moveSlideByKeyboard\(event, targetSectionId, slideId\)/)
+  assert.match(targets, /moveSlideByKeyboard\(event, target\.dataset\.sectionId, target\.dataset\.slideId\)/)
+  assert.match(targets, /function protectedSequenceNode\(\)/)
+  assert.match(targets, /node !== protectedNode && node\.nextSibling !== reference/)
+  assert.match(targets, /renderSequence = renderPersistentSequence/)
   assert.match(build, /'workspace-sequence-targets\.js',[\s\S]*'workspace-focus\.js'/)
   const targetRule = hardening.match(/\.slide-entry > \.slide-focus-target \{([\s\S]*?)\n\}/)?.[1] ?? ''
   assert.ok(targetRule, 'missing packaged Slide focus-target rule')
