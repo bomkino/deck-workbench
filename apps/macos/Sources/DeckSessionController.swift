@@ -29,6 +29,8 @@ final class DeckSessionController: ObservableObject {
     private let kernelURL: URL
     private var kernel: DeckKernelHost
     private var store: PitchDeckDocumentStore?
+    private var mediaSession: MediaCatalogSession?
+    private var processedMediaCommands: [String: Data] = [:]
     private weak var workspace: WorkspaceProjectionSink?
 
     init(bundle: Bundle = .main) throws {
@@ -71,6 +73,7 @@ final class DeckSessionController: ObservableObject {
 
     func createDocument(at url: URL, title: String = "Tracer Deck") throws -> [String: Any] {
         let candidateKernel = try DeckKernelHost(kernelURL: kernelURL)
+        var candidateMedia: MediaCatalogSession?
         let seed: [String: Any] = [
             "deckId": UUID().uuidString.lowercased(),
             "sectionId": UUID().uuidString.lowercased(),
@@ -84,15 +87,22 @@ final class DeckSessionController: ObservableObject {
         do {
             try candidateKernel.open(checkpoint: checkpoint)
             let projection = try candidateKernel.query("slide.activeProjection")
+            let media = try MediaCatalogSession(
+                packageURL: createdStore.packageURL,
+                deckId: createdStore.manifest.deckId
+            )
+            candidateMedia = media
             try activate(
                 kernel: candidateKernel,
                 store: createdStore,
+                mediaSession: media,
                 title: title,
                 status: "Created \(createdStore.packageURL.lastPathComponent)",
                 projection: projection
             )
             return projection
         } catch {
+            candidateMedia?.revoke()
             try? createdStore.close()
             throw error
         }
@@ -100,6 +110,7 @@ final class DeckSessionController: ObservableObject {
 
     func openDocument(at url: URL) throws -> [String: Any] {
         let candidateKernel = try DeckKernelHost(kernelURL: kernelURL)
+        var candidateMedia: MediaCatalogSession?
         let (openedStore, loaded) = try PitchDeckDocumentStore.open(at: url)
         do {
             try candidateKernel.open(checkpoint: loaded.checkpoint)
@@ -111,6 +122,11 @@ final class DeckSessionController: ObservableObject {
                 throw WorkbenchFailure(name: "JournalCorruption", message: "Kernel replay did not reach durable document revision")
             }
             let projection = try candidateKernel.query("slide.activeProjection")
+            let media = try MediaCatalogSession(
+                packageURL: openedStore.packageURL,
+                deckId: openedStore.manifest.deckId
+            )
+            candidateMedia = media
             let openedStatus: String
             if loaded.recoveredPreviousCheckpoint {
                 openedStatus = "Recovered prior checkpoint and replayed valid journal"
@@ -122,12 +138,14 @@ final class DeckSessionController: ObservableObject {
             try activate(
                 kernel: candidateKernel,
                 store: openedStore,
+                mediaSession: media,
                 title: summary["title"] as? String ?? openedStore.manifest.title,
                 status: openedStatus,
                 projection: projection
             )
             return projection
         } catch {
+            candidateMedia?.revoke()
             try? openedStore.close()
             throw error
         }
@@ -168,6 +186,89 @@ final class DeckSessionController: ObservableObject {
         return try kernel.query(name, params: params)
     }
 
+    func mediaQuery(name: String, params: [String: Any]) async throws -> [String: Any] {
+        guard let mediaSession else {
+            throw WorkbenchFailure(name: "DocumentUnavailable", message: "No Deck media session is open")
+        }
+        let paramsJSON = try JSONSerialization.data(withJSONObject: params, options: [.sortedKeys, .withoutEscapingSlashes])
+        let result = try Self.decodeObject(try await mediaSession.queryJSON(name: name, paramsJSON: paramsJSON))
+        guard self.mediaSession === mediaSession else {
+            throw WorkbenchFailure(name: "DocumentUnavailable", message: "The Deck changed while the media query was running")
+        }
+        return result
+    }
+
+    func executeMedia(command: [String: Any]) async throws -> [String: Any] {
+        let validated = try validateMediaCommand(command)
+        if let duplicate = processedMediaCommands[validated.commandId] {
+            return try Self.decodeObject(duplicate)
+        }
+        guard let mediaSession else {
+            throw WorkbenchFailure(name: "DocumentUnavailable", message: "No Deck media session is open")
+        }
+        let summary = try kernel.query("deck.summary")
+        guard let revision = summary["revision"] as? Int else {
+            throw WorkbenchFailure(name: "KernelUnavailable", message: "Deck revision is unavailable")
+        }
+        guard validated.expectedRevision == revision else {
+            throw WorkbenchFailure(
+                name: "StaleRevision",
+                message: "Expected revision \(revision); received \(validated.expectedRevision)"
+            )
+        }
+
+        let resultData: Data
+        switch validated.type {
+        case "media.root.authorize":
+            resultData = try await mediaSession.authorizeRootJSON(
+                try await presentMediaRoot(title: "Choose Media Folder")
+            )
+        case "media.root.reconnect":
+            resultData = try await mediaSession.reconnectRootJSON(
+                rootId: validated.rootId!,
+                url: try await presentMediaRoot(title: "Reconnect Media Folder")
+            )
+        case "media.root.scan":
+            resultData = try await mediaSession.scanRootJSON(rootId: validated.rootId!)
+        default:
+            throw WorkbenchFailure(name: "InvalidCommand", message: "Unknown native media command")
+        }
+        guard self.mediaSession === mediaSession else {
+            throw WorkbenchFailure(name: "DocumentUnavailable", message: "The Deck changed while the media command was running")
+        }
+        var media = try Self.decodeObject(resultData)
+        let catalogRevision = try await mediaSession.catalogRevisionValue()
+        guard self.mediaSession === mediaSession else {
+            throw WorkbenchFailure(name: "DocumentUnavailable", message: "The Deck changed while the media command was running")
+        }
+        media["catalogRevision"] = catalogRevision
+        let response: [String: Any] = [
+            "acknowledgement": [
+                "commandId": validated.commandId,
+                "revision": revision,
+                "status": "completed",
+            ],
+            "media": media,
+            "projection": try kernel.query("slide.activeProjection"),
+        ]
+        processedMediaCommands[validated.commandId] = try JSONSerialization.data(
+            withJSONObject: response,
+            options: [.sortedKeys, .withoutEscapingSlashes]
+        )
+        return response
+    }
+
+    func mediaResourceData(nonce: String, assetId: String, profile: String) async throws -> Data {
+        guard let mediaSession else {
+            throw WorkbenchFailure(name: "StaleMediaSession", message: "This media resource session is no longer active")
+        }
+        let data = try await mediaSession.resourceData(nonce: nonce, assetId: assetId, profile: profile)
+        guard self.mediaSession === mediaSession else {
+            throw WorkbenchFailure(name: "StaleMediaSession", message: "This media resource session is no longer active")
+        }
+        return data
+    }
+
     func save() throws {
         guard let store else { throw WorkbenchFailure(name: "KernelUnavailable", message: "No Deck is open") }
         try store.saveCheckpoint(kernel.serialize())
@@ -178,6 +279,9 @@ final class DeckSessionController: ObservableObject {
         guard hasDocument, let store else { return }
         try save()
         try store.close()
+        mediaSession?.revoke()
+        mediaSession = nil
+        processedMediaCommands = [:]
         self.store = nil
         documentURL = nil
         documentTitle = "No Deck open"
@@ -295,6 +399,87 @@ final class DeckSessionController: ObservableObject {
         return try await coordinator.invokeForTracer(body, arguments: arguments)
     }
 
+    private struct ValidatedMediaCommand {
+        let commandId: String
+        let expectedRevision: Int
+        let type: String
+        let rootId: String?
+    }
+
+    private func validateMediaCommand(_ command: [String: Any]) throws -> ValidatedMediaCommand {
+        guard let commandId = command["commandId"] as? String,
+              !commandId.isEmpty,
+              commandId.count <= 256,
+              let expectedRevision = command["expectedRevision"] as? Int,
+              expectedRevision >= 0,
+              let type = command["type"] as? String,
+              ["media.root.authorize", "media.root.reconnect", "media.root.scan"].contains(type),
+              let payload = command["payload"] as? [String: Any],
+              let source = command["source"] as? [String: Any],
+              let sourceKind = source["kind"] as? String,
+              ["ui", "keyboard", "cli", "mcp", "migration"].contains(sourceKind),
+              let issuedAt = command["issuedAt"] as? String,
+              issuedAt.range(
+                of: #"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$"#,
+                options: .regularExpression
+              ) != nil
+        else {
+            throw WorkbenchFailure(name: "InvalidCommand", message: "Native media command envelope is invalid")
+        }
+        if let label = source["label"], !(label is String) {
+            throw WorkbenchFailure(name: "InvalidCommand", message: "source.label must be a string")
+        }
+        if type == "media.root.authorize" {
+            guard payload.isEmpty else {
+                throw WorkbenchFailure(
+                    name: "InvalidCommand",
+                    message: "media.root.authorize does not accept renderer paths or parameters"
+                )
+            }
+            return ValidatedMediaCommand(
+                commandId: commandId,
+                expectedRevision: expectedRevision,
+                type: type,
+                rootId: nil
+            )
+        }
+        guard payload.count == 1,
+              let rootId = payload["rootId"] as? String,
+              !rootId.isEmpty
+        else {
+            throw WorkbenchFailure(name: "InvalidCommand", message: "\(type) requires only an opaque rootId")
+        }
+        return ValidatedMediaCommand(
+            commandId: commandId,
+            expectedRevision: expectedRevision,
+            type: type,
+            rootId: rootId
+        )
+    }
+
+    private func presentMediaRoot(title: String) async throws -> URL {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.folder]
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = false
+        panel.resolvesAliases = false
+        panel.treatsFilePackagesAsDirectories = false
+        panel.title = title
+        guard await response(for: panel) == .OK, let url = panel.url else {
+            throw WorkbenchFailure(name: "JobCancelled", message: "Media Root selection was cancelled")
+        }
+        return url
+    }
+
+    private static func decodeObject(_ data: Data) throws -> [String: Any] {
+        guard let value = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw WorkbenchFailure(name: "KernelUnavailable", message: "Native media response is invalid")
+        }
+        return value
+    }
+
     private func commitHistory(prepared: [String: Any]) throws -> [String: Any] {
         guard let store else { throw WorkbenchFailure(name: "KernelUnavailable", message: "No Deck is open") }
         _ = try store.appendDurably(prepared: prepared)
@@ -310,16 +495,25 @@ final class DeckSessionController: ObservableObject {
     private func activate(
         kernel candidateKernel: DeckKernelHost,
         store candidateStore: PitchDeckDocumentStore,
+        mediaSession candidateMediaSession: MediaCatalogSession,
         title: String,
         status candidateStatus: String,
         projection: [String: Any]
     ) throws {
         if let currentStore = store {
-            try currentStore.saveCheckpoint(kernel.serialize())
-            try currentStore.close()
+            do {
+                try currentStore.saveCheckpoint(kernel.serialize())
+                try currentStore.close()
+            } catch {
+                candidateMediaSession.revoke()
+                throw error
+            }
         }
+        mediaSession?.revoke()
         kernel = candidateKernel
         store = candidateStore
+        mediaSession = candidateMediaSession
+        processedMediaCommands = [:]
         documentURL = candidateStore.packageURL
         documentTitle = title
         hasDocument = true

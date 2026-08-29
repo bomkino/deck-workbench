@@ -36,43 +36,71 @@ renderPlanEditor = function renderPlanEditorWithProjectionFallback() {
   }
 }
 
+function workspaceSnapshotRevisionsMatch(story, slideProjection, curateSnapshot, expectedSlideId) {
+  const expectedRevision = story?.revision
+  if (expectedRevision === null || expectedRevision === undefined) return false
+  if (curateSnapshot?.queueRevision !== expectedRevision) return false
+  if (!expectedSlideId) return slideProjection === null && !curateSnapshot?.slide?.slide
+  return slideProjection?.slide?.id === expectedSlideId
+    && curateSnapshot?.slide?.slide?.id === expectedSlideId
+    && slideProjection?.revision === expectedRevision
+    && curateSnapshot?.slide?.revision === expectedRevision
+}
+
 refreshWorkspace = async function refreshWorkspaceAtomically(requestedSlideId = selectedSlideId, focus = {}) {
   const generation = ++refreshGeneration
   try {
-    const nextStory = await window.deckBridge.query({ name: 'story.document', params: {} })
-    if (generation !== refreshGeneration) return projection
-    const orderedSlides = nextStory.sections.flatMap((section) => section.slides)
-    const fallbackSlideId = orderedSlides[0]?.id ?? null
-    const nextSelectedSlideId = orderedSlides.some((slide) => slide.id === requestedSlideId)
-      ? requestedSlideId
-      : fallbackSlideId
-    const nextProjection = nextSelectedSlideId
-      ? await window.deckBridge.query({ name: 'slide.activeProjection', params: { slideId: nextSelectedSlideId } })
-      : null
-    if (generation !== refreshGeneration) return projection
-    let nextAssetCatalog = []
-    if (nextProjection) {
-      try {
-        const result = await window.deckBridge.query({ name: 'asset.catalog', params: {} })
-        nextAssetCatalog = result.assets ?? []
-      } catch {
-        nextAssetCatalog = []
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const nextStory = await window.deckBridge.query({ name: 'story.document', params: {} })
+      if (generation !== refreshGeneration) return projection
+      const orderedSlides = nextStory.sections.flatMap((section) => section.slides)
+      const fallbackSlideId = orderedSlides[0]?.id ?? null
+      const nextSelectedSlideId = orderedSlides.some((slide) => slide.id === requestedSlideId)
+        ? requestedSlideId
+        : fallbackSlideId
+      const nextProjection = nextSelectedSlideId
+        ? await window.deckBridge.query({ name: 'slide.activeProjection', params: { slideId: nextSelectedSlideId } })
+        : null
+      if (generation !== refreshGeneration) return projection
+      const nextCurateSnapshot = await prepareCuratePhaseSnapshot(nextSelectedSlideId)
+      if (generation !== refreshGeneration) return projection
+      if (
+        !workspaceSnapshotRevisionsMatch(nextStory, nextProjection, nextCurateSnapshot, nextSelectedSlideId)
+        || nextCurateSnapshot.assetStateMediaGeneration !== curateMediaLoadGeneration
+      ) {
+        if (attempt < 2) continue
+        throw Object.assign(new Error('Workspace changed while its Story, Slide, and Curate snapshots were loading'), {
+          name: 'QuerySnapshotChanged',
+        })
       }
+      storyDocument = nextStory
+      selectedSlideId = nextSelectedSlideId
+      projection = nextProjection
+      commitCuratePhaseSnapshot(nextCurateSnapshot)
+      if (pendingWorkspaceSlideId === nextSelectedSlideId) pendingWorkspaceSlideId = null
+      renderAll()
+      if (focus.slideId) elements.sequenceList.querySelector(`[data-slide-id="${CSS.escape(focus.slideId)}"]`)?.focus()
+      if (focus.sectionId) elements.sequenceList.querySelector(`[data-section-id="${CSS.escape(focus.sectionId)}"]`)?.focus()
+      return projection
     }
-    if (generation !== refreshGeneration) return projection
-    storyDocument = nextStory
-    selectedSlideId = nextSelectedSlideId
-    projection = nextProjection
-    assetCatalog = nextAssetCatalog
-    renderAll()
-    if (focus.slideId) elements.sequenceList.querySelector(`[data-slide-id="${CSS.escape(focus.slideId)}"]`)?.focus()
-    if (focus.sectionId) elements.sequenceList.querySelector(`[data-section-id="${CSS.escape(focus.sectionId)}"]`)?.focus()
     return projection
   } catch (error) {
+    if (generation === refreshGeneration && pendingWorkspaceSlideId === requestedSlideId) pendingWorkspaceSlideId = null
     setStatus(`${error.name ?? 'Error'}: ${error.message}`)
     elements.workbench.setAttribute('aria-busy', 'false')
     return null
   }
+}
+
+async function enterPhaseForSlide(phase, slideId = selectedSlideId) {
+  if (!['plan', 'curate', 'assemble', 'handoff'].includes(phase)) return false
+  if (slideId) {
+    pendingWorkspaceSlideId = slideId
+    const next = await refreshWorkspace(slideId)
+    if (!next || next.slide?.id !== slideId) return false
+  }
+  setPhase(phase)
+  return true
 }
 
 function patchStoryDocumentFromProjection(next) {
@@ -93,6 +121,14 @@ function patchStoryDocumentFromProjection(next) {
 }
 
 let pendingProjectionFocus = null
+
+const clearProjectionWithoutRefreshInvalidation = clearProjection
+clearProjection = function clearProjectionAndInvalidateRefresh() {
+  refreshGeneration += 1
+  pendingWorkspaceSlideId = null
+  pendingProjectionFocus = null
+  return clearProjectionWithoutRefreshInvalidation()
+}
 
 function queueProjectionFocus(target) {
   pendingProjectionFocus = target ? { ...target } : null
@@ -118,15 +154,39 @@ function applyPendingProjectionFocus() {
 }
 
 renderProjection = function renderProjectionFromCanonicalCache(next) {
+  if (!next) {
+    clearProjection()
+    return null
+  }
+  const priorDeckId = curateDocumentDeckId ?? projection?.deckId ?? storyDocument?.deckId ?? null
+  const nextDeckId = next?.deckId ?? null
+  const documentChanged = Boolean(priorDeckId && nextDeckId && priorDeckId !== nextDeckId)
+  const refreshSlideId = documentChanged || priorDeckId === null
+    ? next.slide?.id ?? null
+    : pendingWorkspaceSlideId ?? selectedSlideId ?? next.slide?.id ?? null
+  if (!documentChanged && priorDeckId !== null) {
+    if (refreshSlideId) {
+      pendingWorkspaceSlideId = refreshSlideId
+      void refreshWorkspace(refreshSlideId).then(() => applyPendingProjectionFocus())
+    }
+    return next
+  }
+  if (documentChanged) {
+    refreshGeneration += 1
+    clearCurateState()
+    storyDocument = null
+    selectedSlideId = null
+    pendingWorkspaceSlideId = null
+    pendingProjectionFocus = null
+  }
   projection = next
-  selectedSlideId = next?.slide?.id ?? selectedSlideId
+  selectedSlideId = refreshSlideId
   const cachedStory = globalThis.__deckBridgeStoryDocument
-  if (cachedStory?.revision === next?.revision) storyDocument = cachedStory
+  if (cachedStory?.deckId === nextDeckId && cachedStory?.revision === next?.revision) storyDocument = cachedStory
   else patchStoryDocumentFromProjection(next)
-  const cachedAssets = globalThis.__deckBridgeAssetCatalog
-  if (cachedAssets?.assets) assetCatalog = cachedAssets.assets
   renderAll()
   applyPendingProjectionFocus()
+  if (selectedSlideId) void refreshWorkspace(selectedSlideId).then(() => applyPendingProjectionFocus())
   return next
 }
 
@@ -149,7 +209,7 @@ historyAction = async function historyActionWithProjectionFocus(method, restoreF
 }
 
 function bindWorkspaceEvents() {
-  elements.phaseButtons.forEach((button) => button.addEventListener('click', () => setPhase(button.dataset.phase)))
+  elements.phaseButtons.forEach((button) => button.addEventListener('click', () => void enterPhaseForSlide(button.dataset.phase)))
   elements.undo.addEventListener('click', () => historyAction('undo'))
   elements.redo.addEventListener('click', () => historyAction('redo'))
   elements.interfaceScale.addEventListener('change', async () => {
@@ -162,6 +222,7 @@ function bindWorkspaceEvents() {
     }
   })
   bindPlanEvents()
+  bindCurateEvents()
   elements.cutSlide.addEventListener('click', (event) => {
     event.stopImmediatePropagation()
     const record = selectedPlanRecord()
@@ -174,7 +235,7 @@ function bindWorkspaceEvents() {
     if (!(event.metaKey || event.ctrlKey) || event.altKey) return
     if (['1', '2', '3', '4'].includes(event.key)) {
       event.preventDefault()
-      setPhase(['plan', 'curate', 'assemble', 'handoff'][Number(event.key) - 1])
+      void enterPhaseForSlide(['plan', 'curate', 'assemble', 'handoff'][Number(event.key) - 1])
     }
   })
   window.addEventListener('resize', applyScales)

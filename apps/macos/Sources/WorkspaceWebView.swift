@@ -26,6 +26,10 @@ enum WorkspaceWebViewFactory {
             fatalError("Workspace resources are unavailable")
         }
         configuration.setURLSchemeHandler(schemeHandler, forURLScheme: "pitchdog-ui")
+        configuration.setURLSchemeHandler(
+            MediaAssetSchemeHandler(controller: coordinator.mediaController),
+            forURLScheme: "pitchdog-asset"
+        )
         configuration.userContentController.add(coordinator, name: BridgeContract.messageHandler)
 
         let webView = WKWebView(frame: .zero, configuration: configuration)

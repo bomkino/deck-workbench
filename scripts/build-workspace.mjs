@@ -7,6 +7,7 @@ const outputRoot = resolve(root, 'build/generated/workspace')
 const sourceScriptNames = [
   'workspace-core.js',
   'workspace-plan.js',
+  'workspace-curate.js',
   'workspace-visual.js',
   'workspace-handoff.js',
   'workspace.js',

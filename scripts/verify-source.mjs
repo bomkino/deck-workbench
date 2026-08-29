@@ -11,6 +11,7 @@ const required = [
   'packages/workspace/app/styles.css',
   'packages/workspace/app/workspace-core.js',
   'packages/workspace/app/workspace-plan.js',
+  'packages/workspace/app/workspace-curate.js',
   'packages/workspace/app/workspace-visual.js',
   'packages/workspace/app/workspace-handoff.js',
   'packages/workspace/app/workspace.js',
@@ -22,6 +23,8 @@ const required = [
   'scripts/verify-packaged-macos.sh',
   'scripts/verify-story-tracer-output.mjs',
   'scripts/linux/runtime-package.json',
+  '.github/workflows/dw-g01-linux.yml',
+  '.github/workflows/dw-t00-macos.yml',
   'THIRD_PARTY.md',
   'LICENSE',
 ]
@@ -36,9 +39,10 @@ const nativeSource = [...contents.entries()]
 const workspaceHTML = contents.get('packages/workspace/app/index.html')
 const workspaceCore = contents.get('packages/workspace/app/workspace-core.js')
 const workspacePlan = contents.get('packages/workspace/app/workspace-plan.js')
+const workspaceCurate = contents.get('packages/workspace/app/workspace-curate.js')
 const workspaceVisual = contents.get('packages/workspace/app/workspace-visual.js')
 const workspaceBoot = contents.get('packages/workspace/app/workspace.js')
-const workspaceAll = [workspaceCore, workspacePlan, workspaceVisual, contents.get('packages/workspace/app/workspace-handoff.js'), workspaceBoot].join('\n')
+const workspaceAll = [workspaceCore, workspacePlan, workspaceCurate, workspaceVisual, contents.get('packages/workspace/app/workspace-handoff.js'), workspaceBoot].join('\n')
 const kernel = contents.get('packages/deck-kernel/src/deck-kernel.ts')
 
 assert.deepEqual(packageJSON.dependencies, { electron: '44.0.0' })
@@ -56,12 +60,15 @@ assert.match(contents.get('apps/macos/Info.plist'), /<key>CFBundleShortVersionSt
 assert.match(contents.get('apps/macos/Info.plist'), /<key>CFBundleIconFile<\/key>\s*<string>DeckWorkbench\.icns<\/string>/)
 assert.match(contents.get('scripts/build-macos-icon.sh'), /iconutil -c icns/)
 assert.match(workspaceHTML, /connect-src 'none'/)
+assert.match(workspaceHTML, /img-src 'self' pitchdog-asset:/)
 assert.match(workspaceHTML, /object-src 'none'/)
 assert.equal(workspaceHTML.match(/data-phase="(?:plan|curate|assemble|handoff)"/g)?.length, 4)
 assert.match(workspaceHTML, /id="sequence-list"/)
 assert.match(workspaceHTML, /id="plan-form"/)
 assert.match(workspaceHTML, /id="artboard"/)
 assert.match(workspaceHTML, /id="handoff-list"/)
+assert.match(workspaceHTML, /id="media-focus-owner"/)
+assert.match(workspaceHTML, /id="primary-tray"/)
 assert.doesNotMatch(workspaceHTML, /type="file"/)
 assert.doesNotMatch(nativeSource, /URLSession|NWConnection|Network\.framework/)
 assert.doesNotMatch(nativeSource, /runShell|querySQL|openArbitraryURL|genericIPC/)
@@ -78,8 +85,12 @@ assert.match(workspacePlan, /executeStructural\('section\.remove'/)
 assert.match(workspaceVisual, /executeStructural\('designOption\.applyPattern'/)
 assert.match(workspaceVisual, /executeStructural\('element\.frame\.update'/)
 assert.match(workspaceVisual, /executeStructural\('element\.crop\.update'/)
-assert.match(workspaceVisual, /executeStructural\('asset\.reference\.add'/)
-assert.match(workspaceVisual, /executeStructural\('asset\.assign'/)
+assert.match(workspaceCurate, /name: 'media\.roots'/)
+assert.match(workspaceCurate, /name: 'media\.assets'/)
+assert.match(workspaceCurate, /executeCurateCommand\('curate\.projectJudgment\.set'/)
+assert.match(workspaceCurate, /executeCurateCommand\('curate\.slideDecision\.set'/)
+assert.match(workspaceCurate, /executeCurateCommand\('curate\.findMore\.set'/)
+assert.match(workspaceCurate, /calculateCurateVirtualWindow/)
 assert.doesNotMatch(workspaceAll, /createObjectURL|readAsDataURL|webkit\.messageHandlers/)
 assert.match(workspaceBoot, /window\.deckWorkbench = Object\.freeze/)
 assert.match(workspaceBoot, /exportFrame\(\)/)
@@ -87,6 +98,14 @@ assert.match(contents.get('scripts/build-workspace.mjs'), /packages\/workspace\/
 assert.match(contents.get('scripts/build-workspace.mjs'), /build\/generated\/workspace/)
 assert.match(contents.get('scripts/build-macos.sh'), /build\/generated\/workspace\/index\.html/)
 assert.equal(await readlink('apps/macos/Resources/Workspace'), '../../../build/generated/workspace')
+
+for (const workflowPath of ['.github/workflows/dw-g01-linux.yml', '.github/workflows/dw-t00-macos.yml']) {
+  const workflow = contents.get(workflowPath)
+  assert.match(workflow, /EXPECTED_SHA: \$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/)
+  assert.equal(workflow.match(/ref: \$\{\{ env\.EXPECTED_SHA \}\}/g)?.length, 2)
+  assert.equal(workflow.match(/test "\$\(git rev-parse HEAD\)" = "\$EXPECTED_SHA"/g)?.length, 2)
+  assert.match(workflow, /name: deck-workbench-[^\n]*\$\{\{ env\.EXPECTED_SHA \}\}/)
+}
 
 const mapperStart = workspaceCore.indexOf('function richText(value)')
 const mapperEnd = workspaceCore.indexOf('\nfunction storyShortcut', mapperStart)

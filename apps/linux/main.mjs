@@ -8,6 +8,7 @@ import {
   dialog,
   ipcMain,
   Menu,
+  nativeImage,
   protocol,
   session,
   shell,
@@ -18,6 +19,8 @@ import { performNativeAction } from './native-action.mjs'
 import { SerialOperationQueue } from './serial-operation-queue.mjs'
 import { UtilityKernelClient } from './utility-client.mjs'
 import { defaultPreferences, interfaceScaleSteps, loadPreferencesFile } from './preferences.mjs'
+import { MediaGrantStore } from './media-grants.mjs'
+import { LinuxMediaSession } from './media-session.mjs'
 
 const repositoryRoot = resolve(import.meta.dirname, '../..')
 const sharedWorkspaceRoot = resolve(repositoryRoot, 'apps/macos/Resources/Workspace')
@@ -44,11 +47,18 @@ protocol.registerSchemesAsPrivileged([
     scheme: 'pitchdog-ui',
     privileges: { standard: true, secure: true, supportFetchAPI: false, corsEnabled: false },
   },
+  {
+    scheme: 'pitchdog-asset',
+    privileges: { standard: true, secure: true, supportFetchAPI: false, corsEnabled: false },
+  },
 ])
 
 let mainWindow = null
 let utility = null
 let activePackagePath = null
+let mediaGrantStore = null
+let mediaSession = null
+let processedMediaCommands = new Map()
 let preferences = { ...defaultPreferences }
 const preferencesQueue = new SerialOperationQueue()
 const processInstanceId = randomUUID()
@@ -95,6 +105,30 @@ function seedFor(title = 'Untitled Deck') {
   }
 }
 
+function requiredMediaSession() {
+  if (!mediaSession) throw namedError('DocumentUnavailable', 'No Deck media session is open')
+  return mediaSession
+}
+
+async function activateMediaSession(packagePath) {
+  const summary = await utility.request('document.query', { name: 'deck.summary', params: {} })
+  const candidate = await LinuxMediaSession.open({
+    packagePath,
+    deckId: summary.deckId,
+    grantStore: mediaGrantStore,
+  })
+  const previous = mediaSession
+  mediaSession = candidate
+  processedMediaCommands = new Map()
+  previous?.close()
+}
+
+function abandonMediaSession() {
+  mediaSession?.close()
+  mediaSession = null
+  processedMediaCommands = new Map()
+}
+
 function normalizeCreatePath(value) {
   return extname(value).toLowerCase() === '.pitchdeck' ? value : `${value}.pitchdeck`
 }
@@ -112,6 +146,14 @@ async function createDocument(packagePath) {
     packagePath,
     seed: seedFor(basename(packagePath, '.pitchdeck')),
   })
+  try {
+    await activateMediaSession(packagePath)
+  } catch (error) {
+    abandonMediaSession()
+    activePackagePath = null
+    await utility.request('document.close').catch(() => {})
+    throw error
+  }
   activePackagePath = packagePath
   await renderProjection(projection)
   return projection
@@ -119,6 +161,14 @@ async function createDocument(packagePath) {
 
 async function openDocument(packagePath) {
   const projection = await utility.request('document.open', { packagePath })
+  try {
+    await activateMediaSession(packagePath)
+  } catch (error) {
+    abandonMediaSession()
+    activePackagePath = null
+    await utility.request('document.close').catch(() => {})
+    throw error
+  }
   activePackagePath = packagePath
   await renderProjection(projection)
   return projection
@@ -252,6 +302,112 @@ async function presentNativeFailure(failure) {
   dialog.showErrorBox(failure.name, failure.message)
 }
 
+function assertMediaCommand(command) {
+  if (!command || typeof command !== 'object' || Array.isArray(command)) {
+    throw namedError('InvalidCommand', 'Typed Deck command is required')
+  }
+  if (typeof command.commandId !== 'string' || command.commandId.length === 0 || command.commandId.length > 256) {
+    throw namedError('InvalidCommand', 'commandId must be a bounded opaque identity')
+  }
+  if (!Number.isSafeInteger(command.expectedRevision) || command.expectedRevision < 0) {
+    throw namedError('InvalidCommand', 'expectedRevision must be a non-negative integer')
+  }
+  if (![
+    'media.root.authorize',
+    'media.root.reconnect',
+    'media.root.scan',
+  ].includes(command.type)) {
+    throw namedError('InvalidCommand', 'Unknown native media command')
+  }
+  if (!command.payload || typeof command.payload !== 'object' || Array.isArray(command.payload)) {
+    throw namedError('InvalidCommand', `${command.type} requires an object payload`)
+  }
+  if (
+    !command.source
+    || typeof command.source !== 'object'
+    || Array.isArray(command.source)
+    || !['ui', 'keyboard', 'cli', 'mcp', 'migration'].includes(command.source.kind)
+  ) {
+    throw namedError('InvalidCommand', 'source.kind is unsupported')
+  }
+  if (
+    typeof command.issuedAt !== 'string'
+    || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/.test(command.issuedAt)
+    || !Number.isFinite(Date.parse(command.issuedAt))
+  ) {
+    throw namedError('InvalidCommand', 'issuedAt must be an ISO-8601 timestamp')
+  }
+  const keys = Object.keys(command.payload).sort()
+  if (command.type === 'media.root.authorize' && keys.length !== 0) {
+    throw namedError('InvalidCommand', 'media.root.authorize does not accept renderer paths or parameters')
+  }
+  if (
+    command.type !== 'media.root.authorize'
+    && (keys.length !== 1 || keys[0] !== 'rootId' || typeof command.payload.rootId !== 'string')
+  ) {
+    throw namedError('InvalidCommand', `${command.type} requires only an opaque rootId`)
+  }
+  return command
+}
+
+async function chooseMediaRoot(title) {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title,
+    properties: ['openDirectory', 'dontAddToRecent'],
+  })
+  if (result.canceled || result.filePaths.length !== 1) {
+    throw namedError('JobCancelled', 'Media Root selection was cancelled')
+  }
+  return result.filePaths[0]
+}
+
+async function executeMediaCommand(rawCommand) {
+  const command = assertMediaCommand(rawCommand)
+  const duplicate = processedMediaCommands.get(command.commandId)
+  if (duplicate) return structuredClone(duplicate)
+  const summary = await utility.request('document.query', { name: 'deck.summary', params: {} })
+  if (command.expectedRevision !== summary.revision) {
+    throw namedError(
+      'StaleRevision',
+      `Expected revision ${summary.revision}; received ${String(command.expectedRevision)}`,
+    )
+  }
+
+  const media = requiredMediaSession()
+  let result
+  if (command.type === 'media.root.authorize') {
+    result = await media.authorizeRoot(await chooseMediaRoot('Choose Media Folder'))
+  } else if (command.type === 'media.root.reconnect') {
+    result = await media.reconnectRoot(
+      command.payload.rootId,
+      await chooseMediaRoot('Reconnect Media Folder'),
+    )
+  } else {
+    result = await media.scanRoot(command.payload.rootId)
+  }
+  if (mediaSession !== media) {
+    throw namedError('DocumentUnavailable', 'The Deck changed while the media command was running')
+  }
+  const projection = await utility.request('document.query', {
+    name: 'slide.activeProjection',
+    params: {},
+  })
+  if (mediaSession !== media) {
+    throw namedError('DocumentUnavailable', 'The Deck changed while the media command was running')
+  }
+  const response = {
+    acknowledgement: {
+      commandId: command.commandId,
+      revision: summary.revision,
+      status: 'completed',
+    },
+    media: { catalogRevision: media.catalogRevision, ...result },
+    projection,
+  }
+  processedMediaCommands.set(command.commandId, structuredClone(response))
+  return response
+}
+
 async function dispatchBridge(method, rawPayload = {}) {
   const payload = assertPayload(rawPayload)
   switch (method) {
@@ -259,11 +415,17 @@ async function dispatchBridge(method, rawPayload = {}) {
     case 'deck.open': return presentOpenDocument()
     case 'deck.query': {
       if (typeof payload.name !== 'string') throw namedError('InvalidCommand', 'Named query is required')
+      if (payload.name === 'media.roots' || payload.name === 'media.assets') {
+        return requiredMediaSession().query(payload.name, payload.params ?? {})
+      }
       return utility.request('document.query', { name: payload.name, params: payload.params ?? {} })
     }
     case 'deck.execute': {
       if (!payload.command || typeof payload.command !== 'object') {
         throw namedError('InvalidCommand', 'Typed Deck command is required')
+      }
+      if (typeof payload.command.type === 'string' && payload.command.type.startsWith('media.')) {
+        return executeMediaCommand(payload.command)
       }
       return utility.request('document.execute', { command: payload.command })
     }
@@ -304,6 +466,73 @@ async function registerWorkspaceProtocol() {
     return new Response(await readFile(resourcePath), {
       headers: { 'content-type': workspaceContentTypes[resource] },
     })
+  })
+}
+
+function mediaProtocolStatus(error) {
+  if (error?.name === 'StaleMediaSession') return 410
+  if (error?.name === 'UnsupportedMediaPreview') return 415
+  if (['MissingMedia', 'MediaRootNeedsPermission', 'MediaRootUnavailable'].includes(error?.name)) return 404
+  return 404
+}
+
+async function registerMediaProtocol() {
+  protocol.handle('pitchdog-asset', async (request) => {
+    try {
+      if (request.method !== 'GET') return new Response('Method not allowed', { status: 405 })
+      const url = new URL(request.url)
+      if (url.username || url.password || url.port || url.search || url.hash) {
+        return new Response('Not found', { status: 404 })
+      }
+      const parts = url.pathname.split('/').filter(Boolean)
+      if (parts.length !== 2) return new Response('Not found', { status: 404 })
+      const assetId = decodeURIComponent(parts[0])
+      const profile = decodeURIComponent(parts[1])
+      const activeMedia = requiredMediaSession()
+      const { bytes } = await activeMedia.readGridResource({
+        nonce: url.hostname,
+        assetId,
+        profile,
+      })
+      if (mediaSession !== activeMedia) {
+        throw namedError('StaleMediaSession', 'This media resource session is no longer active')
+      }
+      const decoded = nativeImage.createFromBuffer(bytes)
+      if (decoded.isEmpty()) throw namedError('UnsupportedMediaPreview', 'Image decoding failed')
+      const size = decoded.getSize()
+      if (size.width <= 0 || size.height <= 0) {
+        throw namedError('UnsupportedMediaPreview', 'Image dimensions are invalid')
+      }
+      const scale = Math.min(1, 512 / Math.max(size.width, size.height))
+      const rendition = scale < 1
+        ? decoded.resize({
+            width: Math.max(1, Math.round(size.width * scale)),
+            height: Math.max(1, Math.round(size.height * scale)),
+            quality: 'best',
+          })
+        : decoded
+      const png = rendition.toPNG()
+      if (png.byteLength === 0 || png.byteLength > 8 * 1024 * 1024) {
+        throw namedError('UnsupportedMediaPreview', 'Image rendering failed or exceeded output limits')
+      }
+      return new Response(png, {
+        headers: {
+          'cache-control': 'private, no-store',
+          'content-security-policy': "default-src 'none'",
+          'content-type': 'image/png',
+          'x-content-type-options': 'nosniff',
+        },
+      })
+    } catch (error) {
+      return new Response('Media preview unavailable', {
+        status: mediaProtocolStatus(error),
+        headers: {
+          'cache-control': 'private, no-store',
+          'content-type': 'text/plain; charset=utf-8',
+          'x-content-type-options': 'nosniff',
+        },
+      })
+    }
   })
 }
 
@@ -750,6 +979,7 @@ function installMenu() {
 async function closeDocument() {
   if (!activePackagePath) return
   await utility.request('document.close')
+  abandonMediaSession()
   activePackagePath = null
   if (mainWindow && !mainWindow.isDestroyed()) {
     await mainWindow.webContents.executeJavaScript('globalThis.deckWorkbench.clearProjection()', true)
@@ -769,6 +999,13 @@ async function setInterfaceScaleFromMenu(value) {
 async function start() {
   await app.whenReady()
   await loadPreferences()
+  try {
+    mediaGrantStore = await MediaGrantStore.open(resolve(app.getPath('userData'), 'media-grants.json'))
+  } catch (error) {
+    if (error?.name !== 'InvalidMediaGrantStore') throw error
+    process.stderr.write(`${error.name}: ${error.message}\n`)
+    mediaGrantStore = await MediaGrantStore.open(resolve(app.getPath('userData'), 'media-grants.json'))
+  }
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
   session.defaultSession.setPermissionCheckHandler(() => false)
   session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
@@ -778,12 +1015,23 @@ async function start() {
       allowed = url.protocol === 'pitchdog-ui:'
         && url.hostname === 'workspace'
         && allowedWorkspaceFiles.has(url.pathname)
+      if (!allowed && url.protocol === 'pitchdog-asset:') {
+        const segments = url.pathname.split('/').filter(Boolean)
+        allowed = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(url.hostname)
+          && segments.length === 2
+          && segments[1] === 'grid_standard'
+          && !url.username
+          && !url.password
+          && !url.port
+          && !url.search
+      }
     } catch {
       allowed = false
     }
     callback({ cancel: !allowed })
   })
   await registerWorkspaceProtocol()
+  await registerMediaProtocol()
 
   const child = utilityProcess.fork(kernelUtilityPath, [], {
     serviceName: 'Deck Workbench Kernel',
@@ -817,6 +1065,7 @@ async function start() {
 
 app.on('window-all-closed', () => app.quit())
 app.on('before-quit', (event) => {
+  abandonMediaSession()
   if (!utility || quitAfterCheckpoint) {
     if (utility) utility.shutdown()
     return
@@ -840,6 +1089,7 @@ app.on('before-quit', (event) => {
 
 start().catch((error) => {
   process.stderr.write(`${error?.name ?? 'Error'}: ${error?.stack ?? error?.message ?? String(error)}\n`)
+  abandonMediaSession()
   if (utility) utility.shutdown()
   app.exit(1)
 })

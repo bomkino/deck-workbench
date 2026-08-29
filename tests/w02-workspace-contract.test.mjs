@@ -2,13 +2,14 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
-const [html, styles, core, visual] = await Promise.all([
+const [html, styles, core, curate, visual] = await Promise.all([
   readFile(new URL('../packages/workspace/app/index.html', import.meta.url), 'utf8'),
   readFile(new URL('../packages/workspace/app/styles.css', import.meta.url), 'utf8'),
   readFile(new URL('../packages/workspace/app/workspace-core.js', import.meta.url), 'utf8'),
+  readFile(new URL('../packages/workspace/app/workspace-curate.js', import.meta.url), 'utf8'),
   readFile(new URL('../packages/workspace/app/workspace-visual.js', import.meta.url), 'utf8'),
 ])
-const workspace = `${core}\n${visual}`
+const workspace = `${core}\n${curate}\n${visual}`
 
 function ruleFor(selector) {
   const start = styles.indexOf(`${selector} {`)
@@ -33,10 +34,14 @@ test('Assemble phase retains exactly three authored Pattern starters and stable-
 })
 
 test('shared workspace dispatches named kernel commands and keeps Assets semantic', () => {
-  for (const commandType of ['designOption.applyPattern', 'element.frame.update', 'element.crop.update', 'asset.reference.add', 'asset.assign']) {
-    assert.match(workspace, new RegExp(`executeStructural\\('${commandType.replace('.', '\\.')}'`))
+  for (const commandType of ['designOption.applyPattern', 'element.frame.update', 'element.crop.update']) {
+    assert.match(visual, new RegExp(`executeStructural\\('${commandType.replace('.', '\\.')}'`))
   }
-  assert.match(visual, /query\(\{ name: 'asset\.catalog', params: \{\} \}\)/)
+  for (const commandType of ['curate.projectJudgment.set', 'curate.slideDecision.set', 'curate.findMore.set']) {
+    assert.match(curate, new RegExp(`executeCurateCommand\\('${commandType.replaceAll('.', '\\.')}'`))
+  }
+  assert.match(curate, /name: 'media\.assets'/)
+  assert.match(curate, /name: 'media\.roots'/)
   assert.match(visual, /next\.contentBlocks\.find\(\(block\) => block\.id === element\.contentBlockId\)/)
   assert.match(visual, /next\.mediaAssignments\?\.find\(\(candidate\) => candidate\.role === element\.mediaRole\)/)
   assert.doesNotMatch(html, /type="file"/)

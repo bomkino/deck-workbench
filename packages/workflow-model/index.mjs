@@ -34,6 +34,9 @@ export const MEDIA_DECISION_STATES = freeze([
   'alternate',
   'rejected-for-slide',
 ])
+export const PROJECT_ASSET_REVIEWS = freeze(['unreviewed', 'keep', 'maybe', 'reject'])
+export const FIND_MORE_STATES = freeze(['not-needed', 'needed', 'resolved', 'waived'])
+export const EXISTING_PRIMARY_STATUSES = freeze(['none', 'temporary', 'usable', 'approved'])
 
 export function copyField(state = 'unreviewed', markdown = '') {
   if (!COPY_FIELD_STATES.includes(state)) throw new RangeError(`Unknown copy field state: ${state}`)
@@ -69,10 +72,62 @@ export function supportingItemSlotKeys(slide) {
   return (slide.supportingItems ?? []).map((item) => `item:${item.id}:media`)
 }
 
+export function curateSlotManifest(slide) {
+  const items = slide?.contentPattern === 'repeater' ? slide.supportingItems ?? [] : []
+  if (items.length > 0) {
+    return freeze(items.map((item, ordinal) => freeze({
+      key: `item:${item.id}:media`,
+      assignmentRole: `item:${item.id}:media`,
+      kind: 'supporting-item',
+      ordinal,
+      supportingItemId: item.id,
+    })))
+  }
+  return freeze(Array.from({ length: requiredMediaSlots(slide) }, (_, ordinal) => freeze({
+    key: `primary:${ordinal + 1}`,
+    assignmentRole: ordinal === 0 ? 'primary' : `primary:${ordinal + 1}`,
+    kind: 'primary',
+    ordinal,
+  })))
+}
+
 export function primarySlotKeys(slide) {
-  const named = supportingItemSlotKeys(slide)
-  if (named.length > 0) return named
-  return Array.from({ length: requiredMediaSlots(slide) }, (_, index) => `primary:${index + 1}`)
+  return curateSlotManifest(slide).map((slot) => slot.key)
+}
+
+export function reconcileCurateSlots({ assignments = [], previousSlots = [], nextSlots = [], reason = 'slot-contract-change' } = {}) {
+  if (!Array.isArray(assignments) || !Array.isArray(previousSlots) || !Array.isArray(nextSlots)) {
+    throw new TypeError('Curate reconciliation requires assignment and slot arrays')
+  }
+  if (!['visual-style-change', 'supporting-item-removed', 'slot-contract-change'].includes(reason)) {
+    throw new RangeError(`Unknown Curate reconciliation reason: ${reason}`)
+  }
+  const previousByRole = new Map(previousSlots.map((slot) => [slot.assignmentRole, slot]))
+  const nextRoles = new Set(nextSlots.map((slot) => slot.assignmentRole))
+  const nextSupportingIds = new Set(
+    nextSlots.filter((slot) => slot.kind === 'supporting-item').map((slot) => slot.supportingItemId),
+  )
+  const retained = []
+  const unplaced = []
+  for (const assignment of assignments) {
+    const previous = previousByRole.get(assignment.role)
+    if (!previous || nextRoles.has(assignment.role)) {
+      retained.push(freeze({ ...assignment }))
+      continue
+    }
+    const resolvedReason = previous.kind === 'supporting-item' && !nextSupportingIds.has(previous.supportingItemId)
+      ? 'supporting-item-removed'
+      : reason
+    unplaced.push(freeze({
+      assetReferenceId: assignment.assetReferenceId,
+      state: 'unplaced',
+      assignmentId: assignment.id,
+      previousSlotKey: previous.key,
+      previousAssignmentRole: previous.assignmentRole,
+      reason: resolvedReason,
+    }))
+  }
+  return freeze({ retained: freeze(retained), unplaced: freeze(unplaced) })
 }
 
 export function planIssues(slide) {

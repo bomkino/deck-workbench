@@ -30,6 +30,9 @@ function workspaceFocusTarget(active) {
   if (!active || active === document.body || active === document.documentElement) return null
   const sequence = semanticSequenceTargetForNode(active)
   if (sequence?.sequenceKind && sequence?.sequenceId) return sequence
+  if (active === elements.mediaFocusOwner && curateFocusedAssetId()) {
+    return { mediaAssetId: curateFocusedAssetId() }
+  }
   const headline = active === elements.headline
   const blockId = active?.dataset?.blockId ?? (headline ? projection?.headline?.id ?? null : null)
   if (!blockId) return null
@@ -61,6 +64,7 @@ function expectedWorkspaceFocus() {
 function workspaceFocusNode(target) {
   if (!target) return null
   if (target.sequenceKind && target.sequenceId) return sequenceFocusElement()
+  if (target.mediaAssetId) return elements.mediaFocusOwner
   if (target.blockId) return storyField(target.blockId)
   if (target.headline) return elements.headline
   return null
@@ -70,6 +74,12 @@ function focusWorkspaceNode(node, target) {
   if (target?.sequenceKind && target?.sequenceId) {
     activeStoryFocusBlockId = null
     const restored = focusSequenceTarget({ kind: target.sequenceKind, id: target.sequenceId })
+    if (restored) rememberWorkspaceFocus(target)
+    return restored
+  }
+  if (target?.mediaAssetId) {
+    activeStoryFocusBlockId = null
+    const restored = focusCurateAsset(target.mediaAssetId)
     if (restored) rememberWorkspaceFocus(target)
     return restored
   }

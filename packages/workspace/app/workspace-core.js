@@ -400,14 +400,59 @@ const elements = {
   addSupportingItem: document.querySelector('#add-supporting-item'),
   cutSlide: document.querySelector('#cut-slide'),
   savePlan: document.querySelector('#save-plan'),
-  curateSlideTitle: document.querySelector('#curate-slide-title'),
-  curateSlidePurpose: document.querySelector('#curate-slide-purpose'),
-  curateCopyPreview: document.querySelector('#curate-copy-preview'),
-  assetLabel: document.querySelector('#asset-label'),
-  addAssetReference: document.querySelector('#add-asset-reference'),
-  assetCatalog: document.querySelector('#asset-catalog'),
-  assetReference: document.querySelector('#asset-reference'),
-  assignPrimaryAsset: document.querySelector('#assign-primary-asset'),
+  curateQueueFilters: [...document.querySelectorAll('[data-curate-queue-filter]')],
+  nextCurateIssue: document.querySelector('#next-curate-issue'),
+  curateSlideQueue: document.querySelector('#curate-slide-queue'),
+  mediaSearch: document.querySelector('#media-search'),
+  mediaRootFilter: document.querySelector('#media-root-filter'),
+  mediaTypeFilter: document.querySelector('#media-type-filter'),
+  mediaAvailabilityFilter: document.querySelector('#media-availability-filter'),
+  mediaDecisionFilter: document.querySelector('#media-decision-filter'),
+  thumbnailDensity: document.querySelector('#thumbnail-density'),
+  mediaCount: document.querySelector('#media-count'),
+  mediaRootStatus: document.querySelector('#media-root-status'),
+  authoriseMediaRoot: document.querySelector('#authorise-media-root'),
+  reconnectMediaRoot: document.querySelector('#reconnect-media-root'),
+  scanMediaRoot: document.querySelector('#scan-media-root'),
+  revealMediaSource: document.querySelector('#reveal-media-source'),
+  focusedAssetSummary: document.querySelector('#focused-asset-summary'),
+  toggleProjectPick: document.querySelector('#toggle-project-pick'),
+  projectRating: document.querySelector('#project-rating'),
+  projectReview: document.querySelector('#project-review'),
+  previewMedia: document.querySelector('#preview-media'),
+  shortlistMedia: document.querySelector('#shortlist-media'),
+  assignPrimaryMedia: document.querySelector('#assign-primary-media'),
+  alternateMedia: document.querySelector('#alternate-media'),
+  rejectSlideMedia: document.querySelector('#reject-slide-media'),
+  clearSlideMedia: document.querySelector('#clear-slide-media'),
+  toggleCompareMedia: document.querySelector('#toggle-compare-media'),
+  openMediaCompare: document.querySelector('#open-media-compare'),
+  compareCount: document.querySelector('#compare-count'),
+  mediaFocusOwner: document.querySelector('#media-focus-owner'),
+  mediaScroll: document.querySelector('#media-scroll'),
+  mediaCanvas: document.querySelector('#media-canvas'),
+  mediaWallState: document.querySelector('#media-wall-state'),
+  curateBriefHeading: document.querySelector('#curate-brief-heading'),
+  curateBriefContent: document.querySelector('#curate-brief-content'),
+  findMoreForm: document.querySelector('#find-more-form'),
+  findMoreState: document.querySelector('#find-more-state'),
+  findMorePrimaryStatus: document.querySelector('#find-more-primary-status'),
+  findMoreBrief: document.querySelector('#find-more-brief'),
+  saveFindMore: document.querySelector('#save-find-more'),
+  primaryTray: document.querySelector('#primary-tray'),
+  alternateTray: document.querySelector('#alternate-tray'),
+  shortlistTray: document.querySelector('#shortlist-tray'),
+  unplacedTray: document.querySelector('#unplaced-tray'),
+  slotProgress: document.querySelector('#slot-progress'),
+  mediaPreview: document.querySelector('#media-preview'),
+  previewMediaTitle: document.querySelector('#preview-media-title'),
+  previewMediaImage: document.querySelector('#preview-media-image'),
+  previewCapabilityState: document.querySelector('#preview-capability-state'),
+  previewMediaDetails: document.querySelector('#preview-media-details'),
+  mediaCompare: document.querySelector('#media-compare'),
+  compareMediaGrid: document.querySelector('#compare-media-grid'),
+  mediaContextMenu: document.querySelector('#media-context-menu'),
+  curateStatus: document.querySelector('#curate-status'),
   stageScroll: document.querySelector('#stage-scroll'),
   artboardShell: document.querySelector('#artboard-shell'),
   artboard: document.querySelector('#artboard'),
@@ -440,11 +485,11 @@ let selectedSlideId = null
 let interfaceScale = 1
 let artboardZoom = 0.35
 let activePhase = 'plan'
-let assetCatalog = []
 let planSearch = ''
 let planFilter = 'all'
 let draftSupportingItems = []
 let refreshGeneration = 0
+let pendingWorkspaceSlideId = null
 
 function setStatus(message) {
   elements.saveState.textContent = message
@@ -504,6 +549,7 @@ function renderAll() {
 
 function setPhase(phase) {
   if (!['plan', 'curate', 'assemble', 'handoff'].includes(phase)) return
+  if (phase !== 'curate') closeCurateOverlays()
   activePhase = phase
   renderAll()
   elements.phaseWorkspaces.focus({ preventScroll: true })
@@ -524,7 +570,6 @@ async function refreshWorkspace(requestedSlideId = selectedSlideId, focus = {}) 
       projection = null
     }
     if (generation !== refreshGeneration) return projection
-    await refreshAssetCatalog()
     renderAll()
     if (focus.slideId) elements.sequenceList.querySelector(`[data-slide-id="${CSS.escape(focus.slideId)}"]`)?.focus()
     if (focus.sectionId) elements.sequenceList.querySelector(`[data-section-id="${CSS.escape(focus.sectionId)}"]`)?.focus()
@@ -548,7 +593,7 @@ function clearProjection() {
   projection = null
   storyDocument = null
   selectedSlideId = null
-  assetCatalog = []
+  clearCurateState()
   renderAll()
 }
 
@@ -566,7 +611,10 @@ async function executeStructural(type, payload, requestedSlideId = selectedSlide
         issuedAt: new Date().toISOString(),
       },
     })
-    return await refreshWorkspace(requestedSlideId, options.focus ?? {})
+    const refreshSlideId = options.preserveCurrentSelection
+      ? pendingWorkspaceSlideId ?? selectedSlideId
+      : requestedSlideId
+    return await refreshWorkspace(refreshSlideId, options.focus ?? {})
   } catch (error) {
     renderAll()
     setStatus(`${error.name ?? 'Error'}: ${error.message}`)
@@ -601,7 +649,7 @@ async function executeBatch(operations, requestedSlideId = selectedSlideId) {
 
 async function selectSlide(slideId) {
   if (!findStoryLocation(slideId)) return
-  selectedSlideId = slideId
+  pendingWorkspaceSlideId = slideId
   await refreshWorkspace(slideId)
 }
 

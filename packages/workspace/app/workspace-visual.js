@@ -1,16 +1,4 @@
 function bindVisualEvents() {
-  elements.assetLabel.addEventListener('input', () => {
-    elements.addAssetReference.disabled = !projection || elements.assetLabel.value.trim().length === 0
-  })
-  elements.addAssetReference.addEventListener('click', addNeutralAssetReference)
-  elements.assignPrimaryAsset.addEventListener('click', assignPrimaryAsset)
-  elements.assetCatalog.addEventListener('click', (event) => {
-    const card = event.target.closest('[data-asset-id]')
-    if (!card) return
-    elements.assetReference.value = card.dataset.assetId
-    elements.assignPrimaryAsset.disabled = false
-    renderAssetCatalog(assetCatalog)
-  })
   elements.patternChoice.addEventListener('change', () => {
     if (projection) syncVisualControls(projection)
   })
@@ -24,94 +12,6 @@ function bindVisualEvents() {
   elements.applyCrop.addEventListener('click', applySelectedCrop)
   elements.artboardZoom.addEventListener('input', () => setArtboardZoom(Number(elements.artboardZoom.value)))
   elements.fitArtboard.addEventListener('click', () => setArtboardZoom(fittedArtboardZoom()))
-}
-
-async function refreshAssetCatalog() {
-  if (!projection) {
-    assetCatalog = []
-    return
-  }
-  try {
-    const result = await window.deckBridge.query({ name: 'asset.catalog', params: {} })
-    assetCatalog = result.assets ?? []
-  } catch {
-    assetCatalog = []
-  }
-}
-
-function renderCurate() {
-  const record = selectedPlanRecord()
-  if (!record || !projection) {
-    elements.curateSlideTitle.textContent = 'No Slide selected'
-    elements.curateSlidePurpose.textContent = 'Create or open a Deck.'
-    elements.curateCopyPreview.replaceChildren()
-    elements.assetLabel.disabled = true
-    elements.addAssetReference.disabled = true
-    elements.assetReference.disabled = true
-    elements.assignPrimaryAsset.disabled = true
-    elements.assetCatalog.innerHTML = '<div class="empty-workspace"><strong>No Asset catalogue.</strong><p>Create or open a Deck.</p></div>'
-    return
-  }
-  elements.curateSlideTitle.textContent = record.metadata.internalTitle
-  elements.curateSlidePurpose.textContent = record.metadata.purpose || 'Purpose not written.'
-  const copy = [
-    record.headline?.plainText ? `<strong>${escapeHTML(record.headline.plainText)}</strong>` : '',
-    record.subheadline?.plainText ? `<p>${escapeHTML(record.subheadline.plainText)}</p>` : '',
-    record.body?.plainText ? `<p>${escapeHTML(record.body.plainText)}</p>` : '',
-  ].filter(Boolean)
-  elements.curateCopyPreview.innerHTML = record.metadata.textPresence === 'no-on-slide-text'
-    ? '<p>No on-Slide text — intentional.</p>'
-    : copy.join('') || '<p>Copy remains unreviewed.</p>'
-  elements.assetLabel.disabled = false
-  elements.addAssetReference.disabled = elements.assetLabel.value.trim().length === 0
-  renderAssetCatalog(assetCatalog)
-}
-
-function renderAssetCatalog(assets) {
-  const assignedAssetId = projection?.mediaAssignments?.find((assignment) => assignment.role === 'primary')?.assetReference?.id
-  const priorSelection = elements.assetReference.value
-  elements.assetReference.replaceChildren()
-  for (const asset of assets) {
-    const option = document.createElement('option')
-    option.value = asset.id
-    option.textContent = `${asset.label} · ${asset.mediaKind}`
-    elements.assetReference.append(option)
-  }
-  const requestedSelection = assignedAssetId ?? priorSelection
-  if ([...elements.assetReference.options].some((option) => option.value === requestedSelection)) {
-    elements.assetReference.value = requestedSelection
-  }
-  const hasAssets = Boolean(projection) && elements.assetReference.options.length > 0
-  elements.assetReference.disabled = !hasAssets
-  elements.assignPrimaryAsset.disabled = !hasAssets
-  elements.assetCatalog.innerHTML = assets.length
-    ? assets.map((asset) => `<button class="asset-card ${assignedAssetId === asset.id ? 'is-assigned' : ''}" data-asset-id="${escapeAttribute(asset.id)}" type="button">
-        <strong>${escapeHTML(asset.label)}</strong>
-        <small>${escapeHTML(asset.mediaKind)} · ${escapeHTML(asset.availability)}</small>
-      </button>`).join('')
-    : '<div class="empty-workspace"><strong>No Asset references.</strong><p>Add a neutral reference now. Real media discovery arrives with the shared media-core gate.</p></div>'
-}
-
-async function addNeutralAssetReference() {
-  if (!projection) return
-  const label = elements.assetLabel.value.trim()
-  if (!label) return
-  const result = await executeStructural('asset.reference.add', {
-    assetReferenceId: crypto.randomUUID(),
-    label,
-    mediaKind: 'image',
-  }, projection.slide.id, { sourceLabel: 'Add neutral Asset Reference' })
-  if (result) {
-    elements.assetLabel.value = ''
-    elements.addAssetReference.disabled = true
-  }
-}
-
-async function assignPrimaryAsset() {
-  if (!projection) return
-  const payload = assetAssignmentPlan(projection, elements.assetReference.value, crypto.randomUUID())
-  if (!payload) return
-  await executeStructural('asset.assign', payload, projection.slide.id, { sourceLabel: 'Assign Primary Asset' })
 }
 
 function renderAssemble() {

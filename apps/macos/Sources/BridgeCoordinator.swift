@@ -16,6 +16,8 @@ final class BridgeCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDel
         controller.attachWorkspace(self)
     }
 
+    var mediaController: DeckSessionController { controller }
+
     func attach(webView: WKWebView) {
         self.webView = webView
     }
@@ -174,12 +176,21 @@ final class BridgeCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDel
                 throw WorkbenchFailure(name: "InvalidCommand", message: "Named query is required")
             }
             trace("bridge query \(name)")
+            if name == "media.roots" || name == "media.assets" {
+                return try await controller.mediaQuery(
+                    name: name,
+                    params: payload["params"] as? [String: Any] ?? [:]
+                )
+            }
             return try controller.query(name: name, params: payload["params"] as? [String: Any] ?? [:])
         case .deckExecute:
             guard let command = payload["command"] as? [String: Any] else {
                 throw WorkbenchFailure(name: "InvalidCommand", message: "Typed Deck command is required")
             }
             trace("bridge execute \(command["type"] as? String ?? "unknown")")
+            if let type = command["type"] as? String, type.hasPrefix("media.") {
+                return try await controller.executeMedia(command: command)
+            }
             return try controller.execute(command: command)
         case .deckUndo:
             return try controller.undo()

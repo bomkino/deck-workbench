@@ -186,6 +186,24 @@ node scripts/linux/verify-linux-journey-result.mjs \
   "$APPIMAGE_JOURNEY_ROOT/journey-result.json" \
   'exact AppImage'
 
+CURATE_GATE_STATUS="$EVIDENCE_ROOT/curate-gate-status.txt"
+if [[ "${DW_REQUIRE_CURATE_JOURNEY:-0}" == "1" ]]; then
+  test -s "$JOURNEY_ROOT/curate-journey-result.json"
+  test -s "$APPIMAGE_JOURNEY_ROOT/curate-journey-result.json"
+  node scripts/verify-curate-journey-output.mjs \
+    "$JOURNEY_ROOT/curate-journey-result.json" \
+    "$COMMIT_SHA" ubuntu-x64 tarball 'extracted Linux tarball'
+  node scripts/verify-curate-journey-output.mjs \
+    "$APPIMAGE_JOURNEY_ROOT/curate-journey-result.json" \
+    "$COMMIT_SHA" ubuntu-x64 appimage 'exact AppImage'
+  printf 'verified\t%s\t%s\n' "$COMMIT_SHA" 'extracted tarball and exact AppImage' > "$CURATE_GATE_STATUS"
+else
+  printf 'unverified\t%s\n' \
+    'native packaged Curate tracer has not emitted curate-journey-result.json' \
+    > "$CURATE_GATE_STATUS"
+  echo 'WB-F02 packaged Curate journey: UNVERIFIED — native tracer output hook is inactive'
+fi
+
 pdfinfo "$APPIMAGE_JOURNEY_ROOT/tracer.pdf" | tee "$EVIDENCE_ROOT/appimage-pdfinfo.txt"
 grep -Eq '^Pages:[[:space:]]+1$' "$EVIDENCE_ROOT/appimage-pdfinfo.txt"
 

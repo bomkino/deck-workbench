@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' pitchdog-asset:; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#eef2f3" />
@@ -14,6 +14,7 @@
     <script src="bridge.generated.js" defer></script>
     <script src="workspace-core.js" defer></script>
     <script src="workspace-plan.js" defer></script>
+    <script src="workspace-curate.js" defer></script>
     <script src="workspace-visual.js" defer></script>
     <script src="workspace-handoff.js" defer></script>
     <script src="workspace.js" defer></script>
@@ -215,31 +216,130 @@
         </section>
 
         <section class="phase-view curate-phase" data-phase-view="curate" aria-label="Curate phase" aria-hidden="true">
-          <header class="phase-introduction panel">
-            <p class="panel-label">02 / Curate</p>
-            <h2>Choose the visual evidence.</h2>
-            <p>This production slice retains neutral Asset references and primary assignment while the shared media core is extracted.</p>
-          </header>
-          <aside class="curate-context panel">
-            <p class="panel-label">Selected Slide</p>
-            <h3 id="curate-slide-title">No Slide selected</h3>
-            <p id="curate-slide-purpose"></p>
-            <div id="curate-copy-preview" class="copy-preview"></div>
-          </aside>
-          <section class="asset-workspace panel">
-            <div class="panel-heading">
-              <div><p class="panel-label">Project Assets</p><h2>Neutral catalogue seam</h2></div>
+          <nav class="curate-queue panel" aria-labelledby="curate-queue-heading">
+            <div class="panel-heading curate-queue-heading">
+              <div>
+                <p class="panel-label">02 / Curate</p>
+                <h2 id="curate-queue-heading">Media queue</h2>
+              </div>
+              <button id="next-curate-issue" type="button" aria-keyshortcuts="N">Next issue</button>
             </div>
-            <div class="asset-add-row">
-              <label><span>Reference label</span><input id="asset-label" type="text" maxlength="160" placeholder="e.g. Hill at dusk" disabled /></label>
-              <button id="add-asset-reference" type="button" disabled>Add reference</button>
+            <div class="curate-queue-filters" role="group" aria-label="Slide queue filter">
+              <button type="button" data-curate-queue-filter="all" aria-pressed="true">All</button>
+              <button type="button" data-curate-queue-filter="needs" aria-pressed="false">Needs</button>
+              <button type="button" data-curate-queue-filter="find-more" aria-pressed="false">Find more</button>
+              <button type="button" data-curate-queue-filter="ready" aria-pressed="false">Ready</button>
             </div>
-            <div id="asset-catalog" class="asset-catalog"></div>
-            <div class="asset-assignment-row">
-              <label><span>Primary Asset</span><select id="asset-reference" disabled></select></label>
-              <button id="assign-primary-asset" class="primary-action" type="button" disabled>Assign primary</button>
+            <div id="curate-slide-queue" class="curate-slide-queue" role="list"></div>
+          </nav>
+
+          <section class="curate-main panel" aria-labelledby="media-wall-heading">
+            <header class="media-toolbar">
+              <label class="media-search-control">
+                <span>Search media</span>
+                <input id="media-search" type="search" placeholder="Filename, folder, title or note" autocomplete="off" />
+              </label>
+              <label>
+                <span>Root</span>
+                <select id="media-root-filter" aria-label="Media Root"></select>
+              </label>
+              <label>
+                <span>Type</span>
+                <select id="media-type-filter">
+                  <option value="all">All types</option>
+                  <option value="image">Images</option>
+                  <option value="gif">GIFs</option>
+                  <option value="video">Videos</option>
+                </select>
+              </label>
+              <label>
+                <span>Availability</span>
+                <select id="media-availability-filter">
+                  <option value="all">All states</option>
+                  <option value="available">Available</option>
+                  <option value="missing">Missing</option>
+                  <option value="offline">Offline</option>
+                  <option value="unreadable">Unreadable</option>
+                  <option value="needs_permission">Needs permission</option>
+                </select>
+              </label>
+              <label>
+                <span>Decision</span>
+                <select id="media-decision-filter">
+                  <option value="all">All media</option>
+                  <option value="project-picks">Project Picks</option>
+                  <option value="slide-shortlist">Slide Shortlist</option>
+                  <option value="selected">Selected</option>
+                  <option value="alternates">Alternates</option>
+                  <option value="unused">Unused</option>
+                </select>
+              </label>
+              <label class="media-density-control">
+                <span>Thumbnail density</span>
+                <input id="thumbnail-density" type="range" min="150" max="340" step="10" value="220" aria-label="Thumbnail Density" aria-valuetext="220 pixels" />
+              </label>
+              <span id="media-count" class="media-count" aria-live="polite">0 Assets</span>
+            </header>
+
+            <div class="media-source-bar" aria-label="Media source controls">
+              <span id="media-root-status">No media Root authorised.</span>
+              <div>
+                <button id="authorise-media-root" type="button">Authorise Root…</button>
+                <button id="reconnect-media-root" type="button" disabled>Reconnect…</button>
+                <button id="scan-media-root" type="button" disabled>Scan</button>
+                <button id="reveal-media-source" type="button" disabled>Reveal source</button>
+              </div>
+            </div>
+
+            <div class="media-action-bar" aria-label="Focused Asset actions">
+              <span id="focused-asset-summary">No Asset focused</span>
+              <div class="project-media-actions" role="group" aria-label="Project-level Asset judgment">
+                <button id="toggle-project-pick" type="button" disabled aria-pressed="false">Project Pick</button>
+                <label><span>Project rating</span><select id="project-rating" disabled><option value="0">Unrated</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></label>
+                <label><span>Project review</span><select id="project-review" disabled><option value="unreviewed">Unreviewed</option><option value="keep">Keep</option><option value="maybe">Maybe</option><option value="reject">Reject</option></select></label>
+              </div>
+              <div class="slide-media-actions" role="group" aria-label="Current-Slide Asset decision">
+                <button id="preview-media" type="button" disabled aria-keyshortcuts="Space">Preview</button>
+                <button id="shortlist-media" type="button" disabled aria-keyshortcuts="S">Shortlist</button>
+                <button id="assign-primary-media" type="button" disabled aria-keyshortcuts="M">Primary</button>
+                <button id="alternate-media" type="button" disabled aria-keyshortcuts="A">Alternate</button>
+                <button id="reject-slide-media" type="button" disabled aria-keyshortcuts="X">Reject here</button>
+                <button id="clear-slide-media" type="button" disabled aria-keyshortcuts="Shift+X">Clear decision</button>
+                <button id="toggle-compare-media" type="button" disabled aria-pressed="false">Add to Compare</button>
+                <button id="open-media-compare" type="button" disabled aria-keyshortcuts="C">Compare <span id="compare-count">0</span></button>
+              </div>
+            </div>
+
+            <div class="media-grid-shell">
+              <p id="media-keyboard-help" class="visually-hidden">Arrow keys navigate media. Space opens Preview. S shortlists. M assigns the next open primary slot. A adds an Alternate. X rejects only for this Slide. Shift X clears the current-Slide decision. Number keys zero through five set the project rating. N moves to the next unresolved Slide. P moves to the previous Slide. Plus and minus change thumbnail density. C opens Compare.</p>
+              <textarea id="media-focus-owner" class="media-focus-owner" rows="1" wrap="off" readonly role="grid" aria-label="Project media keyboard navigation" aria-describedby="media-keyboard-help" aria-readonly="true" aria-multiselectable="true" inputmode="none">No media loaded</textarea>
+              <div id="media-scroll" class="media-scroll" tabindex="-1">
+                <div id="media-canvas" class="media-canvas"></div>
+                <div id="media-wall-state" class="media-wall-state" role="status" aria-live="polite">Authorise a project media Root to begin.</div>
+              </div>
             </div>
           </section>
+
+          <aside class="curate-brief panel" aria-labelledby="curate-brief-heading">
+            <div class="panel-heading">
+              <div><p class="panel-label">Selected Slide</p><h2 id="curate-brief-heading">No Slide selected</h2></div>
+            </div>
+            <div id="curate-brief-content" class="curate-brief-content"></div>
+            <form id="find-more-form" class="find-more-form">
+              <p class="panel-label">Find More Media</p>
+              <label><span>State</span><select id="find-more-state" disabled><option value="not-needed">Not needed</option><option value="needed">Needed</option><option value="resolved">Resolved</option><option value="waived">Waived</option></select></label>
+              <label><span>Existing Primary</span><select id="find-more-primary-status" disabled><option value="none">None</option><option value="temporary">Temporary</option><option value="usable">Usable</option><option value="approved">Approved</option></select></label>
+              <label><span>Research brief</span><textarea id="find-more-brief" rows="4" disabled placeholder="What exact media is still needed?"></textarea></label>
+              <button id="save-find-more" type="submit" disabled>Save Find More</button>
+            </form>
+          </aside>
+
+          <footer class="curate-tray panel" aria-label="Selected Slide media tray">
+            <section aria-labelledby="primary-tray-heading"><div class="tray-heading"><strong id="primary-tray-heading">Primary slots</strong><span id="slot-progress">0/0</span></div><div id="primary-tray" class="tray-items"></div></section>
+            <section aria-labelledby="alternate-tray-heading"><div class="tray-heading"><strong id="alternate-tray-heading">Alternates</strong></div><div id="alternate-tray" class="tray-items"></div></section>
+            <section aria-labelledby="shortlist-tray-heading"><div class="tray-heading"><strong id="shortlist-tray-heading">Slide shortlist</strong></div><div id="shortlist-tray" class="tray-items"></div></section>
+            <section aria-labelledby="unplaced-tray-heading"><div class="tray-heading"><strong id="unplaced-tray-heading">Unplaced</strong></div><div id="unplaced-tray" class="tray-items"></div></section>
+          </footer>
         </section>
 
         <section class="phase-view assemble-phase stage" data-phase-view="assemble" aria-label="Assemble phase" aria-hidden="true">
@@ -308,6 +408,36 @@
           </aside>
         </section>
       </section>
+
+      <dialog id="media-preview" class="media-dialog media-preview-dialog" aria-labelledby="preview-media-title">
+        <form method="dialog">
+          <header class="media-dialog-heading"><div><p class="panel-label">Media Preview</p><h2 id="preview-media-title">Asset</h2></div><button type="submit" value="cancel" aria-label="Close Preview">Close</button></header>
+          <div class="media-preview-layout">
+            <div class="media-preview-stage"><img id="preview-media-image" alt="" hidden /><p id="preview-capability-state">Preview unavailable.</p></div>
+            <aside id="preview-media-details" class="preview-media-details"></aside>
+          </div>
+        </form>
+      </dialog>
+
+      <dialog id="media-compare" class="media-dialog media-compare-dialog" aria-labelledby="compare-media-title">
+        <form method="dialog">
+          <header class="media-dialog-heading"><div><p class="panel-label">Candidate Compare</p><h2 id="compare-media-title">Compare 2–4 Assets</h2></div><button type="submit" value="cancel" aria-label="Close Compare">Close</button></header>
+          <div id="compare-media-grid" class="compare-media-grid"></div>
+        </form>
+      </dialog>
+
+      <div id="media-context-menu" class="media-context-menu" role="menu" aria-label="Asset actions" hidden>
+        <button type="button" role="menuitem" data-media-context-action="preview">Open Preview</button>
+        <button type="button" role="menuitem" data-media-context-action="shortlist">Shortlist for this Slide</button>
+        <button type="button" role="menuitem" data-media-context-action="primary">Assign to next open primary slot</button>
+        <button type="button" role="menuitem" data-media-context-action="alternate">Add as Alternate</button>
+        <button type="button" role="menuitem" data-media-context-action="reject">Reject for this Slide</button>
+        <button type="button" role="menuitem" data-media-context-action="clear">Clear current-Slide decision</button>
+        <button type="button" role="menuitem" data-media-context-action="project-pick">Toggle Project Pick</button>
+        <button type="button" role="menuitem" data-media-context-action="compare">Add to Compare</button>
+        <button type="button" role="menuitem" data-media-context-action="reveal">Reveal source</button>
+      </div>
+      <p id="curate-status" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></p>
     </main>
   </body>
 </html>

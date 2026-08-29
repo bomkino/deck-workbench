@@ -35,6 +35,52 @@ type MediaAssignment = {
   assetReferenceId: string
 }
 
+type ProjectAssetJudgment = {
+  rating: 0 | 1 | 2 | 3 | 4 | 5
+  review: 'unreviewed' | 'keep' | 'maybe' | 'reject'
+  projectPick: boolean
+}
+
+type FindMoreMedia = {
+  state: 'not-needed' | 'needed' | 'resolved' | 'waived'
+  brief: string
+  existingPrimaryStatus: 'none' | 'temporary' | 'usable' | 'approved'
+}
+
+type CurateSlot = {
+  key: string
+  assignmentRole: string
+  kind: 'primary' | 'supporting-item'
+  ordinal: number
+  supportingItemId?: string
+}
+
+type SlideAssetDisposition =
+  | { state: 'considered' }
+  | { state: 'shortlisted' }
+  | { state: 'alternate' }
+  | { state: 'rejected-for-slide' }
+  | {
+      state: 'unplaced'
+      assignmentId: string
+      previousSlotKey: string
+      previousAssignmentRole: string
+      reason: 'visual-style-change' | 'supporting-item-removed' | 'slot-contract-change'
+    }
+
+type SlideCurateState = {
+  slotManifest: CurateSlot[]
+  decisions: Record<string, SlideAssetDisposition>
+  findMoreMedia: FindMoreMedia
+}
+
+type CurateEnvelopeV1 = {
+  format: 'pitchdog.workbench-curate'
+  version: 1
+  projectJudgments: Record<string, ProjectAssetJudgment>
+  slides: Record<string, SlideCurateState>
+}
+
 type ElementFrame = {
   x: number
   y: number
@@ -114,6 +160,7 @@ type DeckSnapshot = {
     height: 1080
   }
   assetReferences?: AssetReference[]
+  workbenchCurate?: CurateEnvelopeV1
   sections: Section[]
 }
 
@@ -241,10 +288,31 @@ type DesignOptionActivatePayload = {
   designOptionId: string | null
 }
 
+type CurateProjectJudgmentSetPayload = {
+  assetReferenceId: string
+  value: ProjectAssetJudgment | null
+}
+
+type CurateSlideDecisionSetPayload = {
+  slideId: string
+  assetReferenceId: string
+  value: SlideAssetDisposition | null
+}
+
+type CurateFindMoreSetPayload = {
+  slideId: string
+  value: FindMoreMedia
+}
+
+type CurateSlotManifestSetPayload = {
+  slideId: string
+  value: CurateSlot[]
+}
+
 type CommandEnvelope = {
   commandId: string
   expectedRevision: number
-  type: 'deck.rename' | 'content.add' | 'content.update' | 'content.remove' | 'section.add' | 'section.rename' | 'section.move' | 'section.remove' | 'slide.add' | 'slide.move' | 'slide.intent.set' | 'slide.remove' | 'asset.reference.add' | 'asset.assign' | 'designOption.applyPattern' | 'designOption.activate' | 'element.frame.update' | 'element.crop.update'
+  type: 'deck.rename' | 'content.add' | 'content.update' | 'content.remove' | 'section.add' | 'section.rename' | 'section.move' | 'section.remove' | 'slide.add' | 'slide.move' | 'slide.intent.set' | 'slide.remove' | 'asset.reference.add' | 'asset.assign' | 'curate.projectJudgment.set' | 'curate.slideDecision.set' | 'curate.findMore.set' | 'curate.reconcile' | 'designOption.applyPattern' | 'designOption.activate' | 'element.frame.update' | 'element.crop.update'
   payload: JsonObject
   source: {
     kind: 'ui' | 'keyboard' | 'cli' | 'mcp' | 'migration'
@@ -254,6 +322,7 @@ type CommandEnvelope = {
 }
 
 type HistoryOperation =
+  | { type: 'compound'; payload: { operations: HistoryOperation[] } }
   | { type: 'deck.rename'; payload: DeckRenamePayload }
   | { type: 'content.set'; payload: ContentUpdatePayload }
   | { type: 'content.insert'; payload: { slideId: string; block: ContentBlock; afterBlockId: string | null } }
@@ -271,6 +340,14 @@ type HistoryOperation =
   | { type: 'asset.assignment.insert'; payload: MediaAssignmentInsertPayload }
   | { type: 'asset.assignment.remove'; payload: MediaAssignmentRemovePayload }
   | { type: 'asset.assignment.asset.set'; payload: MediaAssignmentAssetSetPayload }
+  | { type: 'curate.envelope.insert'; payload: { value: CurateEnvelopeV1 } }
+  | { type: 'curate.envelope.remove'; payload: Record<string, never> }
+  | { type: 'curate.slide.insert'; payload: { slideId: string; value: SlideCurateState } }
+  | { type: 'curate.slide.remove'; payload: { slideId: string } }
+  | { type: 'curate.projectJudgment.set'; payload: CurateProjectJudgmentSetPayload }
+  | { type: 'curate.slideDecision.set'; payload: CurateSlideDecisionSetPayload }
+  | { type: 'curate.findMore.set'; payload: CurateFindMoreSetPayload }
+  | { type: 'curate.slotManifest.set'; payload: CurateSlotManifestSetPayload }
   | { type: 'designOption.insert'; payload: DesignOptionInsertPayload }
   | { type: 'designOption.remove'; payload: DesignOptionRemovePayload }
   | { type: 'designOption.activate.set'; payload: DesignOptionActivatePayload }
@@ -415,6 +492,28 @@ function assertString(value: unknown, field: string, maxLength = 4096): string {
   return value
 }
 
+const UNSAFE_IDENTITY_KEYS = new Set([
+  ...Object.getOwnPropertyNames(Object.prototype),
+  '__proto__',
+  'prototype',
+])
+
+function assertIdentity(value: unknown, field: string, maxLength = 4096): string {
+  const identity = assertString(value, field, maxLength)
+  if (UNSAFE_IDENTITY_KEYS.has(identity)) {
+    throw new Error(`${field} uses a reserved identity`)
+  }
+  return identity
+}
+
+function hasOwn(record: object, key: PropertyKey): boolean {
+  return Object.prototype.hasOwnProperty.call(record, key)
+}
+
+function ownValue<T>(record: Record<string, T> | undefined, key: string): T | undefined {
+  return record && hasOwn(record, key) ? record[key] : undefined
+}
+
 function utf8ByteLength(value: string): number {
   let length = 0
   for (const character of value) {
@@ -440,7 +539,7 @@ function assertBoundedJsonStrings(value: unknown, seen = new WeakSet<object>()):
 }
 
 function assertCommandEnvelope(command: CommandEnvelope): void {
-  assertString(command.commandId, 'commandId', 256)
+  assertIdentity(command.commandId, 'commandId', 256)
   if (!Number.isSafeInteger(command.expectedRevision) || command.expectedRevision < 0) {
     throw new Error('expectedRevision must be a non-negative integer')
   }
@@ -495,6 +594,269 @@ function assertMediaKind(value: unknown): AssetReference['mediaKind'] {
     throw new Error('mediaKind must be image, gif, or video')
   }
   return value
+}
+
+function assertAssetAvailability(value: unknown): AssetReference['availability'] {
+  if (value !== 'unknown' && value !== 'available' && value !== 'missing') {
+    throw new Error('availability must be unknown, available, or missing')
+  }
+  return value
+}
+
+function assertAssetReferenceSnapshot(value: unknown, expectedId?: string): AssetReference {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('assetReference must be an object')
+  }
+  const candidate = value as JsonObject
+  const id = assertIdentity(candidate.id, 'assetReference.id', 256)
+  if (expectedId !== undefined && id !== expectedId) {
+    throw new Error('assetReference.id must match assetReferenceId')
+  }
+  return {
+    id,
+    label: assertString(candidate.label, 'assetReference.label'),
+    mediaKind: assertMediaKind(candidate.mediaKind),
+    availability: assertAssetAvailability(candidate.availability ?? 'unknown'),
+  }
+}
+
+function assertProjectAssetJudgment(value: unknown): ProjectAssetJudgment {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('judgment must be an object')
+  }
+  const candidate = value as JsonObject
+  if (!Number.isInteger(candidate.rating) || (candidate.rating as number) < 0 || (candidate.rating as number) > 5) {
+    throw new Error('judgment.rating must be an integer from 0 to 5')
+  }
+  if (!['unreviewed', 'keep', 'maybe', 'reject'].includes(candidate.review as string)) {
+    throw new Error('judgment.review is unsupported')
+  }
+  if (typeof candidate.projectPick !== 'boolean') throw new Error('judgment.projectPick must be a boolean')
+  return {
+    rating: candidate.rating as ProjectAssetJudgment['rating'],
+    review: candidate.review as ProjectAssetJudgment['review'],
+    projectPick: candidate.projectPick,
+  }
+}
+
+function assertFindMoreMedia(value: unknown): FindMoreMedia {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Find More Media value must be an object')
+  }
+  const candidate = value as JsonObject
+  if (!['not-needed', 'needed', 'resolved', 'waived'].includes(candidate.state as string)) {
+    throw new Error('Find More Media state is unsupported')
+  }
+  if (!['none', 'temporary', 'usable', 'approved'].includes(candidate.existingPrimaryStatus as string)) {
+    throw new Error('Find More Media existingPrimaryStatus is unsupported')
+  }
+  const brief = typeof candidate.brief === 'string' ? candidate.brief : (() => { throw new Error('Find More Media brief must be a string') })()
+  if (brief.length > 32768) throw new Error('Find More Media brief must be at most 32768 characters')
+  return {
+    state: candidate.state as FindMoreMedia['state'],
+    brief,
+    existingPrimaryStatus: candidate.existingPrimaryStatus as FindMoreMedia['existingPrimaryStatus'],
+  }
+}
+
+function assertCurateSlot(value: unknown): CurateSlot {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Curate slot must be an object')
+  const candidate = value as JsonObject
+  const kind = candidate.kind
+  if (kind !== 'primary' && kind !== 'supporting-item') throw new Error('Curate slot kind is unsupported')
+  if (!Number.isSafeInteger(candidate.ordinal) || (candidate.ordinal as number) < 0) {
+    throw new Error('Curate slot ordinal must be a non-negative integer')
+  }
+  const slot: CurateSlot = {
+    key: assertIdentity(candidate.key, 'Curate slot key', 512),
+    assignmentRole: assertIdentity(candidate.assignmentRole, 'Curate slot assignmentRole', 512),
+    kind,
+    ordinal: candidate.ordinal as number,
+  }
+  if (kind === 'supporting-item') {
+    slot.supportingItemId = assertIdentity(candidate.supportingItemId, 'Curate slot supportingItemId', 256)
+  } else if (candidate.supportingItemId !== undefined) {
+    throw new Error('Primary Curate slot cannot carry a Supporting Item identity')
+  }
+  return slot
+}
+
+function assertCurateSlotManifest(value: unknown): CurateSlot[] {
+  if (!Array.isArray(value)) throw new Error('Curate slot manifest must be an array')
+  if (value.length > 100) throw new Error('Curate slot manifest must contain at most 100 slots')
+  const slots = value.map(assertCurateSlot)
+  const keys = new Set<string>()
+  const roles = new Set<string>()
+  for (const [index, slot] of slots.entries()) {
+    if (keys.has(slot.key)) throw new Error(`Duplicate Curate slot key: ${slot.key}`)
+    if (roles.has(slot.assignmentRole)) throw new Error(`Duplicate Curate assignment role: ${slot.assignmentRole}`)
+    if (slot.ordinal !== index) throw new Error('Curate slot ordinals must match manifest order')
+    if (slot.kind === 'primary') {
+      const expectedKey = `primary:${index + 1}`
+      const expectedRole = index === 0 ? 'primary' : expectedKey
+      if (slot.key !== expectedKey || slot.assignmentRole !== expectedRole) {
+        throw new Error('Primary Curate slot identity does not match its ordinal')
+      }
+    } else {
+      const expectedIdentity = `item:${slot.supportingItemId}:media`
+      if (slot.key !== expectedIdentity || slot.assignmentRole !== expectedIdentity) {
+        throw new Error('Supporting Item Curate slot identity does not match its stable item identity')
+      }
+    }
+    keys.add(slot.key)
+    roles.add(slot.assignmentRole)
+  }
+  return slots
+}
+
+function assertSlideAssetDisposition(value: unknown, allowUnplaced = true): SlideAssetDisposition {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Slide Asset decision must be an object')
+  }
+  const candidate = value as JsonObject
+  if (['considered', 'shortlisted', 'alternate', 'rejected-for-slide'].includes(candidate.state as string)) {
+    return { state: candidate.state as 'considered' | 'shortlisted' | 'alternate' | 'rejected-for-slide' }
+  }
+  if (candidate.state !== 'unplaced' || !allowUnplaced) throw new Error('Slide Asset decision state is unsupported')
+  if (!['visual-style-change', 'supporting-item-removed', 'slot-contract-change'].includes(candidate.reason as string)) {
+    throw new Error('Unplaced Asset reason is unsupported')
+  }
+  return {
+    state: 'unplaced',
+    assignmentId: assertIdentity(candidate.assignmentId, 'Unplaced Asset assignmentId', 256),
+    previousSlotKey: assertIdentity(candidate.previousSlotKey, 'Unplaced Asset previousSlotKey', 512),
+    previousAssignmentRole: assertIdentity(candidate.previousAssignmentRole, 'Unplaced Asset previousAssignmentRole', 512),
+    reason: candidate.reason as 'visual-style-change' | 'supporting-item-removed' | 'slot-contract-change',
+  }
+}
+
+function defaultFindMoreMedia(): FindMoreMedia {
+  return { state: 'not-needed', brief: '', existingPrimaryStatus: 'none' }
+}
+
+function emptyCurateEnvelope(): CurateEnvelopeV1 {
+  return {
+    format: 'pitchdog.workbench-curate',
+    version: 1,
+    projectJudgments: {},
+    slides: {},
+  }
+}
+
+function normalizedVisualStyle(intent: string): string {
+  if (['undecided', 'text-only', 'full-bleed', 'full-bleed-overlay', 'image-text', 'diptych', 'triptych', 'gallery', 'custom'].includes(intent)) {
+    return intent
+  }
+  if (intent === 'cover' || intent === 'statement' || intent === 'full-bleed-statement') return 'full-bleed-overlay'
+  if (intent === 'editorial-body') return 'image-text'
+  return 'undecided'
+}
+
+type PlanSlotBasis = {
+  contentPattern: string
+  mediaSlotCount: number
+  supportingItems: { id: string; title: string }[]
+}
+
+const WORKBENCH_CONTENT_PATTERNS = new Set([
+  'simple-copy',
+  'quote',
+  'repeater',
+  'comparison',
+  'gallery-captions',
+  'no-on-slide-text',
+  'custom',
+])
+
+function planSlotBasis(slide: Slide): PlanSlotBasis {
+  const fallback: PlanSlotBasis = { contentPattern: 'simple-copy', mediaSlotCount: 0, supportingItems: [] }
+  const matchingBlocks = slide.contentBlocks.filter(
+    (candidate) => candidate.role === 'workbench-plan' || candidate.semanticKey === 'workbench.plan.v1',
+  )
+  if (matchingBlocks.length > 1) {
+    throw new Error('Slide must contain at most one Workbench Plan metadata block')
+  }
+  const block = matchingBlocks[0]
+  if (!block) return fallback
+  let parsed: JsonObject
+  try {
+    const value = JSON.parse(richTextToPlainText(block.value)) as unknown
+    parsed = assertRecord(value, 'Workbench Plan metadata')
+  } catch (error) {
+    throw new Error(`Workbench Plan metadata must be valid JSON: ${(error as Error).message}`)
+  }
+  if (parsed.format !== 'pitchdog.workbench-plan' || parsed.version !== 1) {
+    throw new Error('Workbench Plan metadata must use pitchdog.workbench-plan version 1')
+  }
+  const contentPattern = assertString(parsed.contentPattern, 'Workbench Plan contentPattern', 128)
+  if (!WORKBENCH_CONTENT_PATTERNS.has(contentPattern)) {
+    throw new Error('Workbench Plan contentPattern is unsupported')
+  }
+  if (
+    !Number.isSafeInteger(parsed.mediaSlotCount)
+    || (parsed.mediaSlotCount as number) < 0
+    || (parsed.mediaSlotCount as number) > 100
+  ) throw new Error('Workbench Plan mediaSlotCount must be an integer from 0 to 100')
+  if (!Array.isArray(parsed.supportingItems)) {
+    throw new Error('Workbench Plan supportingItems must be an array')
+  }
+  if (parsed.supportingItems.length > 100) {
+    throw new Error('Workbench Plan supportingItems must contain at most 100 items')
+  }
+  const supportingItemIds = new Set<string>()
+  const supportingItems = parsed.supportingItems.map((item, index) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      throw new Error(`Supporting Item ${index + 1} must be an object`)
+    }
+    const candidate = item as JsonObject
+    const id = assertIdentity(candidate.id, `Supporting Item ${index + 1} id`, 256)
+    if (supportingItemIds.has(id)) throw new Error(`Duplicate Supporting Item identity: ${id}`)
+    supportingItemIds.add(id)
+    return {
+      id,
+      title: typeof candidate.title === 'string' ? candidate.title : '',
+    }
+  })
+  return { contentPattern, mediaSlotCount: parsed.mediaSlotCount as number, supportingItems }
+}
+
+function deriveCurateSlotManifest(slide: Slide): CurateSlot[] {
+  const plan = planSlotBasis(slide)
+  if (plan.contentPattern === 'repeater' && plan.supportingItems.length > 0) {
+    return assertCurateSlotManifest(plan.supportingItems.map((item, ordinal) => ({
+      key: `item:${item.id}:media`,
+      assignmentRole: `item:${item.id}:media`,
+      kind: 'supporting-item',
+      ordinal,
+      supportingItemId: item.id,
+    })))
+  }
+  const visualStyle = normalizedVisualStyle(slide.intent)
+  const count = visualStyle === 'text-only' || visualStyle === 'undecided'
+    ? 0
+    : ['full-bleed', 'full-bleed-overlay', 'image-text'].includes(visualStyle)
+      ? 1
+      : visualStyle === 'diptych'
+        ? 2
+        : visualStyle === 'triptych'
+          ? 3
+          : (visualStyle === 'gallery' || visualStyle === 'custom')
+            ? plan.mediaSlotCount
+            : 0
+  return Array.from({ length: count }, (_, ordinal): CurateSlot => ({
+    key: `primary:${ordinal + 1}`,
+    assignmentRole: ordinal === 0 ? 'primary' : `primary:${ordinal + 1}`,
+    kind: 'primary',
+    ordinal,
+  }))
+}
+
+function manifestsEqual(left: CurateSlot[], right: CurateSlot[]): boolean {
+  return JSON.stringify(left) === JSON.stringify(right)
+}
+
+function isDefaultProjectJudgment(value: ProjectAssetJudgment): boolean {
+  return value.rating === 0 && value.review === 'unreviewed' && value.projectPick === false
 }
 
 function assertNormalizedCrop(value: unknown): NormalizedCrop {
@@ -601,8 +963,388 @@ function mediaAssignmentIdentityExists(deck: DeckSnapshot, mediaAssignmentId: st
   )
 }
 
+function unplacedAssignmentIdentityExists(
+  deck: DeckSnapshot,
+  mediaAssignmentId: string,
+  except?: { slideId: string; assetReferenceId: string },
+): boolean {
+  return Object.entries(deck.workbenchCurate?.slides ?? {}).some(([slideId, state]) =>
+    Object.entries(state.decisions).some(([assetReferenceId, decision]) =>
+      decision.state === 'unplaced'
+      && decision.assignmentId === mediaAssignmentId
+      && (slideId !== except?.slideId || assetReferenceId !== except.assetReferenceId),
+    ),
+  )
+}
+
 function findMediaAssignment(slide: Slide, mediaAssignmentId: string): MediaAssignment | undefined {
   return slide.mediaAssignments?.find((assignment) => assignment.id === mediaAssignmentId)
+}
+
+function assertRecord(value: unknown, field: string): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${field} must be an object`)
+  return value as Record<string, unknown>
+}
+
+function assertDeckMediaIntegrity(deck: DeckSnapshot): void {
+  assertIdentity(deck.deckId, 'deck.deckId', 256)
+  assertString(deck.title, 'deck.title')
+  if (!Array.isArray(deck.sections)) throw new Error('Deck sections must be an array')
+  if (deck.assetReferences !== undefined && !Array.isArray(deck.assetReferences)) {
+    throw new Error('Deck Asset References must be an array')
+  }
+
+  const assetIds = new Set<string>()
+  for (const rawAsset of deck.assetReferences ?? []) {
+    const asset = assertAssetReferenceSnapshot(rawAsset)
+    if (assetIds.has(asset.id)) throw new Error(`Duplicate Asset Reference identity: ${asset.id}`)
+    assetIds.add(asset.id)
+  }
+
+  const sectionIds = new Set<string>()
+  const slideIds = new Set<string>()
+  const blockIds = new Set<string>()
+  const assignmentIds = new Set<string>()
+  const designOptionIds = new Set<string>()
+  const elementIds = new Set<string>()
+  for (const [sectionIndex, rawSection] of deck.sections.entries()) {
+    const section = assertRecord(rawSection, `Deck Section ${sectionIndex + 1}`) as unknown as Section
+    const sectionId = assertIdentity(section.id, `Deck Section ${sectionIndex + 1} identity`, 256)
+    if (sectionIds.has(sectionId)) throw new Error(`Duplicate Section identity: ${sectionId}`)
+    sectionIds.add(sectionId)
+    assertString(section.title, `Deck Section ${sectionIndex + 1} title`)
+    if (!Array.isArray(section.slides)) throw new Error(`Deck Section ${sectionId} Slides must be an array`)
+
+    for (const [slideIndex, rawSlide] of section.slides.entries()) {
+      const slide = assertRecord(rawSlide, `Slide ${slideIndex + 1} in Section ${sectionId}`) as unknown as Slide
+      const slideId = assertIdentity(slide.id, `Slide ${slideIndex + 1} identity`, 256)
+      if (slideIds.has(slideId)) throw new Error(`Duplicate Slide identity: ${slideId}`)
+      slideIds.add(slideId)
+      assertString(slide.intent, `Slide ${slideId} intent`)
+      if (!Array.isArray(slide.contentBlocks)) throw new Error(`Slide ${slideId} Content Blocks must be an array`)
+      for (const [blockIndex, rawBlock] of slide.contentBlocks.entries()) {
+        const block = assertRecord(rawBlock, `Content Block ${blockIndex + 1} on Slide ${slideId}`) as unknown as ContentBlock
+        const blockId = assertIdentity(block.id, `Content Block ${blockIndex + 1} identity`, 256)
+        if (blockIds.has(blockId)) throw new Error(`Duplicate Content Block identity: ${blockId}`)
+        blockIds.add(blockId)
+        assertString(block.semanticKey, `Content Block ${blockId} semanticKey`)
+        assertString(block.role, `Content Block ${blockId} role`)
+        if (!isRichTextDocument(block.value)) throw new Error(`Content Block ${blockId} must contain semantic rich-text JSON`)
+      }
+
+      if (slide.mediaAssignments !== undefined && !Array.isArray(slide.mediaAssignments)) {
+        throw new Error(`Slide ${slideId} Media Assignments must be an array`)
+      }
+      const roles = new Set<string>()
+      for (const [assignmentIndex, rawAssignment] of (slide.mediaAssignments ?? []).entries()) {
+        const assignment = assertRecord(
+          rawAssignment,
+          `Media Assignment ${assignmentIndex + 1} on Slide ${slideId}`,
+        ) as unknown as MediaAssignment
+        const assignmentId = assertIdentity(
+          assignment.id,
+          `Media Assignment ${assignmentIndex + 1} identity`,
+          256,
+        )
+        if (assignmentIds.has(assignmentId)) throw new Error(`Duplicate Media Assignment identity: ${assignmentId}`)
+        assignmentIds.add(assignmentId)
+        const role = assertString(assignment.role, `Media Assignment ${assignmentId} role`, 512)
+        if (roles.has(role)) throw new Error(`Duplicate Media Assignment role on Slide ${slideId}: ${role}`)
+        roles.add(role)
+        const assetReferenceId = assertIdentity(
+          assignment.assetReferenceId,
+          `Media Assignment ${assignmentId} Asset Reference identity`,
+          256,
+        )
+        if (!assetIds.has(assetReferenceId)) {
+          throw new Error(`Media Assignment ${assignmentId} Asset Reference does not exist`)
+        }
+      }
+
+      const currentManifest = deriveCurateSlotManifest(slide)
+      const rawStoredState = deck.workbenchCurate && hasOwn(deck.workbenchCurate.slides, slideId)
+        ? deck.workbenchCurate.slides[slideId]
+        : undefined
+      const storedManifest = rawStoredState && typeof rawStoredState === 'object'
+        ? assertCurateSlotManifest((rawStoredState as SlideCurateState).slotManifest)
+        : []
+      const curateRoles = new Set([
+        ...currentManifest.map((slot) => slot.assignmentRole),
+        ...storedManifest.map((slot) => slot.assignmentRole),
+      ])
+      const selectedAssetIds = new Set<string>()
+      for (const assignment of slide.mediaAssignments ?? []) {
+        if (!curateRoles.has(assignment.role)) continue
+        if (selectedAssetIds.has(assignment.assetReferenceId)) {
+          throw new Error('One Asset cannot occupy multiple Curate slots on one Slide')
+        }
+        selectedAssetIds.add(assignment.assetReferenceId)
+      }
+
+      if (slide.designOptions !== undefined && !Array.isArray(slide.designOptions)) {
+        throw new Error(`Slide ${slideId} Design Options must be an array`)
+      }
+      const slideDesignOptionIds = new Set<string>()
+      for (const [optionIndex, rawOption] of (slide.designOptions ?? []).entries()) {
+        const option = assertRecord(rawOption, `Design Option ${optionIndex + 1} on Slide ${slideId}`) as unknown as DesignOption
+        const optionId = assertIdentity(option.id, `Design Option ${optionIndex + 1} identity`, 256)
+        if (designOptionIds.has(optionId)) throw new Error(`Duplicate Design Option identity: ${optionId}`)
+        designOptionIds.add(optionId)
+        slideDesignOptionIds.add(optionId)
+        assertString(option.name, `Design Option ${optionId} name`)
+        const composition = assertRecord(option.composition, `Design Option ${optionId} composition`) as unknown as Composition
+        assertIdentity(composition.id, `Design Option ${optionId} composition identity`, 512)
+        if (!Array.isArray(composition.elements)) throw new Error(`Design Option ${optionId} Elements must be an array`)
+        for (const rawElement of composition.elements) {
+          const element = assertRecord(rawElement, `Element in Design Option ${optionId}`) as unknown as CompositionElement
+          const elementId = assertIdentity(element.id, `Element identity in Design Option ${optionId}`, 512)
+          if (elementIds.has(elementId)) throw new Error(`Duplicate Element identity: ${elementId}`)
+          elementIds.add(elementId)
+        }
+      }
+      if (
+        slide.activeDesignOptionId !== undefined
+        && !slideDesignOptionIds.has(assertIdentity(slide.activeDesignOptionId, `Slide ${slideId} active Design Option identity`, 256))
+      ) throw new Error('Active Design Option does not exist')
+    }
+  }
+}
+
+function assertWorkbenchCurateEnvelope(deck: DeckSnapshot): void {
+  const envelope = deck.workbenchCurate
+  if (envelope === undefined) return
+  if (!envelope || typeof envelope !== 'object' || Array.isArray(envelope)) {
+    throw new Error('workbenchCurate must be an object')
+  }
+  if (envelope.format !== 'pitchdog.workbench-curate' || envelope.version !== 1) {
+    throw new Error('Only Workbench Curate envelope version 1 is supported')
+  }
+  const projectJudgments = assertRecord(envelope.projectJudgments, 'workbenchCurate.projectJudgments')
+  const slideStates = assertRecord(envelope.slides, 'workbenchCurate.slides')
+  const assetIds = new Set((deck.assetReferences ?? []).map((asset) => asset.id))
+  const slideIds = new Set(deck.sections.flatMap((section) => section.slides.map((slide) => slide.id)))
+  const activeAssignmentIds = new Set(
+    deck.sections.flatMap((section) => section.slides.flatMap((slide) => (slide.mediaAssignments ?? []).map((item) => item.id))),
+  )
+  const unplacedAssignmentIds = new Set<string>()
+
+  for (const [assetReferenceId, judgment] of Object.entries(projectJudgments)) {
+    assertIdentity(assetReferenceId, 'Project judgment Asset Reference identity', 256)
+    if (!assetIds.has(assetReferenceId)) throw new Error('Project judgment Asset Reference does not exist')
+    assertProjectAssetJudgment(judgment)
+  }
+  for (const [slideId, rawState] of Object.entries(slideStates)) {
+    assertIdentity(slideId, 'Curate Slide identity', 256)
+    if (!slideIds.has(slideId)) throw new Error('Curate Slide does not exist')
+    const state = assertRecord(rawState, `Curate state for ${slideId}`)
+    const manifest = assertCurateSlotManifest(state.slotManifest)
+    const decisions = assertRecord(state.decisions, `Curate decisions for ${slideId}`)
+    assertFindMoreMedia(state.findMoreMedia)
+    const slide = findSlide(deck, slideId) as Slide
+    const curateRoles = new Set([
+      ...manifest.map((slot) => slot.assignmentRole),
+      ...deriveCurateSlotManifest(slide).map((slot) => slot.assignmentRole),
+    ])
+    const selectedAssetIds = new Set(
+      (slide.mediaAssignments ?? [])
+        .filter((assignment) => curateRoles.has(assignment.role))
+        .map((assignment) => assignment.assetReferenceId),
+    )
+    for (const [assetReferenceId, decision] of Object.entries(decisions)) {
+      assertIdentity(assetReferenceId, 'Slide decision Asset Reference identity', 256)
+      if (!assetIds.has(assetReferenceId)) throw new Error('Slide decision Asset Reference does not exist')
+      if (selectedAssetIds.has(assetReferenceId)) throw new Error('Selected Asset cannot also have a non-selected Slide decision')
+      const normalized = assertSlideAssetDisposition(decision)
+      if (normalized.state === 'unplaced') {
+        if (activeAssignmentIds.has(normalized.assignmentId) || unplacedAssignmentIds.has(normalized.assignmentId)) {
+          throw new Error('Unplaced Media Assignment identity must remain unique')
+        }
+        unplacedAssignmentIds.add(normalized.assignmentId)
+      }
+    }
+  }
+}
+
+function assertDeckIntegrity(deck: DeckSnapshot): void {
+  assertDeckMediaIntegrity(deck)
+  assertWorkbenchCurateEnvelope(deck)
+}
+
+function operationList(operations: HistoryOperation[]): HistoryOperation {
+  if (operations.length === 0) throw new Error('History operation list cannot be empty')
+  return operations.length === 1 ? operations[0] : { type: 'compound', payload: { operations } }
+}
+
+function appendOperationPair(
+  forwardOperations: HistoryOperation[],
+  inverseOperations: HistoryOperation[],
+  forwardOperation: HistoryOperation,
+  inverseOperation: HistoryOperation,
+): void {
+  forwardOperations.push(forwardOperation)
+  inverseOperations.unshift(inverseOperation)
+}
+
+function appendCurateEnvelopeScaffold(
+  deck: DeckSnapshot,
+  forwardOperations: HistoryOperation[],
+  inverseOperations: HistoryOperation[],
+): void {
+  if (deck.workbenchCurate) return
+  appendOperationPair(
+    forwardOperations,
+    inverseOperations,
+    { type: 'curate.envelope.insert', payload: { value: emptyCurateEnvelope() } },
+    { type: 'curate.envelope.remove', payload: {} },
+  )
+}
+
+function appendCurateSlideScaffold(
+  deck: DeckSnapshot,
+  slideId: string,
+  slotManifest: CurateSlot[],
+  forwardOperations: HistoryOperation[],
+  inverseOperations: HistoryOperation[],
+): void {
+  appendCurateEnvelopeScaffold(deck, forwardOperations, inverseOperations)
+  if (deck.workbenchCurate && hasOwn(deck.workbenchCurate.slides, slideId)) return
+  appendOperationPair(
+    forwardOperations,
+    inverseOperations,
+    {
+      type: 'curate.slide.insert',
+      payload: {
+        slideId,
+        value: { slotManifest: clone(slotManifest), decisions: {}, findMoreMedia: defaultFindMoreMedia() },
+      },
+    },
+    { type: 'curate.slide.remove', payload: { slideId } },
+  )
+}
+
+function appendAssetReferenceScaffold(
+  deck: DeckSnapshot,
+  payload: JsonObject,
+  forwardOperations: HistoryOperation[],
+  inverseOperations: HistoryOperation[],
+): string {
+  const assetReferenceId = assertIdentity(payload.assetReferenceId, 'assetReferenceId', 256)
+  const existing = deck.assetReferences?.find((asset) => asset.id === assetReferenceId)
+  if (existing) {
+    if (payload.assetReference !== undefined) {
+      const supplied = assertAssetReferenceSnapshot(payload.assetReference, assetReferenceId)
+      if (supplied.mediaKind !== existing.mediaKind) throw new Error('Asset Reference media kind cannot change')
+    }
+    return assetReferenceId
+  }
+  if (payload.assetReference === undefined) {
+    throw new Error('Unknown Asset Reference requires a neutral assetReference snapshot')
+  }
+  const assetReference = assertAssetReferenceSnapshot(payload.assetReference, assetReferenceId)
+  assetReference.availability = 'unknown'
+  appendOperationPair(
+    forwardOperations,
+    inverseOperations,
+    { type: 'asset.reference.insert', payload: { assetReference } },
+    { type: 'asset.reference.remove', payload: { assetReferenceId } },
+  )
+  return assetReferenceId
+}
+
+function appendCurateReconciliation(
+  originalDeck: DeckSnapshot,
+  stagedDeck: DeckSnapshot,
+  slideId: string,
+  forwardOperations: HistoryOperation[],
+  inverseOperations: HistoryOperation[],
+): void {
+  const oldSlide = findSlide(originalDeck, slideId)
+  const nextSlide = findSlide(stagedDeck, slideId)
+  if (!oldSlide || !nextSlide) return
+  const existingState = ownValue(originalDeck.workbenchCurate?.slides, slideId)
+  const previousManifest = clone(existingState?.slotManifest ?? deriveCurateSlotManifest(oldSlide))
+  const nextManifest = deriveCurateSlotManifest(nextSlide)
+  const nextRoles = new Set(nextManifest.map((slot) => slot.assignmentRole))
+  const previousSlotsByRole = new Map(previousManifest.map((slot) => [slot.assignmentRole, slot]))
+  const incompatible = (oldSlide.mediaAssignments ?? []).filter(
+    (assignment) => previousSlotsByRole.has(assignment.role) && !nextRoles.has(assignment.role),
+  )
+  if (!existingState && incompatible.length === 0) return
+
+  appendCurateSlideScaffold(originalDeck, slideId, previousManifest, forwardOperations, inverseOperations)
+  for (const assignment of incompatible) {
+    const priorDecision = ownValue(existingState?.decisions, assignment.assetReferenceId) ?? null
+    if (priorDecision) throw new Error('Selected Asset cannot also have a non-selected Slide decision')
+    const previousSlot = previousSlotsByRole.get(assignment.role) as CurateSlot
+    const nextSupportingIds = new Set(
+      nextManifest.filter((slot) => slot.kind === 'supporting-item').map((slot) => slot.supportingItemId),
+    )
+    const reason: Extract<SlideAssetDisposition, { state: 'unplaced' }>['reason'] =
+      previousSlot.kind === 'supporting-item' && !nextSupportingIds.has(previousSlot.supportingItemId)
+        ? 'supporting-item-removed'
+        : oldSlide.intent !== nextSlide.intent
+          ? 'visual-style-change'
+          : 'slot-contract-change'
+    appendOperationPair(
+      forwardOperations,
+      inverseOperations,
+      {
+        type: 'asset.assignment.remove',
+        payload: { slideId, mediaAssignmentId: assignment.id },
+      },
+      {
+        type: 'asset.assignment.insert',
+        payload: { slideId, assignment: clone(assignment) },
+      },
+    )
+    appendOperationPair(
+      forwardOperations,
+      inverseOperations,
+      {
+        type: 'curate.slideDecision.set',
+        payload: {
+          slideId,
+          assetReferenceId: assignment.assetReferenceId,
+          value: {
+            state: 'unplaced',
+            assignmentId: assignment.id,
+            previousSlotKey: previousSlot.key,
+            previousAssignmentRole: previousSlot.assignmentRole,
+            reason,
+          },
+        },
+      },
+      {
+        type: 'curate.slideDecision.set',
+        payload: { slideId, assetReferenceId: assignment.assetReferenceId, value: priorDecision },
+      },
+    )
+  }
+  if (!manifestsEqual(previousManifest, nextManifest)) {
+    appendOperationPair(
+      forwardOperations,
+      inverseOperations,
+      { type: 'curate.slotManifest.set', payload: { slideId, value: clone(nextManifest) } },
+      { type: 'curate.slotManifest.set', payload: { slideId, value: clone(previousManifest) } },
+    )
+  }
+}
+
+function operationsWithCurateReconciliation(
+  deck: DeckSnapshot,
+  slideId: string,
+  baseForward: HistoryOperation,
+  baseInverse: HistoryOperation,
+): { forward: HistoryOperation; inverse: HistoryOperation } {
+  const forwardOperations: HistoryOperation[] = []
+  const inverseOperations: HistoryOperation[] = []
+  appendOperationPair(forwardOperations, inverseOperations, baseForward, baseInverse)
+  const stagedDeck = applyHistoryOperation(deck, baseForward)
+  appendCurateReconciliation(deck, stagedDeck, slideId, forwardOperations, inverseOperations)
+  return {
+    forward: operationList(forwardOperations),
+    inverse: operationList(inverseOperations),
+  }
 }
 
 function authoredPattern(patternId: string, patternVersion: number): LayoutPatternSnapshot | undefined {
@@ -673,8 +1415,22 @@ function insertAfter<T extends { id: string }>(items: T[], value: T, afterId: st
   items.splice(anchorIndex + 1, 0, value)
 }
 
-function applyHistoryOperation(deck: DeckSnapshot, operation: HistoryOperation): DeckSnapshot {
-  const next = clone(deck)
+function applyHistoryOperation(deck: DeckSnapshot, operation: HistoryOperation, reuseDeck = false): DeckSnapshot {
+  if (!operation || typeof operation !== 'object' || Array.isArray(operation)) {
+    throw new Error('History operation must be an object')
+  }
+  if (typeof operation.type !== 'string') throw new Error('History operation type must be a string')
+  if (!operation.payload || typeof operation.payload !== 'object' || Array.isArray(operation.payload)) {
+    throw new Error('History operation payload must be an object')
+  }
+  const next = reuseDeck ? deck : clone(deck)
+  if (operation.type === 'compound') {
+    if (!Array.isArray(operation.payload.operations) || operation.payload.operations.length === 0) {
+      throw new Error('Compound history operation must contain operations')
+    }
+    for (const item of operation.payload.operations) applyHistoryOperation(next, item, true)
+    return next
+  }
   if (operation.type === 'deck.rename') {
     next.title = operation.payload.title
     return next
@@ -768,6 +1524,13 @@ function applyHistoryOperation(deck: DeckSnapshot, operation: HistoryOperation):
       ),
     )
     if (isAssigned) throw new Error('Asset Reference is assigned to a Slide')
+    const isCurated = Boolean(
+      ownValue(next.workbenchCurate?.projectJudgments, operation.payload.assetReferenceId)
+      || Object.values(next.workbenchCurate?.slides ?? {}).some(
+        (state) => ownValue(state.decisions, operation.payload.assetReferenceId),
+      ),
+    )
+    if (isCurated) throw new Error('Asset Reference has durable Curate decisions')
     assetReferences.splice(assetIndex, 1)
     return next
   }
@@ -808,6 +1571,73 @@ function applyHistoryOperation(deck: DeckSnapshot, operation: HistoryOperation):
     const assignment = findMediaAssignment(slide, operation.payload.mediaAssignmentId)
     if (!assignment) throw new Error('Media Assignment does not exist')
     assignment.assetReferenceId = operation.payload.assetReferenceId
+    return next
+  }
+  if (operation.type === 'curate.envelope.insert') {
+    if (next.workbenchCurate) throw new Error('Workbench Curate envelope already exists')
+    next.workbenchCurate = clone(operation.payload.value)
+    return next
+  }
+  if (operation.type === 'curate.envelope.remove') {
+    if (!next.workbenchCurate) throw new Error('Workbench Curate envelope does not exist')
+    if (
+      Object.keys(next.workbenchCurate.projectJudgments).length > 0
+      || Object.keys(next.workbenchCurate.slides).length > 0
+    ) throw new Error('Workbench Curate envelope must be empty before removal')
+    delete next.workbenchCurate
+    return next
+  }
+  if (operation.type === 'curate.slide.insert') {
+    if (!findSlide(next, operation.payload.slideId)) throw new Error('Slide does not exist')
+    if (!next.workbenchCurate) throw new Error('Workbench Curate envelope does not exist')
+    if (hasOwn(next.workbenchCurate.slides, operation.payload.slideId)) {
+      throw new Error('Slide Curate state already exists')
+    }
+    next.workbenchCurate.slides[operation.payload.slideId] = clone(operation.payload.value)
+    return next
+  }
+  if (operation.type === 'curate.slide.remove') {
+    if (!next.workbenchCurate || !hasOwn(next.workbenchCurate.slides, operation.payload.slideId)) {
+      throw new Error('Slide Curate state does not exist')
+    }
+    delete next.workbenchCurate.slides[operation.payload.slideId]
+    return next
+  }
+  if (operation.type === 'curate.projectJudgment.set') {
+    if (!next.workbenchCurate) throw new Error('Workbench Curate envelope does not exist')
+    if (!assetReferenceIdentityExists(next, operation.payload.assetReferenceId)) {
+      throw new Error('Asset Reference does not exist')
+    }
+    if (operation.payload.value === null) {
+      delete next.workbenchCurate.projectJudgments[operation.payload.assetReferenceId]
+    } else {
+      next.workbenchCurate.projectJudgments[operation.payload.assetReferenceId] = clone(operation.payload.value)
+    }
+    return next
+  }
+  if (operation.type === 'curate.slideDecision.set') {
+    const slideState = ownValue(next.workbenchCurate?.slides, operation.payload.slideId)
+    if (!slideState) throw new Error('Slide Curate state does not exist')
+    if (!assetReferenceIdentityExists(next, operation.payload.assetReferenceId)) {
+      throw new Error('Asset Reference does not exist')
+    }
+    if (operation.payload.value === null) {
+      delete slideState.decisions[operation.payload.assetReferenceId]
+    } else {
+      slideState.decisions[operation.payload.assetReferenceId] = clone(operation.payload.value)
+    }
+    return next
+  }
+  if (operation.type === 'curate.findMore.set') {
+    const slideState = ownValue(next.workbenchCurate?.slides, operation.payload.slideId)
+    if (!slideState) throw new Error('Slide Curate state does not exist')
+    slideState.findMoreMedia = clone(operation.payload.value)
+    return next
+  }
+  if (operation.type === 'curate.slotManifest.set') {
+    const slideState = ownValue(next.workbenchCurate?.slides, operation.payload.slideId)
+    if (!slideState) throw new Error('Slide Curate state does not exist')
+    slideState.slotManifest = clone(operation.payload.value)
     return next
   }
   if (operation.type === 'designOption.insert') {
@@ -879,6 +1709,7 @@ function applyHistoryOperation(deck: DeckSnapshot, operation: HistoryOperation):
     }
     return next
   }
+  if (operation.type !== 'slide.move') throw new Error(`Unsupported history operation: ${operation.type}`)
   const location = findSlideLocation(next, operation.payload.slideId)
   if (!location) throw new Error('Slide does not exist')
   if (operation.payload.afterSlideId === operation.payload.slideId) {
@@ -891,37 +1722,160 @@ function applyHistoryOperation(deck: DeckSnapshot, operation: HistoryOperation):
   return next
 }
 
+const HISTORY_OPERATION_TYPES = new Set([
+  'compound',
+  'deck.rename',
+  'content.set',
+  'content.insert',
+  'content.remove',
+  'section.insert',
+  'section.remove',
+  'section.rename',
+  'section.move',
+  'slide.insert',
+  'slide.remove',
+  'slide.move',
+  'slide.intent.set',
+  'asset.reference.insert',
+  'asset.reference.remove',
+  'asset.assignment.insert',
+  'asset.assignment.remove',
+  'asset.assignment.asset.set',
+  'curate.envelope.insert',
+  'curate.envelope.remove',
+  'curate.slide.insert',
+  'curate.slide.remove',
+  'curate.projectJudgment.set',
+  'curate.slideDecision.set',
+  'curate.findMore.set',
+  'curate.slotManifest.set',
+  'designOption.insert',
+  'designOption.remove',
+  'designOption.activate.set',
+  'element.frame.set',
+  'element.crop.set',
+])
+
+function assertSafeIdentityFields(
+  value: unknown,
+  field: string,
+  seen = new WeakSet<object>(),
+  depth = 0,
+): void {
+  if (!value || typeof value !== 'object') return
+  if (depth > 64) throw new Error(`${field} exceeds the maximum history value depth`)
+  if (seen.has(value)) throw new Error(`${field} must not contain cycles`)
+  seen.add(value)
+  if (Array.isArray(value)) {
+    for (const [index, item] of value.entries()) {
+      assertSafeIdentityFields(item, `${field}[${index}]`, seen, depth + 1)
+    }
+    seen.delete(value)
+    return
+  }
+  for (const [key, item] of Object.entries(value as JsonObject)) {
+    if (typeof item === 'string' && (key === 'id' || key.endsWith('Id'))) {
+      assertIdentity(item, `${field}.${key}`)
+    }
+    assertSafeIdentityFields(item, `${field}.${key}`, seen, depth + 1)
+  }
+  seen.delete(value)
+}
+
+function assertHistoryOperationShape(value: unknown, field: string, depth = 0): HistoryOperation {
+  if (depth > 64) throw new Error(`${field} exceeds the maximum compound-operation depth`)
+  const operation = assertRecord(value, field)
+  const type = assertString(operation.type, `${field}.type`, 128)
+  if (!HISTORY_OPERATION_TYPES.has(type)) throw new Error(`${field} uses an unsupported history operation`)
+  const payload = assertRecord(operation.payload, `${field}.payload`)
+  assertSafeIdentityFields(payload, `${field}.payload`)
+  if (type === 'compound') {
+    if (!Array.isArray(payload.operations) || payload.operations.length === 0 || payload.operations.length > 1024) {
+      throw new Error(`${field} compound operations must contain 1 to 1024 items`)
+    }
+    for (const [index, item] of payload.operations.entries()) {
+      assertHistoryOperationShape(item, `${field}.payload.operations[${index}]`, depth + 1)
+    }
+  }
+  return value as HistoryOperation
+}
+
+function assertHistoryEntryShape(value: unknown, field: string): HistoryEntry {
+  const entry = assertRecord(value, field)
+  assertIdentity(entry.id, `${field}.id`, 256)
+  assertString(entry.label, `${field}.label`, 4096)
+  assertHistoryOperationShape(entry.forward, `${field}.forward`)
+  assertHistoryOperationShape(entry.inverse, `${field}.inverse`)
+  return value as HistoryEntry
+}
+
+function assertCheckpointHistory(checkpoint: Checkpoint): void {
+  const historyIds = new Set<string>()
+  for (const [stackName, stack] of [
+    ['undoStack', checkpoint.undoStack],
+    ['redoStack', checkpoint.redoStack],
+  ] as const) {
+    for (const [index, rawEntry] of stack.entries()) {
+      const entry = assertHistoryEntryShape(rawEntry, `${stackName}[${index}]`)
+      if (historyIds.has(entry.id)) throw new Error(`Duplicate History Entry identity: ${entry.id}`)
+      historyIds.add(entry.id)
+    }
+  }
+
+  let undoDeck = clone(checkpoint.deck)
+  for (let index = checkpoint.undoStack.length - 1; index >= 0; index -= 1) {
+    undoDeck = applyHistoryOperation(undoDeck, checkpoint.undoStack[index].inverse)
+    assertDeckIntegrity(undoDeck)
+  }
+  let redoDeck = clone(checkpoint.deck)
+  for (let index = checkpoint.redoStack.length - 1; index >= 0; index -= 1) {
+    redoDeck = applyHistoryOperation(redoDeck, checkpoint.redoStack[index].forward)
+    assertDeckIntegrity(redoDeck)
+  }
+}
+
 function validateCheckpoint(input: unknown): Checkpoint | KernelError {
-  if (!input || typeof input !== 'object') {
-    return failure('InvalidCommand', 'Checkpoint must be an object')
+  try {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      return failure('InvalidCommand', 'Checkpoint must be an object')
+    }
+    const checkpoint = input as Partial<Checkpoint>
+    if (checkpoint.schemaVersion !== 1 || checkpoint.format !== 'pitchdog.deck-checkpoint') {
+      return failure('UnsupportedSchema', 'Only Deck checkpoint schema 1 is supported')
+    }
+    if (!Number.isSafeInteger(checkpoint.revision) || (checkpoint.revision as number) < 0) {
+      return failure('InvalidCommand', 'Checkpoint revision must be a non-negative integer')
+    }
+    if (!checkpoint.deck || typeof checkpoint.deck !== 'object' || checkpoint.deck.schemaVersion !== 1) {
+      return failure('UnsupportedSchema', 'Only Deck schema 1 is supported')
+    }
+    if (!Array.isArray(checkpoint.undoStack) || !Array.isArray(checkpoint.redoStack)) {
+      return failure('InvalidCommand', 'Checkpoint history stacks must be arrays')
+    }
+    if (
+      !checkpoint.processedCommands
+      || typeof checkpoint.processedCommands !== 'object'
+      || Array.isArray(checkpoint.processedCommands)
+    ) return failure('InvalidCommand', 'Checkpoint processed-command map is required')
+
+    const normalized = checkpoint as Checkpoint
+    assertDeckIntegrity(normalized.deck)
+    for (const [commandId, acknowledgement] of Object.entries(normalized.processedCommands)) {
+      assertIdentity(commandId, 'Processed Command identity', 256)
+      assertRecord(acknowledgement, `Processed Command ${commandId} acknowledgement`)
+    }
+    assertCheckpointHistory(normalized)
+    return clone(normalized)
+  } catch (error) {
+    return failure('InvalidCommand', (error as Error).message)
   }
-  const checkpoint = input as Partial<Checkpoint>
-  if (checkpoint.schemaVersion !== 1 || checkpoint.format !== 'pitchdog.deck-checkpoint') {
-    return failure('UnsupportedSchema', 'Only Deck checkpoint schema 1 is supported')
-  }
-  if (!Number.isSafeInteger(checkpoint.revision) || (checkpoint.revision as number) < 0) {
-    return failure('InvalidCommand', 'Checkpoint revision must be a non-negative integer')
-  }
-  if (!checkpoint.deck || checkpoint.deck.schemaVersion !== 1) {
-    return failure('UnsupportedSchema', 'Only Deck schema 1 is supported')
-  }
-  if (!Array.isArray(checkpoint.deck.sections)) {
-    return failure('InvalidCommand', 'Deck sections must be an array')
-  }
-  if (!Array.isArray(checkpoint.undoStack) || !Array.isArray(checkpoint.redoStack)) {
-    return failure('InvalidCommand', 'Checkpoint history stacks must be arrays')
-  }
-  if (!checkpoint.processedCommands || typeof checkpoint.processedCommands !== 'object') {
-    return failure('InvalidCommand', 'Checkpoint processed-command map is required')
-  }
-  return clone(checkpoint as Checkpoint)
 }
 
 function createInitialCheckpoint(seed: JsonObject): Checkpoint {
-  const deckId = assertString(seed.deckId, 'deckId')
-  const sectionId = assertString(seed.sectionId, 'sectionId')
-  const slideId = assertString(seed.slideId, 'slideId')
-  const blockId = assertString(seed.blockId, 'blockId')
+  const deckId = assertIdentity(seed.deckId, 'deckId', 256)
+  const sectionId = assertIdentity(seed.sectionId, 'sectionId', 256)
+  const slideId = assertIdentity(seed.slideId, 'slideId', 256)
+  const blockId = assertIdentity(seed.blockId, 'blockId', 256)
   const title = assertString(seed.title, 'title')
   const initialHeadline = assertString(seed.initialHeadline, 'initialHeadline')
 
@@ -979,8 +1933,155 @@ function open(input: unknown): KernelSession | KernelError {
   return { checkpoint: validated as Checkpoint }
 }
 
+function defaultProjectJudgment(): ProjectAssetJudgment {
+  return { rating: 0, review: 'unreviewed', projectPick: false }
+}
+
+function selectedCurateDecision(
+  deck: DeckSnapshot,
+  slide: Slide,
+  assetReferenceId: string,
+): JsonObject | null {
+  const slots = deriveCurateSlotManifest(slide)
+  for (const slot of slots) {
+    const assignment = slide.mediaAssignments?.find(
+      (candidate) => candidate.role === slot.assignmentRole && candidate.assetReferenceId === assetReferenceId,
+    )
+    if (assignment) {
+      return {
+        state: 'selected',
+        slotKey: slot.key,
+        assignmentId: assignment.id,
+      }
+    }
+  }
+  return null
+}
+
+function curateSlideProjection(deck: DeckSnapshot, slide: Slide, revision: number): JsonObject {
+  const slots = deriveCurateSlotManifest(slide)
+  const stored = ownValue(deck.workbenchCurate?.slides, slide.id)
+  const selectedAssetIds = new Set<string>()
+  const projectedSlots = slots.map((slot) => {
+    const assignment = slide.mediaAssignments?.find((candidate) => candidate.role === slot.assignmentRole)
+    if (assignment) selectedAssetIds.add(assignment.assetReferenceId)
+    const assetReference = assignment
+      ? deck.assetReferences?.find((asset) => asset.id === assignment.assetReferenceId)
+      : undefined
+    return {
+      ...clone(slot),
+      selected: assignment
+        ? {
+            assignmentId: assignment.id,
+            assetReferenceId: assignment.assetReferenceId,
+            assetReference: assetReference ? clone(assetReference) : null,
+          }
+        : null,
+    }
+  })
+  const decisions: JsonObject[] = Object.entries(stored?.decisions ?? {}).map(
+    ([assetReferenceId, decision]) => ({ assetReferenceId, ...clone(decision) }),
+  )
+  for (const slot of projectedSlots) {
+    if (!slot.selected) continue
+    decisions.push({
+      assetReferenceId: slot.selected.assetReferenceId,
+      state: 'selected',
+      slotKey: slot.key,
+      assignmentId: slot.selected.assignmentId,
+    })
+  }
+  return {
+    revision,
+    slide: { id: slide.id, intent: slide.intent },
+    slots: projectedSlots,
+    decisions,
+    findMoreMedia: clone(stored?.findMoreMedia ?? defaultFindMoreMedia()),
+    needsReconciliation: Boolean(stored && !manifestsEqual(stored.slotManifest, slots)),
+  }
+}
+
 function query(session: KernelSession, name: string, params: JsonObject = {}): JsonObject | KernelError {
   const checkpoint = session.checkpoint
+  if (name === 'curate.queue') {
+    try {
+      return {
+        revision: checkpoint.revision,
+        slides: checkpoint.deck.sections.flatMap((section) => section.slides.map((slide) => {
+          const slots = deriveCurateSlotManifest(slide)
+          const stored = ownValue(checkpoint.deck.workbenchCurate?.slides, slide.id)
+          const roles = new Set(slots.map((slot) => slot.assignmentRole))
+          const filledSlotCount = (slide.mediaAssignments ?? []).filter((assignment) => roles.has(assignment.role)).length
+          const unplacedCount = Object.values(stored?.decisions ?? {}).filter(
+            (decision) => decision.state === 'unplaced',
+          ).length
+          return {
+            slideId: slide.id,
+            requiredSlotCount: slots.length,
+            filledSlotCount,
+            unplacedCount,
+            findMoreState: stored?.findMoreMedia.state ?? 'not-needed',
+            needsReconciliation: Boolean(stored && !manifestsEqual(stored.slotManifest, slots)),
+          }
+        })),
+      }
+    } catch (error) {
+      return failure('InvalidCommand', (error as Error).message)
+    }
+  }
+  if (name === 'curate.slide') {
+    const slideId = typeof params.slideId === 'string' ? params.slideId : undefined
+    if (!slideId) return failure('InvalidCommand', 'curate.slide requires slideId')
+    const slide = findSlide(checkpoint.deck, slideId)
+    if (!slide) return failure('InvalidCommand', 'Slide does not exist')
+    try {
+      return {
+        deckId: checkpoint.deck.deckId,
+        ...curateSlideProjection(checkpoint.deck, slide, checkpoint.revision),
+        history: {
+          canUndo: checkpoint.undoStack.length > 0,
+          canRedo: checkpoint.redoStack.length > 0,
+        },
+      }
+    } catch (error) {
+      return failure('InvalidCommand', (error as Error).message)
+    }
+  }
+  if (name === 'curate.assetStates') {
+    const slideId = typeof params.slideId === 'string' ? params.slideId : undefined
+    if (!slideId) return failure('InvalidCommand', 'curate.assetStates requires slideId')
+    const slide = findSlide(checkpoint.deck, slideId)
+    if (!slide) return failure('InvalidCommand', 'Slide does not exist')
+    if (!Array.isArray(params.assetReferenceIds) || params.assetReferenceIds.length > 500) {
+      return failure('InvalidCommand', 'curate.assetStates requires at most 500 Asset Reference identities')
+    }
+    try {
+      const assetReferenceIds = params.assetReferenceIds.map(
+        (value, index) => assertIdentity(value, `assetReferenceIds[${index}]`, 256),
+      )
+      if (new Set(assetReferenceIds).size !== assetReferenceIds.length) {
+        return failure('InvalidCommand', 'curate.assetStates Asset Reference identities must be unique')
+      }
+      const stored = ownValue(checkpoint.deck.workbenchCurate?.slides, slideId)
+      return {
+        revision: checkpoint.revision,
+        assets: assetReferenceIds.map((assetReferenceId) => {
+          const assetReference = checkpoint.deck.assetReferences?.find((asset) => asset.id === assetReferenceId)
+          const selected = selectedCurateDecision(checkpoint.deck, slide, assetReferenceId)
+          return {
+            assetReferenceId,
+            assetReference: assetReference ? clone(assetReference) : null,
+            projectJudgment: clone(
+              ownValue(checkpoint.deck.workbenchCurate?.projectJudgments, assetReferenceId) ?? defaultProjectJudgment(),
+            ),
+            slideDecision: selected ?? clone(ownValue(stored?.decisions, assetReferenceId) ?? null),
+          }
+        }),
+      }
+    } catch (error) {
+      return failure('InvalidCommand', (error as Error).message)
+    }
+  }
   if (name === 'asset.catalog') {
     return {
       assets: clone(checkpoint.deck.assetReferences ?? []),
@@ -1128,7 +2229,7 @@ function prepare(session: KernelSession, command: CommandEnvelope): PrepareResul
   } catch (error) {
     return failure('InvalidCommand', (error as Error).message)
   }
-  const duplicate = session.checkpoint.processedCommands[command.commandId]
+  const duplicate = ownValue(session.checkpoint.processedCommands, command.commandId)
   if (duplicate) return { ok: true, duplicate: true, acknowledgement: clone(duplicate) }
   if (command.expectedRevision !== session.checkpoint.revision) {
     return failure(
@@ -1148,10 +2249,10 @@ function prepare(session: KernelSession, command: CommandEnvelope): PrepareResul
       label = `Rename Deck: ${title}`
       projectionHints = ['story', 'sequence', 'slide.activeProjection', 'history']
     } else if (command.type === 'content.add') {
-      const slideId = assertString(command.payload.slideId, 'slideId')
+      const slideId = assertIdentity(command.payload.slideId, 'slideId', 256)
       const location = findSlideLocation(session.checkpoint.deck, slideId)
       if (!location) throw new Error('Slide does not exist')
-      const blockId = assertString(command.payload.blockId, 'blockId')
+      const blockId = assertIdentity(command.payload.blockId, 'blockId', 256)
       const semanticKey = assertString(command.payload.semanticKey, 'semanticKey')
       const role = assertString(command.payload.role, 'role')
       if (blockIdentityExists(session.checkpoint.deck, blockId)) throw new Error('Content Block identity already exists')
@@ -1166,36 +2267,54 @@ function prepare(session: KernelSession, command: CommandEnvelope): PrepareResul
         ? blocks.at(-1)?.id ?? null
         : command.payload.afterBlockId === null
           ? null
-          : assertString(command.payload.afterBlockId, 'afterBlockId')
+          : assertIdentity(command.payload.afterBlockId, 'afterBlockId', 256)
       const block: ContentBlock = {
         id: blockId,
         semanticKey,
         role,
         value: clone(command.payload.value),
       }
-      forward = { type: 'content.insert', payload: { slideId, block, afterBlockId } }
-      inverse = { type: 'content.remove', payload: { slideId, blockId } }
+      const baseForward: HistoryOperation = { type: 'content.insert', payload: { slideId, block, afterBlockId } }
+      const baseInverse: HistoryOperation = { type: 'content.remove', payload: { slideId, blockId } }
+      if (block.role === 'workbench-plan' || block.semanticKey === 'workbench.plan.v1') {
+        const operations = operationsWithCurateReconciliation(session.checkpoint.deck, slideId, baseForward, baseInverse)
+        forward = operations.forward
+        inverse = operations.inverse
+        projectionHints = ['story', 'curate.queue', 'curate.slide', 'curate.assetStates', 'slide.activeProjection', 'history']
+      } else {
+        forward = baseForward
+        inverse = baseInverse
+      }
       label = `Add Content: ${role}`
     } else if (command.type === 'content.update') {
-      const slideId = assertString(command.payload.slideId, 'slideId')
-      const blockId = assertString(command.payload.blockId, 'blockId')
+      const slideId = assertIdentity(command.payload.slideId, 'slideId', 256)
+      const blockId = assertIdentity(command.payload.blockId, 'blockId', 256)
       if (!isRichTextDocument(command.payload.value)) {
         throw new Error('content.update value must be semantic rich-text JSON')
       }
       const currentBlock = findBlock(session.checkpoint.deck, slideId, blockId)
       if (!currentBlock) throw new Error('Content Block does not exist')
-      forward = {
+      const baseForward: HistoryOperation = {
         type: 'content.set',
         payload: { slideId, blockId, value: clone(command.payload.value) },
       }
-      inverse = {
+      const baseInverse: HistoryOperation = {
         type: 'content.set',
         payload: { slideId, blockId, value: clone(currentBlock.value) },
       }
+      if (currentBlock.role === 'workbench-plan' || currentBlock.semanticKey === 'workbench.plan.v1') {
+        const operations = operationsWithCurateReconciliation(session.checkpoint.deck, slideId, baseForward, baseInverse)
+        forward = operations.forward
+        inverse = operations.inverse
+        projectionHints = ['story', 'curate.queue', 'curate.slide', 'curate.assetStates', 'slide.activeProjection', 'history']
+      } else {
+        forward = baseForward
+        inverse = baseInverse
+      }
       label = `Update Content: ${currentBlock.role}`
     } else if (command.type === 'content.remove') {
-      const slideId = assertString(command.payload.slideId, 'slideId')
-      const blockId = assertString(command.payload.blockId, 'blockId')
+      const slideId = assertIdentity(command.payload.slideId, 'slideId', 256)
+      const blockId = assertIdentity(command.payload.blockId, 'blockId', 256)
       const location = findSlideLocation(session.checkpoint.deck, slideId)
       if (!location) throw new Error('Slide does not exist')
       const blocks = session.checkpoint.deck.sections[location.sectionIndex].slides[location.slideIndex].contentBlocks
@@ -1204,17 +2323,29 @@ function prepare(session: KernelSession, command: CommandEnvelope): PrepareResul
       const block = blocks[blockIndex]
       if (block.role === 'headline') throw new Error('Headline Content Block cannot be removed')
       const afterBlockId = blockIndex > 0 ? blocks[blockIndex - 1].id : null
-      forward = { type: 'content.remove', payload: { slideId, blockId } }
-      inverse = { type: 'content.insert', payload: { slideId, block: clone(block), afterBlockId } }
+      const baseForward: HistoryOperation = { type: 'content.remove', payload: { slideId, blockId } }
+      const baseInverse: HistoryOperation = {
+        type: 'content.insert',
+        payload: { slideId, block: clone(block), afterBlockId },
+      }
+      if (block.role === 'workbench-plan' || block.semanticKey === 'workbench.plan.v1') {
+        const operations = operationsWithCurateReconciliation(session.checkpoint.deck, slideId, baseForward, baseInverse)
+        forward = operations.forward
+        inverse = operations.inverse
+        projectionHints = ['story', 'curate.queue', 'curate.slide', 'curate.assetStates', 'slide.activeProjection', 'history']
+      } else {
+        forward = baseForward
+        inverse = baseInverse
+      }
       label = `Remove Content: ${block.role}`
     } else if (command.type === 'section.add') {
-      const sectionId = assertString(command.payload.sectionId, 'sectionId')
+      const sectionId = assertIdentity(command.payload.sectionId, 'sectionId', 256)
       const title = assertString(command.payload.title, 'title')
       const afterSectionId = command.payload.afterSectionId === undefined
         ? session.checkpoint.deck.sections.at(-1)?.id ?? null
         : command.payload.afterSectionId === null
           ? null
-          : assertString(command.payload.afterSectionId, 'afterSectionId')
+          : assertIdentity(command.payload.afterSectionId, 'afterSectionId', 256)
       forward = {
         type: 'section.insert',
         payload: { section: { id: sectionId, title, slides: [] }, afterSectionId },
@@ -1223,7 +2354,7 @@ function prepare(session: KernelSession, command: CommandEnvelope): PrepareResul
       label = `Add Section: ${title}`
       projectionHints = ['story', 'sequence', 'history']
     } else if (command.type === 'section.rename') {
-      const sectionId = assertString(command.payload.sectionId, 'sectionId')
+      const sectionId = assertIdentity(command.payload.sectionId, 'sectionId', 256)
       const title = assertString(command.payload.title, 'title')
       const section = session.checkpoint.deck.sections.find((candidate) => candidate.id === sectionId)
       if (!section) throw new Error('Section does not exist')
@@ -1232,19 +2363,19 @@ function prepare(session: KernelSession, command: CommandEnvelope): PrepareResul
       label = `Rename Section: ${title}`
       projectionHints = ['story', 'sequence', 'history']
     } else if (command.type === 'section.move') {
-      const sectionId = assertString(command.payload.sectionId, 'sectionId')
+      const sectionId = assertIdentity(command.payload.sectionId, 'sectionId', 256)
       const index = session.checkpoint.deck.sections.findIndex((section) => section.id === sectionId)
       if (index < 0) throw new Error('Section does not exist')
       const afterSectionId = command.payload.afterSectionId === null
         ? null
-        : assertString(command.payload.afterSectionId, 'afterSectionId')
+        : assertIdentity(command.payload.afterSectionId, 'afterSectionId', 256)
       const previousAfterSectionId = index > 0 ? session.checkpoint.deck.sections[index - 1].id : null
       forward = { type: 'section.move', payload: { sectionId, afterSectionId } }
       inverse = { type: 'section.move', payload: { sectionId, afterSectionId: previousAfterSectionId } }
       label = 'Move Section'
       projectionHints = ['story', 'sequence', 'history']
     } else if (command.type === 'section.remove') {
-      const sectionId = assertString(command.payload.sectionId, 'sectionId')
+      const sectionId = assertIdentity(command.payload.sectionId, 'sectionId', 256)
       const sectionIndex = session.checkpoint.deck.sections.findIndex((section) => section.id === sectionId)
       if (sectionIndex < 0) throw new Error('Section does not exist')
       if (session.checkpoint.deck.sections.length <= 1) throw new Error('Deck must retain at least one Section')
@@ -1256,11 +2387,11 @@ function prepare(session: KernelSession, command: CommandEnvelope): PrepareResul
       label = `Remove Section: ${section.title}`
       projectionHints = ['story', 'sequence', 'history']
     } else if (command.type === 'slide.add') {
-      const sectionId = assertString(command.payload.sectionId, 'sectionId')
+      const sectionId = assertIdentity(command.payload.sectionId, 'sectionId', 256)
       const section = session.checkpoint.deck.sections.find((candidate) => candidate.id === sectionId)
       if (!section) throw new Error('Target Section does not exist')
-      const slideId = assertString(command.payload.slideId, 'slideId')
-      const blockId = assertString(command.payload.blockId, 'blockId')
+      const slideId = assertIdentity(command.payload.slideId, 'slideId', 256)
+      const blockId = assertIdentity(command.payload.blockId, 'blockId', 256)
       const intent = assertString(command.payload.intent, 'intent')
       if (!isRichTextDocument(command.payload.headline)) {
         throw new Error('slide.add headline must be semantic rich-text JSON')
@@ -1270,7 +2401,7 @@ function prepare(session: KernelSession, command: CommandEnvelope): PrepareResul
         ? section.slides.at(-1)?.id ?? null
         : command.payload.afterSlideId === null
           ? null
-          : assertString(command.payload.afterSlideId, 'afterSlideId')
+          : assertIdentity(command.payload.afterSlideId, 'afterSlideId', 256)
       const slide: Slide = {
         id: slideId,
         intent,
@@ -1284,36 +2415,42 @@ function prepare(session: KernelSession, command: CommandEnvelope): PrepareResul
       forward = { type: 'slide.insert', payload: { sectionId, slide, afterSlideId } }
       inverse = { type: 'slide.remove', payload: { slideId } }
       label = 'Add Slide'
-      projectionHints = ['story', 'sequence', 'slide.activeProjection', 'history']
+      projectionHints = ['story', 'sequence', 'curate.queue', 'curate.slide', 'curate.assetStates', 'slide.activeProjection', 'history']
     } else if (command.type === 'slide.move') {
-      const slideId = assertString(command.payload.slideId, 'slideId')
-      const targetSectionId = assertString(command.payload.targetSectionId, 'targetSectionId')
+      const slideId = assertIdentity(command.payload.slideId, 'slideId', 256)
+      const targetSectionId = assertIdentity(command.payload.targetSectionId, 'targetSectionId', 256)
       const location = findSlideLocation(session.checkpoint.deck, slideId)
       if (!location) throw new Error('Slide does not exist')
       const sourceSection = session.checkpoint.deck.sections[location.sectionIndex]
       const previousAfterSlideId = location.slideIndex > 0 ? sourceSection.slides[location.slideIndex - 1].id : null
       const afterSlideId = command.payload.afterSlideId === null
         ? null
-        : assertString(command.payload.afterSlideId, 'afterSlideId')
+        : assertIdentity(command.payload.afterSlideId, 'afterSlideId', 256)
       forward = { type: 'slide.move', payload: { slideId, targetSectionId, afterSlideId } }
       inverse = {
         type: 'slide.move',
         payload: { slideId, targetSectionId: sourceSection.id, afterSlideId: previousAfterSlideId },
       }
       label = 'Move Slide'
-      projectionHints = ['story', 'sequence', 'slide.activeProjection', 'history']
+      projectionHints = ['story', 'sequence', 'curate.queue', 'curate.slide', 'curate.assetStates', 'slide.activeProjection', 'history']
     } else if (command.type === 'slide.intent.set') {
-      const slideId = assertString(command.payload.slideId, 'slideId')
+      const slideId = assertIdentity(command.payload.slideId, 'slideId', 256)
       const intent = assertString(command.payload.intent, 'intent')
       const location = findSlideLocation(session.checkpoint.deck, slideId)
       if (!location) throw new Error('Slide does not exist')
       const currentIntent = session.checkpoint.deck.sections[location.sectionIndex].slides[location.slideIndex].intent
-      forward = { type: 'slide.intent.set', payload: { slideId, intent } }
-      inverse = { type: 'slide.intent.set', payload: { slideId, intent: currentIntent } }
+      const operations = operationsWithCurateReconciliation(
+        session.checkpoint.deck,
+        slideId,
+        { type: 'slide.intent.set', payload: { slideId, intent } },
+        { type: 'slide.intent.set', payload: { slideId, intent: currentIntent } },
+      )
+      forward = operations.forward
+      inverse = operations.inverse
       label = `Set Slide intent: ${intent}`
-      projectionHints = ['story', 'sequence', 'slide.activeProjection', 'history']
+      projectionHints = ['story', 'sequence', 'curate.queue', 'curate.slide', 'curate.assetStates', 'slide.activeProjection', 'history']
     } else if (command.type === 'slide.remove') {
-      const slideId = assertString(command.payload.slideId, 'slideId')
+      const slideId = assertIdentity(command.payload.slideId, 'slideId', 256)
       const location = findSlideLocation(session.checkpoint.deck, slideId)
       if (!location) throw new Error('Slide does not exist')
       const slideCount = session.checkpoint.deck.sections.reduce((sum, section) => sum + section.slides.length, 0)
@@ -1321,12 +2458,29 @@ function prepare(session: KernelSession, command: CommandEnvelope): PrepareResul
       const section = session.checkpoint.deck.sections[location.sectionIndex]
       const slide = section.slides[location.slideIndex]
       const afterSlideId = location.slideIndex > 0 ? section.slides[location.slideIndex - 1].id : null
-      forward = { type: 'slide.remove', payload: { slideId } }
-      inverse = { type: 'slide.insert', payload: { sectionId: section.id, slide: clone(slide), afterSlideId } }
+      const forwardOperations: HistoryOperation[] = []
+      const inverseOperations: HistoryOperation[] = []
+      const curateState = ownValue(session.checkpoint.deck.workbenchCurate?.slides, slideId)
+      if (curateState) {
+        appendOperationPair(
+          forwardOperations,
+          inverseOperations,
+          { type: 'curate.slide.remove', payload: { slideId } },
+          { type: 'curate.slide.insert', payload: { slideId, value: clone(curateState) } },
+        )
+      }
+      appendOperationPair(
+        forwardOperations,
+        inverseOperations,
+        { type: 'slide.remove', payload: { slideId } },
+        { type: 'slide.insert', payload: { sectionId: section.id, slide: clone(slide), afterSlideId } },
+      )
+      forward = operationList(forwardOperations)
+      inverse = operationList(inverseOperations)
       label = 'Remove Slide'
-      projectionHints = ['story', 'sequence', 'slide.activeProjection', 'history']
+      projectionHints = ['story', 'sequence', 'curate.queue', 'curate.slide', 'curate.assetStates', 'slide.activeProjection', 'history']
     } else if (command.type === 'asset.reference.add') {
-      const assetReferenceId = assertString(command.payload.assetReferenceId, 'assetReferenceId')
+      const assetReferenceId = assertIdentity(command.payload.assetReferenceId, 'assetReferenceId', 256)
       if (assetReferenceIdentityExists(session.checkpoint.deck, assetReferenceId)) {
         throw new Error('Asset Reference identity already exists')
       }
@@ -1343,51 +2497,386 @@ function prepare(session: KernelSession, command: CommandEnvelope): PrepareResul
       label = `Add Asset Reference: ${labelValue}`
       projectionHints = ['slide.activeProjection', 'history']
     } else if (command.type === 'asset.assign') {
-      const slideId = assertString(command.payload.slideId, 'slideId')
+      const slideId = assertIdentity(command.payload.slideId, 'slideId', 256)
       const slide = findSlide(session.checkpoint.deck, slideId)
       if (!slide) throw new Error('Slide does not exist')
-      const mediaAssignmentId = assertString(command.payload.mediaAssignmentId, 'mediaAssignmentId')
+      const mediaAssignmentId = assertIdentity(command.payload.mediaAssignmentId, 'mediaAssignmentId', 256)
       const role = assertString(command.payload.role, 'role')
-      const assetReferenceId = assertString(command.payload.assetReferenceId, 'assetReferenceId')
+      const assetReferenceId = assertIdentity(command.payload.assetReferenceId, 'assetReferenceId', 256)
       if (!assetReferenceIdentityExists(session.checkpoint.deck, assetReferenceId)) {
         throw new Error('Asset Reference does not exist')
       }
       const existingForRole = slide.mediaAssignments?.find((assignment) => assignment.role === role)
-      if (existingForRole) {
-        if (existingForRole.id !== mediaAssignmentId) {
-          throw new Error('Media role replacement must preserve assignment identity')
+      const manifest = deriveCurateSlotManifest(slide)
+      const curateSlot = manifest.find((slot) => slot.assignmentRole === role)
+      if (curateSlot) {
+        const curateRoles = new Set(manifest.map((slot) => slot.assignmentRole))
+        if ((slide.mediaAssignments ?? []).some(
+          (assignment) => assignment.role !== role
+            && curateRoles.has(assignment.role)
+            && assignment.assetReferenceId === assetReferenceId,
+        )) throw new Error('Asset is already selected for another Curate slot; demote it before moving')
+
+        const forwardOperations: HistoryOperation[] = []
+        const inverseOperations: HistoryOperation[] = []
+        const storedState = ownValue(session.checkpoint.deck.workbenchCurate?.slides, slideId)
+        const currentDecision = ownValue(storedState?.decisions, assetReferenceId) ?? null
+        appendCurateSlideScaffold(
+          session.checkpoint.deck,
+          slideId,
+          storedState?.slotManifest ?? manifest,
+          forwardOperations,
+          inverseOperations,
+        )
+        if (existingForRole) {
+          if (existingForRole.id !== mediaAssignmentId) {
+            throw new Error('Media role replacement must preserve assignment identity')
+          }
+          if (existingForRole.assetReferenceId === assetReferenceId) {
+            throw new Error('Asset Reference is already assigned to media role')
+          }
+          appendOperationPair(
+            forwardOperations,
+            inverseOperations,
+            {
+              type: 'asset.assignment.asset.set',
+              payload: { slideId, mediaAssignmentId, assetReferenceId },
+            },
+            {
+              type: 'asset.assignment.asset.set',
+              payload: { slideId, mediaAssignmentId, assetReferenceId: existingForRole.assetReferenceId },
+            },
+          )
+          appendOperationPair(
+            forwardOperations,
+            inverseOperations,
+            {
+              type: 'curate.slideDecision.set',
+              payload: {
+                slideId,
+                assetReferenceId: existingForRole.assetReferenceId,
+                value: { state: 'shortlisted' },
+              },
+            },
+            {
+              type: 'curate.slideDecision.set',
+              payload: { slideId, assetReferenceId: existingForRole.assetReferenceId, value: null },
+            },
+          )
+          label = `Replace Asset: ${role}`
+        } else {
+          if (mediaAssignmentIdentityExists(session.checkpoint.deck, mediaAssignmentId)) {
+            throw new Error('Media Assignment identity already exists')
+          }
+          if (currentDecision?.state === 'unplaced' && currentDecision.assignmentId !== mediaAssignmentId) {
+            throw new Error('Unplaced Curate selection must preserve assignment identity')
+          }
+          if (unplacedAssignmentIdentityExists(
+            session.checkpoint.deck,
+            mediaAssignmentId,
+            { slideId, assetReferenceId },
+          )) throw new Error('Media Assignment identity already exists in the unplaced tray')
+          const assignment: MediaAssignment = { id: mediaAssignmentId, role, assetReferenceId }
+          appendOperationPair(
+            forwardOperations,
+            inverseOperations,
+            { type: 'asset.assignment.insert', payload: { slideId, assignment } },
+            { type: 'asset.assignment.remove', payload: { slideId, mediaAssignmentId } },
+          )
+          label = `Assign Asset: ${role}`
         }
-        if (existingForRole.assetReferenceId === assetReferenceId) {
-          throw new Error('Asset Reference is already assigned to media role')
+        if (currentDecision) {
+          appendOperationPair(
+            forwardOperations,
+            inverseOperations,
+            {
+              type: 'curate.slideDecision.set',
+              payload: { slideId, assetReferenceId, value: null },
+            },
+            {
+              type: 'curate.slideDecision.set',
+              payload: { slideId, assetReferenceId, value: clone(currentDecision) },
+            },
+          )
         }
-        forward = {
-          type: 'asset.assignment.asset.set',
-          payload: { slideId, mediaAssignmentId, assetReferenceId },
-        }
-        inverse = {
-          type: 'asset.assignment.asset.set',
-          payload: { slideId, mediaAssignmentId, assetReferenceId: existingForRole.assetReferenceId },
-        }
-        label = `Replace Asset: ${role}`
+        forward = operationList(forwardOperations)
+        inverse = operationList(inverseOperations)
+        projectionHints = ['curate.queue', 'curate.slide', 'curate.assetStates', 'slide.activeProjection', 'history']
       } else {
-        if (mediaAssignmentIdentityExists(session.checkpoint.deck, mediaAssignmentId)) {
-          throw new Error('Media Assignment identity already exists')
+        if (existingForRole) {
+          if (existingForRole.id !== mediaAssignmentId) {
+            throw new Error('Media role replacement must preserve assignment identity')
+          }
+          if (existingForRole.assetReferenceId === assetReferenceId) {
+            throw new Error('Asset Reference is already assigned to media role')
+          }
+          forward = {
+            type: 'asset.assignment.asset.set',
+            payload: { slideId, mediaAssignmentId, assetReferenceId },
+          }
+          inverse = {
+            type: 'asset.assignment.asset.set',
+            payload: { slideId, mediaAssignmentId, assetReferenceId: existingForRole.assetReferenceId },
+          }
+          label = `Replace Asset: ${role}`
+        } else {
+          if (mediaAssignmentIdentityExists(session.checkpoint.deck, mediaAssignmentId)) {
+            throw new Error('Media Assignment identity already exists')
+          }
+          const assignment: MediaAssignment = { id: mediaAssignmentId, role, assetReferenceId }
+          forward = { type: 'asset.assignment.insert', payload: { slideId, assignment } }
+          inverse = { type: 'asset.assignment.remove', payload: { slideId, mediaAssignmentId } }
+          label = `Assign Asset: ${role}`
         }
-        const assignment: MediaAssignment = { id: mediaAssignmentId, role, assetReferenceId }
-        forward = { type: 'asset.assignment.insert', payload: { slideId, assignment } }
-        inverse = { type: 'asset.assignment.remove', payload: { slideId, mediaAssignmentId } }
-        label = `Assign Asset: ${role}`
+        projectionHints = ['curate.queue', 'curate.slide', 'curate.assetStates', 'slide.activeProjection', 'history']
       }
-      projectionHints = ['slide.activeProjection', 'history']
-    } else if (command.type === 'designOption.applyPattern') {
-      const slideId = assertString(command.payload.slideId, 'slideId')
+    } else if (command.type === 'curate.projectJudgment.set') {
+      const judgment = assertProjectAssetJudgment(command.payload.judgment)
+      const assetReferenceId = assertIdentity(command.payload.assetReferenceId, 'assetReferenceId', 256)
+      const current = ownValue(session.checkpoint.deck.workbenchCurate?.projectJudgments, assetReferenceId) ?? null
+      const nextValue = isDefaultProjectJudgment(judgment) ? null : judgment
+      if (JSON.stringify(current) === JSON.stringify(nextValue)) {
+        throw new Error('Project Asset judgment is already set')
+      }
+      const forwardOperations: HistoryOperation[] = []
+      const inverseOperations: HistoryOperation[] = []
+      if (nextValue !== null) appendCurateEnvelopeScaffold(session.checkpoint.deck, forwardOperations, inverseOperations)
+      appendAssetReferenceScaffold(session.checkpoint.deck, command.payload, forwardOperations, inverseOperations)
+      if (!session.checkpoint.deck.workbenchCurate && nextValue === null) {
+        throw new Error('Project Asset judgment is already at its default')
+      }
+      appendOperationPair(
+        forwardOperations,
+        inverseOperations,
+        {
+          type: 'curate.projectJudgment.set',
+          payload: { assetReferenceId, value: nextValue },
+        },
+        {
+          type: 'curate.projectJudgment.set',
+          payload: { assetReferenceId, value: current },
+        },
+      )
+      forward = operationList(forwardOperations)
+      inverse = operationList(inverseOperations)
+      label = 'Set Project Asset judgment'
+      projectionHints = ['curate.assetStates', 'history']
+    } else if (command.type === 'curate.slideDecision.set') {
+      const slideId = assertIdentity(command.payload.slideId, 'slideId', 256)
       const slide = findSlide(session.checkpoint.deck, slideId)
       if (!slide) throw new Error('Slide does not exist')
-      const designOptionId = assertString(command.payload.designOptionId, 'designOptionId')
+      const rawDecision = command.payload.decision
+      if (!rawDecision || typeof rawDecision !== 'object' || Array.isArray(rawDecision)) {
+        throw new Error('decision must be an object')
+      }
+      const decision = rawDecision as JsonObject
+      const manifest = deriveCurateSlotManifest(slide)
+      const roles = new Set(manifest.map((slot) => slot.assignmentRole))
+      const forwardOperations: HistoryOperation[] = []
+      const inverseOperations: HistoryOperation[] = []
+      const assetReferenceId = appendAssetReferenceScaffold(
+        session.checkpoint.deck,
+        command.payload,
+        forwardOperations,
+        inverseOperations,
+      )
+      const storedState = ownValue(session.checkpoint.deck.workbenchCurate?.slides, slideId)
+      const currentDecision = ownValue(storedState?.decisions, assetReferenceId) ?? null
+      const selectedAssignments = (slide.mediaAssignments ?? []).filter(
+        (assignment) => roles.has(assignment.role) && assignment.assetReferenceId === assetReferenceId,
+      )
+
+      if (decision.state === 'selected') {
+        const slotKey = assertString(decision.slotKey, 'decision.slotKey', 512)
+        const slot = manifest.find((candidate) => candidate.key === slotKey)
+        if (!slot) throw new Error('Selected Curate slot does not exist for the current Slide plan')
+        if (selectedAssignments.some((assignment) => assignment.role === slot.assignmentRole)) {
+          throw new Error('Asset is already selected for this Curate slot')
+        }
+        if (selectedAssignments.length > 0) {
+          throw new Error('Asset is already selected for another Curate slot; demote it before moving')
+        }
+        const occupant = slide.mediaAssignments?.find((assignment) => assignment.role === slot.assignmentRole)
+        if (occupant) {
+          appendCurateSlideScaffold(
+            session.checkpoint.deck,
+            slideId,
+            storedState?.slotManifest ?? manifest,
+            forwardOperations,
+            inverseOperations,
+          )
+          appendOperationPair(
+            forwardOperations,
+            inverseOperations,
+            {
+              type: 'asset.assignment.asset.set',
+              payload: { slideId, mediaAssignmentId: occupant.id, assetReferenceId },
+            },
+            {
+              type: 'asset.assignment.asset.set',
+              payload: {
+                slideId,
+                mediaAssignmentId: occupant.id,
+                assetReferenceId: occupant.assetReferenceId,
+              },
+            },
+          )
+          const displacedDecision = ownValue(storedState?.decisions, occupant.assetReferenceId) ?? null
+          if (displacedDecision) throw new Error('Selected Asset cannot also have a non-selected Slide decision')
+          appendOperationPair(
+            forwardOperations,
+            inverseOperations,
+            {
+              type: 'curate.slideDecision.set',
+              payload: {
+                slideId,
+                assetReferenceId: occupant.assetReferenceId,
+                value: { state: 'shortlisted' },
+              },
+            },
+            {
+              type: 'curate.slideDecision.set',
+              payload: { slideId, assetReferenceId: occupant.assetReferenceId, value: displacedDecision },
+            },
+          )
+        } else {
+          const proposedAssignmentId = currentDecision?.state === 'unplaced'
+            ? currentDecision.assignmentId
+            : assertIdentity(decision.mediaAssignmentId, 'decision.mediaAssignmentId', 256)
+          if (mediaAssignmentIdentityExists(session.checkpoint.deck, proposedAssignmentId)) {
+            throw new Error('Media Assignment identity already exists')
+          }
+          const unplacedIdentityExists = unplacedAssignmentIdentityExists(
+            session.checkpoint.deck,
+            proposedAssignmentId,
+            { slideId, assetReferenceId },
+          )
+          if (unplacedIdentityExists) throw new Error('Media Assignment identity already exists in the unplaced tray')
+          appendOperationPair(
+            forwardOperations,
+            inverseOperations,
+            {
+              type: 'asset.assignment.insert',
+              payload: {
+                slideId,
+                assignment: { id: proposedAssignmentId, role: slot.assignmentRole, assetReferenceId },
+              },
+            },
+            { type: 'asset.assignment.remove', payload: { slideId, mediaAssignmentId: proposedAssignmentId } },
+          )
+        }
+        if (currentDecision) {
+          appendCurateSlideScaffold(
+            session.checkpoint.deck,
+            slideId,
+            storedState?.slotManifest ?? manifest,
+            forwardOperations,
+            inverseOperations,
+          )
+          appendOperationPair(
+            forwardOperations,
+            inverseOperations,
+            {
+              type: 'curate.slideDecision.set',
+              payload: { slideId, assetReferenceId, value: null },
+            },
+            {
+              type: 'curate.slideDecision.set',
+              payload: { slideId, assetReferenceId, value: clone(currentDecision) },
+            },
+          )
+        }
+        label = `Select Asset: ${slot.key}`
+      } else {
+        const nextDecision = assertSlideAssetDisposition(decision, false)
+        if (selectedAssignments.length === 0 && JSON.stringify(currentDecision) === JSON.stringify(nextDecision)) {
+          throw new Error('Slide Asset decision is already set')
+        }
+        appendCurateSlideScaffold(
+          session.checkpoint.deck,
+          slideId,
+          storedState?.slotManifest ?? manifest,
+          forwardOperations,
+          inverseOperations,
+        )
+        for (const assignment of selectedAssignments) {
+          appendOperationPair(
+            forwardOperations,
+            inverseOperations,
+            { type: 'asset.assignment.remove', payload: { slideId, mediaAssignmentId: assignment.id } },
+            { type: 'asset.assignment.insert', payload: { slideId, assignment: clone(assignment) } },
+          )
+        }
+        appendOperationPair(
+          forwardOperations,
+          inverseOperations,
+          {
+            type: 'curate.slideDecision.set',
+            payload: { slideId, assetReferenceId, value: nextDecision },
+          },
+          {
+            type: 'curate.slideDecision.set',
+            payload: { slideId, assetReferenceId, value: currentDecision },
+          },
+        )
+        label = `Set Slide Asset decision: ${nextDecision.state}`
+      }
+      forward = operationList(forwardOperations)
+      inverse = operationList(inverseOperations)
+      projectionHints = ['curate.queue', 'curate.slide', 'curate.assetStates', 'slide.activeProjection', 'history']
+    } else if (command.type === 'curate.findMore.set') {
+      const slideId = assertIdentity(command.payload.slideId, 'slideId', 256)
+      const slide = findSlide(session.checkpoint.deck, slideId)
+      if (!slide) throw new Error('Slide does not exist')
+      const value = assertFindMoreMedia(command.payload.value)
+      const currentState = ownValue(session.checkpoint.deck.workbenchCurate?.slides, slideId)
+      const current = currentState?.findMoreMedia ?? defaultFindMoreMedia()
+      if (JSON.stringify(current) === JSON.stringify(value)) throw new Error('Find More Media is already set')
+      const forwardOperations: HistoryOperation[] = []
+      const inverseOperations: HistoryOperation[] = []
+      appendCurateSlideScaffold(
+        session.checkpoint.deck,
+        slideId,
+        currentState?.slotManifest ?? deriveCurateSlotManifest(slide),
+        forwardOperations,
+        inverseOperations,
+      )
+      appendOperationPair(
+        forwardOperations,
+        inverseOperations,
+        { type: 'curate.findMore.set', payload: { slideId, value } },
+        { type: 'curate.findMore.set', payload: { slideId, value: clone(current) } },
+      )
+      forward = operationList(forwardOperations)
+      inverse = operationList(inverseOperations)
+      label = `Set Find More Media: ${value.state}`
+      projectionHints = ['curate.queue', 'curate.slide', 'history']
+    } else if (command.type === 'curate.reconcile') {
+      const slideId = assertIdentity(command.payload.slideId, 'slideId', 256)
+      if (!findSlide(session.checkpoint.deck, slideId)) throw new Error('Slide does not exist')
+      const forwardOperations: HistoryOperation[] = []
+      const inverseOperations: HistoryOperation[] = []
+      appendCurateReconciliation(
+        session.checkpoint.deck,
+        session.checkpoint.deck,
+        slideId,
+        forwardOperations,
+        inverseOperations,
+      )
+      if (forwardOperations.length === 0) throw new Error('Curate state is already reconciled')
+      forward = operationList(forwardOperations)
+      inverse = operationList(inverseOperations)
+      label = 'Reconcile Curate slots'
+      projectionHints = ['curate.queue', 'curate.slide', 'curate.assetStates', 'slide.activeProjection', 'history']
+    } else if (command.type === 'designOption.applyPattern') {
+      const slideId = assertIdentity(command.payload.slideId, 'slideId', 256)
+      const slide = findSlide(session.checkpoint.deck, slideId)
+      if (!slide) throw new Error('Slide does not exist')
+      const designOptionId = assertIdentity(command.payload.designOptionId, 'designOptionId', 256)
       if (designOptionIdentityExists(session.checkpoint.deck, designOptionId)) {
         throw new Error('Design Option identity already exists')
       }
-      const patternId = assertString(command.payload.patternId, 'patternId')
+      const patternId = assertIdentity(command.payload.patternId, 'patternId', 128)
       if (!Number.isSafeInteger(command.payload.patternVersion)) {
         throw new Error('patternVersion must be an integer')
       }
@@ -1417,10 +2906,10 @@ function prepare(session: KernelSession, command: CommandEnvelope): PrepareResul
       label = `Apply Pattern: ${pattern.name}`
       projectionHints = ['slide.activeProjection', 'history']
     } else if (command.type === 'designOption.activate') {
-      const slideId = assertString(command.payload.slideId, 'slideId')
+      const slideId = assertIdentity(command.payload.slideId, 'slideId', 256)
       const slide = findSlide(session.checkpoint.deck, slideId)
       if (!slide) throw new Error('Slide does not exist')
-      const designOptionId = assertString(command.payload.designOptionId, 'designOptionId')
+      const designOptionId = assertIdentity(command.payload.designOptionId, 'designOptionId', 256)
       if (!slide.designOptions?.some((option) => option.id === designOptionId)) {
         throw new Error('Design Option does not exist')
       }
@@ -1439,9 +2928,9 @@ function prepare(session: KernelSession, command: CommandEnvelope): PrepareResul
       label = `Activate Design Option: ${designOptionId}`
       projectionHints = ['slide.activeProjection', 'history']
     } else if (command.type === 'element.frame.update') {
-      const slideId = assertString(command.payload.slideId, 'slideId')
-      const designOptionId = assertString(command.payload.designOptionId, 'designOptionId')
-      const elementId = assertString(command.payload.elementId, 'elementId')
+      const slideId = assertIdentity(command.payload.slideId, 'slideId', 256)
+      const designOptionId = assertIdentity(command.payload.designOptionId, 'designOptionId', 256)
+      const elementId = assertIdentity(command.payload.elementId, 'elementId', 512)
       const frame = assertElementFrame(command.payload.frame)
       const currentElement = findElement(session.checkpoint.deck, slideId, designOptionId, elementId)
       if (!currentElement) throw new Error('Element does not exist in Design Option')
@@ -1456,9 +2945,9 @@ function prepare(session: KernelSession, command: CommandEnvelope): PrepareResul
       label = 'Update Element frame'
       projectionHints = ['slide.activeProjection', 'history']
     } else if (command.type === 'element.crop.update') {
-      const slideId = assertString(command.payload.slideId, 'slideId')
-      const designOptionId = assertString(command.payload.designOptionId, 'designOptionId')
-      const elementId = assertString(command.payload.elementId, 'elementId')
+      const slideId = assertIdentity(command.payload.slideId, 'slideId', 256)
+      const designOptionId = assertIdentity(command.payload.designOptionId, 'designOptionId', 256)
+      const elementId = assertIdentity(command.payload.elementId, 'elementId', 512)
       const crop = assertNormalizedCrop(command.payload.crop)
       const slide = findSlide(session.checkpoint.deck, slideId)
       if (!slide) throw new Error('Slide does not exist')
@@ -1489,6 +2978,7 @@ function prepare(session: KernelSession, command: CommandEnvelope): PrepareResul
   let nextDeck: DeckSnapshot
   try {
     nextDeck = applyHistoryOperation(session.checkpoint.deck, forward)
+    assertDeckIntegrity(nextDeck)
   } catch (error) {
     return failure('InvalidCommand', (error as Error).message)
   }
@@ -1526,42 +3016,56 @@ function prepare(session: KernelSession, command: CommandEnvelope): PrepareResul
 }
 
 function prepareUndo(session: KernelSession): PrepareResult {
-  const stack = session.checkpoint.undoStack
+  const stack = session?.checkpoint?.undoStack
+  if (!Array.isArray(stack)) return failure('JournalCorruption', 'Undo history stack is malformed')
   if (stack.length === 0) return failure('InvalidCommand', 'Nothing to undo')
-  const entry = clone(stack[stack.length - 1])
-  const nextRevision = session.checkpoint.revision + 1
-  return {
-    ok: true,
-    operation: 'undo',
-    commandId: `undo:${entry.id}:${nextRevision}`,
-    baseRevision: session.checkpoint.revision,
-    nextRevision,
-    nextDeck: applyHistoryOperation(session.checkpoint.deck, entry.inverse),
-    nextUndoStack: clone(stack.slice(0, -1)),
-    nextRedoStack: [...clone(session.checkpoint.redoStack), entry],
-    nextProcessedCommands: clone(session.checkpoint.processedCommands),
-    journalOperation: { operation: 'undo', historyEntryId: entry.id },
-    projectionHints: ['story', 'slide.activeProjection', 'history'],
+  try {
+    const entry = clone(assertHistoryEntryShape(stack[stack.length - 1], 'Undo History Entry'))
+    const nextRevision = session.checkpoint.revision + 1
+    const nextDeck = applyHistoryOperation(session.checkpoint.deck, entry.inverse)
+    assertDeckIntegrity(nextDeck)
+    return {
+      ok: true,
+      operation: 'undo',
+      commandId: `undo:${entry.id}:${nextRevision}`,
+      baseRevision: session.checkpoint.revision,
+      nextRevision,
+      nextDeck,
+      nextUndoStack: clone(stack.slice(0, -1)),
+      nextRedoStack: [...clone(session.checkpoint.redoStack), entry],
+      nextProcessedCommands: clone(session.checkpoint.processedCommands),
+      journalOperation: { operation: 'undo', historyEntryId: entry.id },
+      projectionHints: ['story', 'sequence', 'asset.catalog', 'curate.queue', 'curate.slide', 'curate.assetStates', 'slide.activeProjection', 'history'],
+    }
+  } catch (error) {
+    return failure('JournalCorruption', `Undo history is malformed: ${(error as Error).message}`)
   }
 }
 
 function prepareRedo(session: KernelSession): PrepareResult {
-  const stack = session.checkpoint.redoStack
+  const stack = session?.checkpoint?.redoStack
+  if (!Array.isArray(stack)) return failure('JournalCorruption', 'Redo history stack is malformed')
   if (stack.length === 0) return failure('InvalidCommand', 'Nothing to redo')
-  const entry = clone(stack[stack.length - 1])
-  const nextRevision = session.checkpoint.revision + 1
-  return {
-    ok: true,
-    operation: 'redo',
-    commandId: `redo:${entry.id}:${nextRevision}`,
-    baseRevision: session.checkpoint.revision,
-    nextRevision,
-    nextDeck: applyHistoryOperation(session.checkpoint.deck, entry.forward),
-    nextUndoStack: [...clone(session.checkpoint.undoStack), entry],
-    nextRedoStack: clone(stack.slice(0, -1)),
-    nextProcessedCommands: clone(session.checkpoint.processedCommands),
-    journalOperation: { operation: 'redo', historyEntryId: entry.id },
-    projectionHints: ['story', 'slide.activeProjection', 'history'],
+  try {
+    const entry = clone(assertHistoryEntryShape(stack[stack.length - 1], 'Redo History Entry'))
+    const nextRevision = session.checkpoint.revision + 1
+    const nextDeck = applyHistoryOperation(session.checkpoint.deck, entry.forward)
+    assertDeckIntegrity(nextDeck)
+    return {
+      ok: true,
+      operation: 'redo',
+      commandId: `redo:${entry.id}:${nextRevision}`,
+      baseRevision: session.checkpoint.revision,
+      nextRevision,
+      nextDeck,
+      nextUndoStack: [...clone(session.checkpoint.undoStack), entry],
+      nextRedoStack: clone(stack.slice(0, -1)),
+      nextProcessedCommands: clone(session.checkpoint.processedCommands),
+      journalOperation: { operation: 'redo', historyEntryId: entry.id },
+      projectionHints: ['story', 'sequence', 'asset.catalog', 'curate.queue', 'curate.slide', 'curate.assetStates', 'slide.activeProjection', 'history'],
+    }
+  } catch (error) {
+    return failure('JournalCorruption', `Redo history is malformed: ${(error as Error).message}`)
   }
 }
 
@@ -1593,6 +3097,9 @@ function serializeSession(session: KernelSession): Checkpoint {
 }
 
 function replayRecord(session: KernelSession, record: JsonObject): JsonObject | KernelError {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) {
+    return failure('JournalCorruption', 'Journal record must be an object')
+  }
   if (!Number.isSafeInteger(record.revision) || record.revision !== session.checkpoint.revision + 1) {
     return failure('JournalCorruption', 'Journal revision is not contiguous')
   }
@@ -1600,8 +3107,18 @@ function replayRecord(session: KernelSession, record: JsonObject): JsonObject | 
   if (record.operation === 'command') {
     prepared = prepare(session, record.command as CommandEnvelope)
   } else if (record.operation === 'undo') {
+    const undoStack = session?.checkpoint?.undoStack
+    const expectedEntry = Array.isArray(undoStack) ? undoStack.at(-1) : undefined
+    if (!expectedEntry || record.historyEntryId !== expectedEntry.id) {
+      return failure('JournalCorruption', 'Undo journal history identity does not match the top Undo entry')
+    }
     prepared = prepareUndo(session)
   } else if (record.operation === 'redo') {
+    const redoStack = session?.checkpoint?.redoStack
+    const expectedEntry = Array.isArray(redoStack) ? redoStack.at(-1) : undefined
+    if (!expectedEntry || record.historyEntryId !== expectedEntry.id) {
+      return failure('JournalCorruption', 'Redo journal history identity does not match the top Redo entry')
+    }
     prepared = prepareRedo(session)
   } else {
     return failure('JournalCorruption', 'Journal operation is unknown')
@@ -1642,18 +3159,30 @@ const DeckKernelJSON = Object.freeze({
     }
   },
   open(checkpointJSON: string): string {
-    const result = DeckKernel.open(JSON.parse(checkpointJSON))
-    if ('ok' in result && result.ok === false) return adapterResult(result)
-    adapterSession = result as KernelSession
-    return adapterResult({ ok: true, revision: adapterSession.checkpoint.revision })
+    try {
+      const result = DeckKernel.open(JSON.parse(checkpointJSON))
+      if ('ok' in result && result.ok === false) return adapterResult(result)
+      adapterSession = result as KernelSession
+      return adapterResult({ ok: true, revision: adapterSession.checkpoint.revision })
+    } catch (error) {
+      return adapterResult(failure('InvalidCommand', `Checkpoint JSON is invalid: ${(error as Error).message}`))
+    }
   },
   query(name: string, paramsJSON: string): string {
     if (!adapterSession) return adapterResult(failure('KernelUnavailable', 'No Deck session is open'))
-    return adapterResult(DeckKernel.query(adapterSession, name, JSON.parse(paramsJSON)))
+    try {
+      return adapterResult(DeckKernel.query(adapterSession, name, JSON.parse(paramsJSON)))
+    } catch (error) {
+      return adapterResult(failure('InvalidCommand', `Query parameters JSON is invalid: ${(error as Error).message}`))
+    }
   },
   prepare(commandJSON: string): string {
     if (!adapterSession) return adapterResult(failure('KernelUnavailable', 'No Deck session is open'))
-    return adapterResult(DeckKernel.prepare(adapterSession, JSON.parse(commandJSON)))
+    try {
+      return adapterResult(DeckKernel.prepare(adapterSession, JSON.parse(commandJSON)))
+    } catch (error) {
+      return adapterResult(failure('InvalidCommand', `Command JSON is invalid: ${(error as Error).message}`))
+    }
   },
   prepareUndo(): string {
     if (!adapterSession) return adapterResult(failure('KernelUnavailable', 'No Deck session is open'))
@@ -1665,11 +3194,19 @@ const DeckKernelJSON = Object.freeze({
   },
   commit(preparedJSON: string): string {
     if (!adapterSession) return adapterResult(failure('KernelUnavailable', 'No Deck session is open'))
-    return adapterResult(DeckKernel.commit(adapterSession, JSON.parse(preparedJSON)))
+    try {
+      return adapterResult(DeckKernel.commit(adapterSession, JSON.parse(preparedJSON)))
+    } catch (error) {
+      return adapterResult(failure('InvalidCommand', `Prepared change JSON is invalid: ${(error as Error).message}`))
+    }
   },
   replay(recordJSON: string): string {
     if (!adapterSession) return adapterResult(failure('KernelUnavailable', 'No Deck session is open'))
-    return adapterResult(DeckKernel.replayRecord(adapterSession, JSON.parse(recordJSON)))
+    try {
+      return adapterResult(DeckKernel.replayRecord(adapterSession, JSON.parse(recordJSON)))
+    } catch (error) {
+      return adapterResult(failure('JournalCorruption', `Journal record JSON is invalid: ${(error as Error).message}`))
+    }
   },
   serialize(): string {
     if (!adapterSession) return adapterResult(failure('KernelUnavailable', 'No Deck session is open'))

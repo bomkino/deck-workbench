@@ -96,6 +96,19 @@ node "$REPOSITORY_ROOT/scripts/verify-story-tracer-output.mjs" \
   "$STORY_DOCUMENT" "$STORY_CREATE_RESULT" "$STORY_REOPEN_RESULT"
 
 mkdir -p "$REPOSITORY_ROOT/artifacts/evidence"
+CURATE_RESULT="$JOURNEY_ROOT/curate-journey-result.json"
+CURATE_GATE_STATUS="$REPOSITORY_ROOT/artifacts/evidence/curate-gate-status.txt"
+if [[ "${DW_REQUIRE_CURATE_JOURNEY:-0}" == "1" ]]; then
+  test -s "$CURATE_RESULT"
+  node "$REPOSITORY_ROOT/scripts/verify-curate-journey-output.mjs" \
+    "$CURATE_RESULT" "$COMMIT_SHA" macos-arm64 app-zip 'extracted macOS app'
+  printf 'verified\t%s\t%s\n' "$COMMIT_SHA" 'extracted macOS app' > "$CURATE_GATE_STATUS"
+else
+  printf 'unverified\t%s\n' \
+    'native packaged Curate tracer has not emitted curate-journey-result.json' \
+    > "$CURATE_GATE_STATUS"
+  echo 'WB-F02 packaged Curate journey: UNVERIFIED — native tracer output hook is inactive'
+fi
 cp "$CREATE_RESULT" "$REPOSITORY_ROOT/artifacts/evidence/create-result.json"
 cp "$REOPEN_RESULT" "$REPOSITORY_ROOT/artifacts/evidence/reopen-result.json"
 cp "$STORY_CREATE_RESULT" "$REPOSITORY_ROOT/artifacts/evidence/story-create-result.json"

@@ -16,13 +16,11 @@ function bindPlanEvents() {
     const slideId = card.dataset.mapSlideId
     const action = event.target.closest('[data-map-action]')?.dataset.mapAction
     if (action === 'curate') {
-      selectedSlideId = slideId
-      setPhase('curate')
+      void enterPhaseForSlide('curate', slideId)
       return
     }
     if (action === 'assemble') {
-      selectedSlideId = slideId
-      setPhase('assemble')
+      void enterPhaseForSlide('assemble', slideId)
       return
     }
     if (action === 'skip') {
