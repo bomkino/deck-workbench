@@ -68,9 +68,14 @@ function renderArtboard() {
   if (!slide || !assembly) return
   state.assemble.panX ??= 0
   state.assemble.panY ??= 0
-  elements.stagePan.style.width = `${state.project.canvas.width}px`
-  elements.stagePan.style.height = `${state.project.canvas.height}px`
-  elements.stagePan.style.transform = `translate(calc(-50% + ${state.assemble.panX}px), calc(-50% + ${state.assemble.panY}px)) scale(${state.artboardZoom})`
+  const scaledWidth = state.project.canvas.width * state.artboardZoom
+  const scaledHeight = state.project.canvas.height * state.artboardZoom
+  elements.stagePan.style.width = `${scaledWidth}px`
+  elements.stagePan.style.height = `${scaledHeight}px`
+  elements.stagePan.style.left = `calc(50% + ${state.assemble.panX}px)`
+  elements.stagePan.style.top = `calc(50% + ${state.assemble.panY}px)`
+  elements.stagePan.style.transform = 'translate(-50%, -50%)'
+  elements.artboard.style.transform = `scale(${state.artboardZoom})`
   elements.zoomLabel.textContent = `${Math.round(state.artboardZoom * 100)}%`
   elements.artboard.classList.toggle('clean-preview', state.assemble.cleanPreview)
   elements.textStack.classList.toggle('is-selected', state.assemble.selection === 'text')

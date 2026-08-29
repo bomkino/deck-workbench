@@ -74,8 +74,8 @@ function expandedHandoffIssues(slide) {
   if (slide.lifecycle === 'included' && slide.findMoreMedia?.state === 'needed') {
     issues.push({ code: 'curate.find-more', message: 'Find More Media remains open', severity: 'warning' })
   }
-  if (slide.lifecycle === 'included' && slide.sourceTreatment && slide.sourceTreatment !== 'ready') {
-    issues.push({ code: 'assemble.source-treatment', message: sourceTreatmentLabel(slide.sourceTreatment), severity: slide.sourceTreatment === 'placeholder' ? 'warning' : 'warning' })
+  if (slide.lifecycle === 'included' && slide.sourceTreatment && !['ready', 'crop-provisional'].includes(slide.sourceTreatment)) {
+    issues.push({ code: 'assemble.source-treatment', message: sourceTreatmentLabel(slide.sourceTreatment), severity: 'warning' })
   }
   const assembly = getAssembly(slide)
   if (assembly?.text?.layoutSnapshotState === 'stale') {
