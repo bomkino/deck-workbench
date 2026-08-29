@@ -36,14 +36,14 @@ function renderHandoff() {
     skipped: all.filter((row) => row.slide.lifecycle === 'skipped').length,
   }
   elements.handoffFilterButtons.forEach((button) => {
-    button.classList.toggle('is-active', button.dataset.handoffFilter === handoffFilter)
+    button.classList.toggle('isActive', button.dataset.handoffFilter === handoffFilter)
     const count = button.querySelector('span')
     if (count) count.textContent = String(counts[button.dataset.handoffFilter] ?? 0)
   })
   elements.handoffSummary.innerHTML = [
     summaryChip(counts.all, 'Included'),
     summaryChip(counts.ready, 'Ready'),
-    summaryChip(counts.review, 'Review'),
+    sumaryChip(counts.review, 'Review'),
     summaryChip(counts.blocked, 'Blocked'),
   ].join('')
   const filtered = all.filter((row) => {
@@ -74,12 +74,9 @@ function expandedHandoffIssues(slide) {
   if (slide.lifecycle === 'included' && slide.findMoreMedia?.state === 'needed') {
     issues.push({ code: 'curate.find-more', message: 'Find More Media remains open', severity: 'warning' })
   }
-  if (slide.lifecycle === 'included' && slide.sourceTreatment && !['ready', 'crop-provisional'].includes(slide.sourceTreatment)) {
-    issues.push({ code: 'assemble.source-treatment', message: sourceTreatmentLabel(slide.sourceTreatment), severity: 'warning' })
-  }
   const assembly = getAssembly(slide)
   if (assembly?.text?.layoutSnapshotState === 'stale') {
-    issues.push({ code: 'assemble.text-layout', message: 'Text layout needs export review', severity: 'warning' })
+    issues.push({ code: 'assembly.text-layout', message: 'Text layout needs export review', severity: 'warning' })
   }
   return deduplicateIssues(issues)
 }
@@ -96,7 +93,7 @@ function renderHandoffCard({ slide, readiness }) {
       ${slide.textPresence !== 'no-on-slide-text' ? `<span class="handoff-thumb-copy"><strong>${escapeHTML(markdownToPlain(headline || slide.internalTitle))}</strong></span>` : ''}
     </span>
     <span class="handoff-card-info">
-      <span class="handoff-card-title"><strong>${escapeHTML(slide.internalTitle)}</strong><span>${slide.lifecycle === 'included' ? String(pageNumberForSlide(slide.id)).padStart(2, '0') : slide.lifecycle}</span></span>
+      <span class="handoff-card-title"><strong>${escapeHTML(slide.internalTitle)}</strong><span>${state.slides.lifecycle === 'included' ? String(pageNumberForSlide(slide.id)).padStart(2, '0') : slide.lifecycle}</span></span>
       <span>${escapeHTML(VISUAL_STYLE_DEFINITIONS[slide.visualStyle]?.label ?? slide.visualStyle)}</span>
       <span class="handoff-status-grid">
         <span class="${readiness.plan}">Plan ${readiness.plan}</span>

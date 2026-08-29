@@ -140,6 +140,9 @@ export function assemblyIssues(slide) {
   if (assembly.text?.overflow) issues.push(issue('assembly.text-overflow', 'Text overflows its frame', 'warning'))
   if (assembly.text?.layoutSnapshotState === 'stale') issues.push(issue('assembly.text-snapshot', 'Text Layout Snapshot is stale', 'warning'))
   if ((assembly.unplacedAssetIds ?? []).length > 0) issues.push(issue('assembly.unplaced-media', 'Assembly contains unplaced media', 'warning'))
+  if (slide.sourceTreatment && !['ready', 'crop-provisional'].includes(slide.sourceTreatment)) {
+    issues.push(issue('assembly.source-treatment', sourceTreatmentMessage(slide.sourceTreatment), 'warning'))
+  }
   return issues
 }
 
@@ -294,6 +297,16 @@ function slotLabel(slot, slide) {
     return slide.supportingItems?.find((item) => item.id === itemId)?.title || itemId
   }
   return slot.replace('primary:', 'Primary ')
+}
+
+function sourceTreatmentMessage(value) {
+  return {
+    'needs-expansion': 'Source needs expansion',
+    'needs-retouch': 'Source needs retouching',
+    'needs-higher-resolution': 'Source needs higher resolution',
+    placeholder: 'Placeholder source',
+    'find-more': 'Find a stronger image',
+  }[value] ?? 'Source treatment requires review'
 }
 
 function clamp01(value) {

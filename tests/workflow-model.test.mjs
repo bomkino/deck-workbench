@@ -114,3 +114,11 @@ test('gradient feather broadens the transition while preserving bounded ordered 
   assert.equal(broad[2].offset > tight[2].offset, true)
   assert.equal(broad.every((stop) => stop.opacity >= 0 && stop.opacity <= 1), true)
 })
+
+
+test('source treatment creates Handoff review without treating provisional crop as a problem', () => {
+  const selected = { 'asset-1': { state: 'selected', slotKey: 'primary:1', availability: 'available' } }
+  assert.equal(slideReadiness(baseSlide({ sourceTreatment: 'crop-provisional' }), selected).handoff, 'ready')
+  assert.equal(slideReadiness(baseSlide({ sourceTreatment: 'needs-expansion' }), selected).handoff, 'review')
+  assert.equal(assemblyIssues(baseSlide({ sourceTreatment: 'needs-expansion' }))[0].message, 'Source needs expansion')
+})
