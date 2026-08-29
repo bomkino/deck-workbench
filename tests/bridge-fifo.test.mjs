@@ -14,6 +14,8 @@ function bridgeHarness({ failFirstPost = false } = {}) {
     Map,
     Promise,
     console,
+    setTimeout,
+    clearTimeout,
     webkit: {
       messageHandlers: {
         deckWorkbench: {
@@ -33,7 +35,9 @@ function bridgeHarness({ failFirstPost = false } = {}) {
   return { context, posted }
 }
 
-test('generated macOS bridge admits one request at a time and pumps in call order', async () => {
+const nextTurn = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+test('generated macOS bridge admits one request at a time without re-entering the response callback', async () => {
   const { context, posted } = bridgeHarness()
   const first = context.deckBridge.query({ name: 'story.document', params: {} })
   const second = context.deckBridge.execute({ command: { type: 'content.update' } })
@@ -42,11 +46,15 @@ test('generated macOS bridge admits one request at a time and pumps in call orde
   assert.deepEqual(posted.map((request) => request.method), ['deck.query'])
 
   context.__deckBridgeReceive({ requestId: posted[0].requestId, ok: true, result: { revision: 1 } })
+  assert.deepEqual(posted.map((request) => request.method), ['deck.query'])
   assert.deepEqual(await first, { revision: 1 })
+  await nextTurn()
   assert.deepEqual(posted.map((request) => request.method), ['deck.query', 'deck.execute'])
 
   context.__deckBridgeReceive({ requestId: posted[1].requestId, ok: true, result: { revision: 2 } })
+  assert.deepEqual(posted.map((request) => request.method), ['deck.query', 'deck.execute'])
   assert.deepEqual(await second, { revision: 2 })
+  await nextTurn()
   assert.deepEqual(posted.map((request) => request.method), ['deck.query', 'deck.execute', 'deck.undo'])
 
   context.__deckBridgeReceive({ requestId: posted[2].requestId, ok: true, result: { revision: 3 } })
