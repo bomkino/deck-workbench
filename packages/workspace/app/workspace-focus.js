@@ -5,7 +5,9 @@ let workspaceExpectedFocusGeneration = 0
 let applyingWorkspaceFocus = false
 
 function semanticSequenceTargetForNode(active) {
-  if (!active || !elements.sequenceList.contains(active)) return null
+  if (!active) return null
+  const owner = sequenceFocusElement()
+  if (active !== owner && !elements.sequenceList.contains(active)) return null
   const state = sequenceFocusState()
   if (state.kind && state.id) return { sequenceKind: state.kind, sequenceId: state.id }
   const item = active.closest?.('[data-sequence-kind]')
@@ -17,10 +19,7 @@ function semanticSequenceTargetForNode(active) {
 
 function workspaceFocusTarget(active) {
   if (!active || active === document.body || active === document.documentElement) return null
-  const sequence = active === elements.sequenceList
-    ? sequenceFocusState()
-    : semanticSequenceTargetForNode(active)
-  if (sequence?.kind && sequence?.id) return { sequenceKind: sequence.kind, sequenceId: sequence.id }
+  const sequence = semanticSequenceTargetForNode(active)
   if (sequence?.sequenceKind && sequence?.sequenceId) return sequence
   const blockId = active?.dataset?.blockId ?? null
   const headline = active === elements.headline
@@ -51,7 +50,7 @@ function expectedWorkspaceFocus() {
 
 function workspaceFocusNode(target) {
   if (!target) return null
-  if (target.sequenceKind && target.sequenceId) return elements.sequenceList
+  if (target.sequenceKind && target.sequenceId) return sequenceFocusElement()
   if (target.blockId) return storyField(target.blockId)
   if (target.headline) return elements.headline
   return null
@@ -253,7 +252,7 @@ moveSection = async function moveSectionFromCanonicalStory(sectionId, direction)
 }
 
 moveSectionByKeyboard = function moveSectionByKeyboardFromCanonicalStory(event, sectionId) {
-  if (event.target !== event.currentTarget && event.target !== elements.sequenceList) return
+  if (event.target !== event.currentTarget && event.target !== sequenceFocusElement()) return
   const direction = sequenceShortcut(event)
   if (!direction) return
   event.preventDefault()
