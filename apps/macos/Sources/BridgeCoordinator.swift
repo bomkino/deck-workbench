@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import PDFKit
 import WebKit
@@ -108,6 +109,13 @@ final class BridgeCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDel
 
     func invokeForTracer(_ body: String, arguments: [String: Any] = [:]) async throws -> Any? {
         guard let webView else { throw WorkbenchFailure(name: "WorkspaceUnavailable", message: "WebView is unavailable") }
+        guard let window = webView.window else {
+            throw WorkbenchFailure(name: "WorkspaceUnavailable", message: "Tracer WebView is not attached to a window")
+        }
+        window.makeKeyAndOrderFront(nil)
+        guard window.makeFirstResponder(webView) else {
+            throw WorkbenchFailure(name: "WorkspaceUnavailable", message: "Tracer WebView could not become first responder")
+        }
         do {
             return try await webView.callAsyncJavaScript(body, arguments: arguments, in: nil, contentWorld: .page)
         } catch {
