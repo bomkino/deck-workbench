@@ -32,7 +32,7 @@ final class DeckSessionController: ObservableObject {
     private var store: PitchDeckDocumentStore?
     private var mediaSession: MediaCatalogSession?
     private var processedMediaCommands: [String: Data] = [:]
-    private weak var workspace: WorkspaceProjectionSink?
+    private var workspace: WorkspaceProjectionSink?
 
     init(bundle: Bundle = .main) throws {
         guard let kernelURL = bundle.url(forResource: "deck-kernel", withExtension: "js", subdirectory: "Kernel") else {
