@@ -53,9 +53,18 @@ const javascript = `/* Generated from packages/bridge-contract/bridge.contract.j
   const pending = new Map()
   const queue = []
   let activeRequestId = null
+  let scheduledPump = null
 
   function nextRequestId() {
     return globalThis.crypto?.randomUUID?.() ?? \`request-\${Date.now()}-\${Math.random()}\`
+  }
+
+  function schedulePump() {
+    if (scheduledPump !== null || activeRequestId !== null || queue.length === 0) return
+    scheduledPump = globalThis.setTimeout(() => {
+      scheduledPump = null
+      pump()
+    }, 0)
   }
 
   function pump() {
@@ -69,7 +78,7 @@ const javascript = `/* Generated from packages/bridge-contract/bridge.contract.j
       pending.delete(request.requestId)
       activeRequestId = null
       pendingRequest?.reject(error)
-      pump()
+      schedulePump()
     }
   }
 
@@ -94,7 +103,7 @@ ${methods}
     if (activeRequestId === response.requestId) activeRequestId = null
     if (response.ok) request.resolve(response.result)
     else request.reject(Object.assign(new Error(response.error?.message ?? 'Bridge request failed'), response.error))
-    pump()
+    schedulePump()
   }
 })()
 `
