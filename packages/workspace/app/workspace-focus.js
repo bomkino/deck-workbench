@@ -1,3 +1,5 @@
+let workspaceFocusLease = 0
+
 function captureWorkspaceFocus() {
   const active = document.activeElement
   if (!active || active === document.body || active === document.documentElement) return null
@@ -28,18 +30,29 @@ function focusWasLost() {
     || active === elements.phaseWorkspaces
 }
 
-function restoreWorkspaceFocus(target, { onlyIfLost = false } = {}) {
-  if (!target || (onlyIfLost && !focusWasLost())) return false
-  let node = null
-  if (target.blockId) node = storyField(target.blockId)
-  else if (target.headline) node = elements.headline
-  else if (target.slideId) node = elements.sequenceList.querySelector(`[data-slide-id="${CSS.escape(target.slideId)}"]`)
-  else if (target.sectionId) node = elements.sequenceList.querySelector(`[data-section-id="${CSS.escape(target.sectionId)}"]`)
+function workspaceFocusNode(target) {
+  if (!target) return null
+  if (target.blockId) return storyField(target.blockId)
+  if (target.headline) return elements.headline
+  if (target.slideId) {
+    return [...elements.sequenceList.querySelectorAll('[data-slide-id]')]
+      .find((candidate) => candidate.dataset.slideId === target.slideId) ?? null
+  }
+  if (target.sectionId) {
+    return [...elements.sequenceList.querySelectorAll('[data-section-id]')]
+      .find((candidate) => candidate.dataset.sectionId === target.sectionId) ?? null
+  }
+  return null
+}
+
+function focusWorkspaceNode(node, target) {
   if (!node || node.disabled || !node.isConnected) return false
   node.focus()
   if (
     target.selectionStart !== null
+    && target.selectionStart !== undefined
     && target.selectionEnd !== null
+    && target.selectionEnd !== undefined
     && typeof node.setSelectionRange === 'function'
   ) {
     const maximum = node.value?.length ?? 0
@@ -50,6 +63,26 @@ function restoreWorkspaceFocus(target, { onlyIfLost = false } = {}) {
   }
   return document.activeElement === node
 }
+
+function restoreWorkspaceFocus(target, { onlyIfLost = false, lease = false } = {}) {
+  if (!target || (onlyIfLost && !focusWasLost())) return false
+  const restored = focusWorkspaceNode(workspaceFocusNode(target), target)
+  if (!lease) return restored
+  const leaseId = ++workspaceFocusLease
+  globalThis.setTimeout(() => {
+    if (leaseId !== workspaceFocusLease || !focusWasLost()) return
+    focusWorkspaceNode(workspaceFocusNode(target), target)
+  }, 0)
+  return restored
+}
+
+function cancelWorkspaceFocusLease() {
+  workspaceFocusLease += 1
+}
+
+document.addEventListener('focusin', (event) => {
+  if (event.target !== document.body && event.target !== document.documentElement) cancelWorkspaceFocusLease()
+})
 
 const renderSequenceWithoutFocusPreservation = renderSequence
 renderSequence = function renderSequenceWithFocusPreservation(next) {
@@ -101,7 +134,7 @@ async function executeSequenceMove(type, payload, requestedSlideId, focus, sourc
     selectedSlideId = nextProjection.slide.id
     storyDocument = nextStory
     renderAll()
-    restoreWorkspaceFocus(focus)
+    restoreWorkspaceFocus(focus, { lease: true })
     return projection
   } catch (error) {
     renderAll()
@@ -116,7 +149,7 @@ async function planSlideMove(sectionId, slideId, direction, sourceKind) {
   const payload = slideMovePlan(canonicalStory, sectionId, slideId, direction)
   if (!payload) {
     setStatus(`Slide cannot move ${direction}`)
-    restoreWorkspaceFocus({ slideId })
+    restoreWorkspaceFocus({ slideId }, { lease: true })
     return null
   }
   return executeSequenceMove('slide.move', payload, slideId, { slideId }, sourceKind)
@@ -128,7 +161,7 @@ async function planSectionMove(sectionId, direction, sourceKind) {
   const payload = sectionMovePlan(canonicalStory, sectionId, direction)
   if (!payload) {
     setStatus(`Part cannot move ${direction}`)
-    restoreWorkspaceFocus({ sectionId })
+    restoreWorkspaceFocus({ sectionId }, { lease: true })
     return null
   }
   return executeSequenceMove('section.move', payload, selectedSlideId, { sectionId }, sourceKind)
