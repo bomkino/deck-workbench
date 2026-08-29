@@ -57,9 +57,13 @@ const javascript = `/* Generated from packages/bridge-contract/bridge.contract.j
   }
 
   function invoke(method, payload) {
+    if (method === 'deck.execute' || method === 'deck.undo' || method === 'deck.redo') {
+      globalThis.__deckBridgeStoryDocument = null
+      globalThis.__deckBridgeAssetCatalog = null
+    }
     const requestId = nextRequestId()
     return new Promise((resolve, reject) => {
-      pending.set(requestId, { resolve, reject })
+      pending.set(requestId, { resolve, reject, method, payload })
       try {
         globalThis.webkit.messageHandlers.${contract.handler}.postMessage({ method, requestId, payload })
       } catch (error) {
@@ -78,8 +82,17 @@ ${methods}
     const request = pending.get(response.requestId)
     if (!request) return
     pending.delete(response.requestId)
-    if (response.ok) request.resolve(response.result)
-    else request.reject(Object.assign(new Error(response.error?.message ?? 'Bridge request failed'), response.error))
+    if (response.ok) {
+      if (request.method === 'deck.query' && request.payload?.name === 'story.document') {
+        globalThis.__deckBridgeStoryDocument = response.result
+      }
+      if (request.method === 'deck.query' && request.payload?.name === 'asset.catalog') {
+        globalThis.__deckBridgeAssetCatalog = response.result
+      }
+      request.resolve(response.result)
+    } else {
+      request.reject(Object.assign(new Error(response.error?.message ?? 'Bridge request failed'), response.error))
+    }
   }
 })()
 `
