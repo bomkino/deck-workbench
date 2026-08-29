@@ -29,6 +29,13 @@ function replaceBetween(startMarker, endMarker, replacement, label) {
   source = `${source.slice(0, start)}${replacement}${source.slice(end)}`
 }
 
+replaceAllRequired(
+  'document.activeElement === findBody()',
+  'storyFocusState().blockId === bodyBlockId',
+  3,
+  'Story semantic focus checks',
+)
+
 replaceBetween(
   "            const findSequenceSlide = () => [...document.querySelectorAll('#sequence-list [data-slide-id]')]",
   '            for (let attempt = 0; attempt < 100 && !findSequenceSlide(); attempt += 1) {',
@@ -136,27 +143,15 @@ replaceRequired(
   '              accessibility["sectionRole"] as? String == "treeitem",',
   'Section accessibility role',
 )
-replaceRequired(
-  `        print("DW-W01 Story create phase: keyboard journey returned")
-        fflush(stdout)
-        guard let keyboardJourney = rawKeyboardJourney as? [String: Any],`,
-  `        print("DW-W01 Story create phase: keyboard journey returned")
-        fflush(stdout)
-        if JSONSerialization.isValidJSONObject(rawKeyboardJourney),
-           let keyboardDiagnosticData = try? JSONSerialization.data(withJSONObject: rawKeyboardJourney, options: [.sortedKeys]),
-           let keyboardDiagnosticText = String(data: keyboardDiagnosticData, encoding: .utf8) {
-            print("DW-W01 keyboard contract: \\(keyboardDiagnosticText)")
-            fflush(stdout)
-        }
-        guard let keyboardJourney = rawKeyboardJourney as? [String: Any],`,
-  'keyboard contract diagnostic',
-)
 
 if (/waitForSequenceFocus|waitForSectionFocus|waitForSectionIdentityFocus/.test(source)) {
   throw new Error('Generated packaged tracer still contains a legacy row-focus poll')
 }
-if (/document\.activeElement === (?:button|row)/.test(source)) {
-  throw new Error('Generated packaged tracer still asserts transient row DOM focus')
+if (/document\.activeElement === (?:button|row|findBody\(\))/.test(source)) {
+  throw new Error('Generated packaged tracer still asserts transient DOM focus')
+}
+if (!source.includes("storyFocusState().blockId === bodyBlockId")) {
+  throw new Error('Generated packaged tracer does not verify semantic Story focus')
 }
 if (!source.includes("sequenceOwner.getAttribute('aria-activedescendant')")) {
   throw new Error('Generated packaged tracer does not verify the stable Sequence owner')
@@ -164,10 +159,7 @@ if (!source.includes("sequenceOwner.getAttribute('aria-activedescendant')")) {
 if (/requestAnimationFrame\(\(\) => resolve\(\)\)/.test(source)) {
   throw new Error('Generated packaged tracer still polls focus through throttled animation frames')
 }
-if (!source.includes('DW-W01 keyboard contract:')) {
-  throw new Error('Generated packaged tracer does not expose the keyboard contract diagnostic')
-}
 
 await mkdir(resolve(root, 'build/generated'), { recursive: true })
-await writeFile(outputPath, `// Generated from PackagedTracer.swift with the semantic Sequence focus contract. Do not edit.\n${source}`)
+await writeFile(outputPath, `// Generated from PackagedTracer.swift with semantic Story and Sequence focus contracts. Do not edit.\n${source}`)
 console.log(`Built semantic packaged tracer: ${outputPath}`)
