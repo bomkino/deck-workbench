@@ -47,10 +47,40 @@ function makeWorkspaceNodeFocusable(node) {
   return node
 }
 
+function replaceNativeSlideButton(button, sectionId) {
+  const slideId = button.dataset.slideId
+  if (!slideId || !sectionId) return button
+  const row = document.createElement('div')
+  for (const attribute of button.attributes) {
+    if (attribute.name !== 'type') row.setAttribute(attribute.name, attribute.value)
+  }
+  row.setAttribute('role', 'button')
+  row.tabIndex = 0
+  while (button.firstChild) row.append(button.firstChild)
+  row.addEventListener('click', () => selectSlide(slideId))
+  row.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      void selectSlide(slideId)
+      return
+    }
+    moveSlideByKeyboard(event, sectionId, slideId)
+  })
+  button.replaceWith(row)
+  return row
+}
+
 function ensureSequenceKeyboardFocusability() {
-  elements.sequenceList
-    .querySelectorAll('[data-slide-id], [data-section-id]')
-    .forEach((node) => { node.tabIndex = 0 })
+  let sectionId = null
+  for (const child of elements.sequenceList.children) {
+    if (child.matches?.('[data-section-id]')) {
+      sectionId = child.dataset.sectionId
+      child.tabIndex = 0
+      continue
+    }
+    const button = child.querySelector?.('button.slide-row[data-slide-id]')
+    if (button) replaceNativeSlideButton(button, sectionId)
+  }
 }
 
 function workspaceFocusNode(target) {
