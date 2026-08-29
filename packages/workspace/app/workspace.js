@@ -1,3 +1,18 @@
+function selectedPlanRecord() {
+  const location = findStoryLocation(selectedSlideId)
+  if (location) return planRecordForSlide(location.slide, location.section)
+  if (projection?.slide?.id !== selectedSlideId) return null
+  const slide = {
+    ...projection.slide,
+    contentBlocks: projection.contentBlocks ?? [],
+  }
+  const section = projection.section ?? {
+    id: projection.slide.sectionId ?? 'selected-part',
+    title: 'Selected Part',
+  }
+  return planRecordForSlide(slide, section)
+}
+
 function bindWorkspaceEvents() {
   elements.phaseButtons.forEach((button) => button.addEventListener('click', () => setPhase(button.dataset.phase)))
   elements.undo.addEventListener('click', () => historyAction('undo'))
