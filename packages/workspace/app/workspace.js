@@ -36,23 +36,6 @@ renderPlanEditor = function renderPlanEditorWithProjectionFallback() {
   }
 }
 
-let scheduledProjectionRefresh = null
-
-function cancelScheduledProjectionRefresh() {
-  if (scheduledProjectionRefresh === null) return false
-  globalThis.clearTimeout(scheduledProjectionRefresh)
-  scheduledProjectionRefresh = null
-  return true
-}
-
-function scheduleProjectionRefresh(slideId) {
-  cancelScheduledProjectionRefresh()
-  scheduledProjectionRefresh = globalThis.setTimeout(() => {
-    scheduledProjectionRefresh = null
-    void refreshWorkspace(slideId)
-  }, 0)
-}
-
 refreshWorkspace = async function refreshWorkspaceAtomically(requestedSlideId = selectedSlideId, focus = {}) {
   const generation = ++refreshGeneration
   try {
@@ -92,18 +75,33 @@ refreshWorkspace = async function refreshWorkspaceAtomically(requestedSlideId = 
   }
 }
 
-renderProjection = function renderProjectionWithCancellableHydration(next) {
-  projection = next
-  selectedSlideId = next?.slide?.id ?? selectedSlideId
-  renderAll()
-  if (selectedSlideId) scheduleProjectionRefresh(selectedSlideId)
-  return next
+function patchStoryDocumentFromProjection(next) {
+  if (!storyDocument || !next?.slide) return
+  storyDocument.deckTitle = next.deckTitle ?? storyDocument.deckTitle
+  storyDocument.revision = next.revision ?? storyDocument.revision
+  const sectionId = next.section?.id ?? next.slide.sectionId
+  const section = storyDocument.sections.find((candidate) => candidate.id === sectionId)
+  if (!section) return
+  const index = section.slides.findIndex((candidate) => candidate.id === next.slide.id)
+  const slide = {
+    ...(index >= 0 ? section.slides[index] : {}),
+    ...next.slide,
+    contentBlocks: next.contentBlocks ?? [],
+  }
+  if (index >= 0) section.slides.splice(index, 1, slide)
+  else section.slides.push(slide)
 }
 
-const clearProjectionImmediately = clearProjection
-clearProjection = function clearProjectionAndScheduledHydration() {
-  cancelScheduledProjectionRefresh()
-  return clearProjectionImmediately()
+renderProjection = function renderProjectionFromCanonicalCache(next) {
+  projection = next
+  selectedSlideId = next?.slide?.id ?? selectedSlideId
+  const cachedStory = globalThis.__deckBridgeStoryDocument
+  if (cachedStory?.revision === next?.revision) storyDocument = cachedStory
+  else patchStoryDocumentFromProjection(next)
+  const cachedAssets = globalThis.__deckBridgeAssetCatalog
+  if (cachedAssets?.assets) assetCatalog = cachedAssets.assets
+  renderAll()
+  return next
 }
 
 function bindWorkspaceEvents() {
@@ -158,7 +156,6 @@ async function boot() {
 window.deckWorkbench = Object.freeze({
   renderProjection,
   clearProjection,
-  cancelScheduledRefresh: cancelScheduledProjectionRefresh,
   exportFrame() {
     activePhase = 'assemble'
     renderAll()
