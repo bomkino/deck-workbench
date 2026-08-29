@@ -72,6 +72,18 @@ function installDelegatedFocusHost(node) {
   proxy.setAttribute('aria-label', node.getAttribute('aria-label') ?? 'Sequence focus target')
   const slot = document.createElement('slot')
   shadow.append(style, proxy, slot)
+  const focusProxy = (options) => {
+    try {
+      proxy.focus(options)
+    } catch {
+      proxy.focus()
+    }
+  }
+  Object.defineProperty(node, 'focus', {
+    configurable: true,
+    enumerable: false,
+    value: focusProxy,
+  })
   return node
 }
 
@@ -141,11 +153,7 @@ function focusWorkspaceNode(node, target) {
   if (!node || node.disabled || !node.isConnected) return false
   applyingWorkspaceFocus = true
   try {
-    try {
-      node.focus({ preventScroll: true })
-    } catch {
-      node.focus()
-    }
+    node.focus({ preventScroll: true })
     if (
       target.selectionStart !== null
       && target.selectionStart !== undefined
