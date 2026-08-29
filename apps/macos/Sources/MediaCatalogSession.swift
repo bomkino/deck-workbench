@@ -163,10 +163,9 @@ private struct FileMetadata {
 }
 
 private enum MediaFilesystem {
-    static func metadata(_ path: String, follow: Bool = false) throws -> FileMetadata {
+    static func metadata(_ path: String) throws -> FileMetadata {
         var value = stat()
         let result = path.withCString { pointer -> Int32 in
-            if follow { return Darwin.stat(pointer, &value) }
             return Darwin.lstat(pointer, &value)
         }
         guard result == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
@@ -193,7 +192,7 @@ private enum MediaFilesystem {
         }
         defer { free(pointer) }
         let canonicalPath = String(cString: pointer)
-        let canonicalMetadata = try metadata(canonicalPath, follow: true)
+        let canonicalMetadata = try metadata(canonicalPath)
         guard canonicalMetadata.isDirectory else {
             throw WorkbenchFailure(name: "MediaRootUnavailable", message: "The selected media Root is unavailable or unsafe")
         }
@@ -951,7 +950,7 @@ actor MediaCatalogSession {
         let end = min(matched.count, offset + limit)
         let page = offset < matched.count ? Array(matched[offset..<end]) : []
         let nonce = lease.current()
-        var items = try page.map { asset -> [String: Any] in
+        var items = page.map { asset -> [String: Any] in
             let availability = effectiveAvailability(asset, rootAvailability: rootAvailability)
             let grid = ["still-image", "animated-image"].contains(asset.previewCapability)
             let rendition: Any
