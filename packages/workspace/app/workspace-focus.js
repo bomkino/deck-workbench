@@ -1,4 +1,5 @@
 let workspaceFocusLease = 0
+let workspaceInteractionGeneration = 0
 
 function captureWorkspaceFocus() {
   const active = document.activeElement
@@ -19,15 +20,6 @@ function captureWorkspaceFocus() {
     selectionStart: typeof active?.selectionStart === 'number' ? active.selectionStart : null,
     selectionEnd: typeof active?.selectionEnd === 'number' ? active.selectionEnd : null,
   }
-}
-
-function focusWasLost() {
-  const active = document.activeElement
-  return !active
-    || active === document.body
-    || active === document.documentElement
-    || active === elements.workbench
-    || active === elements.phaseWorkspaces
 }
 
 function workspaceFocusNode(target) {
@@ -64,31 +56,48 @@ function focusWorkspaceNode(node, target) {
   return document.activeElement === node
 }
 
+function cancelWorkspaceFocusLease() {
+  workspaceFocusLease += 1
+}
+
+function recordTrustedWorkspaceInteraction(event) {
+  if (!event.isTrusted) return
+  workspaceInteractionGeneration += 1
+  cancelWorkspaceFocusLease()
+}
+
+document.addEventListener('pointerdown', recordTrustedWorkspaceInteraction, true)
+document.addEventListener('keydown', recordTrustedWorkspaceInteraction, true)
+
 function scheduleWorkspaceFocusLease(target) {
   const leaseId = ++workspaceFocusLease
+  const interactionGeneration = workspaceInteractionGeneration
   globalThis.setTimeout(() => {
-    if (leaseId !== workspaceFocusLease || !focusWasLost()) return
-    focusWorkspaceNode(workspaceFocusNode(target), target)
+    if (
+      leaseId !== workspaceFocusLease
+      || interactionGeneration !== workspaceInteractionGeneration
+    ) return
+    const node = workspaceFocusNode(target)
+    if (!node || document.activeElement === node) return
+    focusWorkspaceNode(node, target)
   }, 0)
 }
 
 function restoreWorkspaceFocus(target, { onlyIfLost = false, lease = false } = {}) {
   if (!target) return false
   const node = workspaceFocusNode(target)
-  const restored = onlyIfLost && !focusWasLost()
-    ? document.activeElement === node
+  const activeIsTarget = Boolean(node && document.activeElement === node)
+  const focusIsDocumentFallback = !document.activeElement
+    || document.activeElement === document.body
+    || document.activeElement === document.documentElement
+    || document.activeElement === elements.workbench
+    || document.activeElement === elements.phaseWorkspaces
+  const restored = onlyIfLost && !focusIsDocumentFallback
+    ? activeIsTarget
     : focusWorkspaceNode(node, target)
   if (lease) scheduleWorkspaceFocusLease(target)
   return restored
 }
-
-function cancelWorkspaceFocusLease() {
-  workspaceFocusLease += 1
-}
-
-document.addEventListener('focusin', (event) => {
-  if (event.target !== document.body && event.target !== document.documentElement) cancelWorkspaceFocusLease()
-})
 
 const renderSequenceWithoutFocusPreservation = renderSequence
 renderSequence = function renderSequenceWithFocusPreservation(next) {
