@@ -136,6 +136,21 @@ replaceRequired(
   '              accessibility["sectionRole"] as? String == "treeitem",',
   'Section accessibility role',
 )
+replaceRequired(
+  `        print("DW-W01 Story create phase: keyboard journey returned")
+        fflush(stdout)
+        guard let keyboardJourney = rawKeyboardJourney as? [String: Any],`,
+  `        print("DW-W01 Story create phase: keyboard journey returned")
+        fflush(stdout)
+        if JSONSerialization.isValidJSONObject(rawKeyboardJourney),
+           let keyboardDiagnosticData = try? JSONSerialization.data(withJSONObject: rawKeyboardJourney, options: [.sortedKeys]),
+           let keyboardDiagnosticText = String(data: keyboardDiagnosticData, encoding: .utf8) {
+            print("DW-W01 keyboard contract: \\(keyboardDiagnosticText)")
+            fflush(stdout)
+        }
+        guard let keyboardJourney = rawKeyboardJourney as? [String: Any],`,
+  'keyboard contract diagnostic',
+)
 
 if (/waitForSequenceFocus|waitForSectionFocus|waitForSectionIdentityFocus/.test(source)) {
   throw new Error('Generated packaged tracer still contains a legacy row-focus poll')
@@ -148,6 +163,9 @@ if (!source.includes("sequenceOwner.getAttribute('aria-activedescendant')")) {
 }
 if (/requestAnimationFrame\(\(\) => resolve\(\)\)/.test(source)) {
   throw new Error('Generated packaged tracer still polls focus through throttled animation frames')
+}
+if (!source.includes('DW-W01 keyboard contract:')) {
+  throw new Error('Generated packaged tracer does not expose the keyboard contract diagnostic')
 }
 
 await mkdir(resolve(root, 'build/generated'), { recursive: true })
