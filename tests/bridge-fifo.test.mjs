@@ -46,13 +46,15 @@ function bridgeHarness({ failFirstPost = false, timeoutMs = 10_000 } = {}) {
 
 const nextTurn = () => new Promise((resolve) => setTimeout(resolve, 0))
 
-test('generated macOS bridge cancels stale hydration and admits one request at a time without response re-entry', async () => {
+test('generated macOS bridge defers every admission, cancels stale hydration and stays FIFO', async () => {
   const { context, posted, cancelledRefreshes } = bridgeHarness()
   const first = context.deckBridge.query({ name: 'story.document', params: {} })
   const second = context.deckBridge.execute({ command: { type: 'content.update' } })
   const third = context.deckBridge.undo()
 
   assert.equal(cancelledRefreshes(), 3)
+  assert.deepEqual(posted, [])
+  await nextTurn()
   assert.deepEqual(posted.map((request) => request.method), ['deck.query'])
 
   context.__deckBridgeReceive({ requestId: posted[0].requestId, ok: true, result: { revision: 1 } })
@@ -71,24 +73,28 @@ test('generated macOS bridge cancels stale hydration and admits one request at a
   assert.deepEqual(await third, { revision: 3 })
 })
 
-test('a synchronous post failure rejects that request and continues the queue', async () => {
+test('a synchronous post failure rejects that request and continues the queue on a later turn', async () => {
   const { context, posted } = bridgeHarness({ failFirstPost: true })
   const failed = context.deckBridge.query({ name: 'story.document', params: {} })
   const next = context.deckBridge.undo()
 
+  assert.deepEqual(posted, [])
   await assert.rejects(failed, /post failed/)
+  await nextTurn()
   assert.deepEqual(posted.map((request) => request.method), ['deck.undo'])
   context.__deckBridgeReceive({ requestId: posted[0].requestId, ok: true, result: { revision: 1 } })
   assert.deepEqual(await next, { revision: 1 })
 })
 
 test('a bounded request timeout identifies the exact seam and fences pending and future work', async () => {
-  const { context, posted } = bridgeHarness({ timeoutMs: 5 })
+  const { context, posted } = bridgeHarness({ timeoutMs: 20 })
   const active = context.deckBridge.query({ name: 'story.document', params: {} })
   const queued = context.deckBridge.execute({ command: { type: 'content.update' } })
+  assert.deepEqual(posted, [])
+  await nextTurn()
+  assert.deepEqual(posted.map((request) => request.method), ['deck.query'])
   const results = await Promise.allSettled([active, queued])
 
-  assert.deepEqual(posted.map((request) => request.method), ['deck.query'])
   for (const result of results) {
     assert.equal(result.status, 'rejected')
     assert.equal(result.reason.name, 'BridgeTimeout')
