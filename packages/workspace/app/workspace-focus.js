@@ -41,26 +41,43 @@ function expectedWorkspaceFocus() {
     : null
 }
 
+function makeWorkspaceNodeFocusable(node) {
+  if (!node) return null
+  if (node.matches?.('[data-slide-id], [data-section-id]')) node.tabIndex = 0
+  return node
+}
+
+function ensureSequenceKeyboardFocusability() {
+  elements.sequenceList
+    .querySelectorAll('[data-slide-id], [data-section-id]')
+    .forEach((node) => { node.tabIndex = 0 })
+}
+
 function workspaceFocusNode(target) {
   if (!target) return null
-  if (target.blockId) return storyField(target.blockId)
-  if (target.headline) return elements.headline
-  if (target.slideId) {
-    return [...elements.sequenceList.querySelectorAll('[data-slide-id]')]
+  let node = null
+  if (target.blockId) node = storyField(target.blockId)
+  else if (target.headline) node = elements.headline
+  else if (target.slideId) {
+    node = [...elements.sequenceList.querySelectorAll('[data-slide-id]')]
       .find((candidate) => candidate.dataset.slideId === target.slideId) ?? null
-  }
-  if (target.sectionId) {
-    return [...elements.sequenceList.querySelectorAll('[data-section-id]')]
+  } else if (target.sectionId) {
+    node = [...elements.sequenceList.querySelectorAll('[data-section-id]')]
       .find((candidate) => candidate.dataset.sectionId === target.sectionId) ?? null
   }
-  return null
+  return makeWorkspaceNodeFocusable(node)
 }
 
 function focusWorkspaceNode(node, target) {
+  node = makeWorkspaceNodeFocusable(node)
   if (!node || node.disabled || !node.isConnected) return false
   applyingWorkspaceFocus = true
   try {
-    node.focus()
+    try {
+      node.focus({ preventScroll: true })
+    } catch {
+      node.focus()
+    }
     if (
       target.selectionStart !== null
       && target.selectionStart !== undefined
@@ -133,6 +150,7 @@ const renderSequenceWithoutFocusPreservation = renderSequence
 renderSequence = function renderSequenceWithFocusPreservation(next) {
   const target = captureWorkspaceFocus() ?? expectedWorkspaceFocus()
   renderSequenceWithoutFocusPreservation(next)
+  ensureSequenceKeyboardFocusability()
   restoreWorkspaceFocus(target)
 }
 
