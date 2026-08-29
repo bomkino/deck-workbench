@@ -6,7 +6,7 @@ import WebKit
 @MainActor
 final class BridgeCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WorkspaceProjectionSink {
     private weak var webView: WKWebView?
-    private unowned let controller: DeckSessionController
+    private let controller: DeckSessionController
     private var loadContinuation: CheckedContinuation<Void, Error>?
     private let tracerMode = CommandLine.arguments.contains { $0.hasPrefix("--tracer-") }
 

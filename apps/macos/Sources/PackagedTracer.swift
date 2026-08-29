@@ -145,7 +145,7 @@ enum PackagedTracer {
             .write(to: failedManifestURL, options: [.atomic])
         let failedOpenName = failureName { try controller.openDocument(at: failedOpenURL) }
         let liveAfterFailedOpen = try controller.query(name: "slide.activeProjection", params: [:])
-        let replayController = try DeckSessionController()
+        let replayController = try DeckSessionController(requiresWorkspaceDraftFlush: false)
         let busyName = failureName { try replayController.openDocument(at: durableDocumentURL) }
         let liveAfterBusy = try controller.query(name: "slide.activeProjection", params: [:])
         guard failedOpenName == "UnsupportedSchema",
@@ -792,7 +792,7 @@ enum PackagedTracer {
         guard let durableDocumentURL = controller.documentURL else {
             throw WorkbenchFailure(name: "MissingAttachment", message: "Created Story Deck URL is unavailable")
         }
-        let replayController = try DeckSessionController()
+        let replayController = try DeckSessionController(requiresWorkspaceDraftFlush: false)
         let concurrentWriterName = failureName { try replayController.openDocument(at: durableDocumentURL) }
         guard concurrentWriterName == "DocumentBusy" else {
             throw WorkbenchFailure(name: "JournalCorruption", message: "Second Story writer was not rejected")
@@ -1280,7 +1280,7 @@ enum PackagedTracer {
             throw WorkbenchFailure(name: "JournalCorruption", message: "Interrupted manifest head was not repaired")
         }
         try recoveryStore.close()
-        let recoveredController = try DeckSessionController()
+        let recoveredController = try DeckSessionController(requiresWorkspaceDraftFlush: false)
         let recovered = try recoveredController.openDocument(at: recoveryURL)
         guard recovered["revision"] as? Int == expectedRevision else {
             throw WorkbenchFailure(name: "JournalCorruption", message: "Crash recovery did not replay the durable journal tail")

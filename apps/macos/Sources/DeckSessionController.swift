@@ -27,14 +27,16 @@ final class DeckSessionController: ObservableObject {
 
     @Published private(set) var interfaceScale: Double
     private(set) var artboardZoom: Double = 0.35
+    private let requiresWorkspaceDraftFlush: Bool
     private let kernelURL: URL
     private var kernel: DeckKernelHost
     private var store: PitchDeckDocumentStore?
     private var mediaSession: MediaCatalogSession?
     private var processedMediaCommands: [String: Data] = [:]
-    private var workspace: WorkspaceProjectionSink?
+    private weak var workspace: WorkspaceProjectionSink?
 
-    init(bundle: Bundle = .main) throws {
+    init(bundle: Bundle = .main, requiresWorkspaceDraftFlush: Bool = true) throws {
+        self.requiresWorkspaceDraftFlush = requiresWorkspaceDraftFlush
         guard let kernelURL = bundle.url(forResource: "deck-kernel", withExtension: "js", subdirectory: "Kernel") else {
             throw WorkbenchFailure(name: "KernelUnavailable", message: "Bundled Deck kernel is missing")
         }
@@ -507,6 +509,7 @@ final class DeckSessionController: ObservableObject {
     private func flushWorkspaceDrafts() async throws {
         guard hasDocument else { return }
         guard let workspace else {
+            guard requiresWorkspaceDraftFlush else { return }
             throw WorkbenchFailure(name: "WorkspaceUnavailable", message: "Workspace is not ready to save Slide drafts")
         }
         let result = try await workspace.saveDrafts()
