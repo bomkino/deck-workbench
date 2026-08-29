@@ -12,10 +12,13 @@
     "install:electron": "install-electron",
     "build:linux": "scripts/linux/build-linux-x64.sh",
     "verify:linux": "scripts/linux/verify-packaged-linux.sh",
+    "preview:phased": "node prototypes/phased-workbench/serve.mjs",
+    "build:phased-preview": "node scripts/build-phased-tracer.mjs",
+    "verify:phased-preview": "node scripts/verify-phased-tracer.mjs",
     "test": "npm run generate && node --test tests/*.test.mjs",
     "verify:source": "node scripts/verify-source.mjs",
     "verify:repository": "node scripts/verify-repository.mjs",
-    "verify": "npm test && npm run verify:source && npm run verify:repository"
+    "verify": "npm test && npm run verify:source && npm run verify:repository && npm run verify:phased-preview"
   },
   "dependencies": {
     "electron": "44.0.0"

@@ -1,10 +1,13 @@
 import { createServer } from 'node:http'
-import { readFile, stat } from 'node:fs/promises'
+import { access, readFile, stat } from 'node:fs/promises'
+import { constants } from 'node:fs'
 import { dirname, extname, normalize, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const repositoryRoot = resolve(here, '../..')
+const standalone = await exists(resolve(here, 'workflow-model.mjs'))
+const contentRoot = standalone ? here : resolve(here, '../..')
+const defaultPath = standalone ? '/' : '/prototypes/phased-workbench/'
 const port = Number(process.env.PORT ?? 8124)
 const host = process.env.HOST ?? '127.0.0.1'
 
@@ -21,11 +24,11 @@ const server = createServer(async (request, response) => {
   try {
     const parsed = new URL(request.url ?? '/', `http://${request.headers.host ?? `${host}:${port}`}`)
     let pathname = decodeURIComponent(parsed.pathname)
-    if (pathname === '/') pathname = '/prototypes/phased-workbench/'
-    if (pathname.endsWith('/')) pathname += 'index.html'
+    if (pathname === '/') pathname = `${defaultPath}index.html`
+    else if (pathname.endsWith('/')) pathname += 'index.html'
     const relative = normalize(pathname).replace(/^[/\\]+/, '')
-    const target = resolve(repositoryRoot, relative)
-    if (target !== repositoryRoot && !target.startsWith(`${repositoryRoot}${sep}`)) {
+    const target = resolve(contentRoot, relative)
+    if (target !== contentRoot && !target.startsWith(`${contentRoot}${sep}`)) {
       response.writeHead(403).end('Forbidden')
       return
     }
@@ -49,5 +52,15 @@ const server = createServer(async (request, response) => {
 })
 
 server.listen(port, host, () => {
-  console.log(`Phased Workbench tracer: http://${host}:${port}/prototypes/phased-workbench/`)
+  const route = standalone ? '/' : '/prototypes/phased-workbench/'
+  console.log(`Phased Workbench tracer: http://${host}:${port}${route}`)
 })
+
+async function exists(path) {
+  try {
+    await access(path, constants.F_OK)
+    return true
+  } catch {
+    return false
+  }
+}
