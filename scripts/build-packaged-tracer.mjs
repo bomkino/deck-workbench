@@ -33,6 +33,7 @@ replaceBetween(
   "            const findSequenceSlide = () => [...document.querySelectorAll('#sequence-list [data-slide-id]')]",
   '            for (let attempt = 0; attempt < 100 && !findSequenceSlide(); attempt += 1) {',
   `            const sequenceList = document.querySelector('#sequence-list');
+            const sequenceOwner = document.querySelector('#sequence-focus-owner');
             const findSequenceSlide = () => [...document.querySelectorAll('#sequence-list [data-slide-id]')]
               .find((item) => item.dataset.slideId === openingSlideId);
             const waitForSemanticSequenceFocus = async (kind, id) => {
@@ -45,11 +46,12 @@ replaceBetween(
                 const focus = sequenceFocusState();
                 if (
                   sequenceList
+                  && sequenceOwner
                   && item
                   && focus.kind === kind
                   && focus.id === id
                   && focus.ownerFocused === true
-                  && sequenceList.getAttribute('aria-activedescendant') === item.id
+                  && sequenceOwner.getAttribute('aria-activedescendant') === item.id
                 ) return true;
                 await new Promise((resolve) => requestAnimationFrame(() => resolve()));
               }
@@ -66,12 +68,12 @@ replaceRequired(
 )
 replaceRequired(
   '            sequenceSlide.dispatchEvent(moveUp);',
-  '            sequenceList.dispatchEvent(moveUp);',
+  '            sequenceOwner.dispatchEvent(moveUp);',
   'Slide move-up dispatch',
 )
 replaceRequired(
   '            findSequenceSlide().dispatchEvent(moveDown);',
-  '            sequenceList.dispatchEvent(moveDown);',
+  '            sequenceOwner.dispatchEvent(moveDown);',
   'Slide move-down dispatch',
 )
 replaceAllRequired(
@@ -96,12 +98,12 @@ replaceRequired(
 )
 replaceRequired(
   '            sequenceSection.dispatchEvent(moveSectionUp);',
-  '            sequenceList.dispatchEvent(moveSectionUp);',
+  '            sequenceOwner.dispatchEvent(moveSectionUp);',
   'Section move-up dispatch',
 )
 replaceRequired(
   '            findSequenceSection().dispatchEvent(moveSectionDown);',
-  '            sequenceList.dispatchEvent(moveSectionDown);',
+  '            sequenceOwner.dispatchEvent(moveSectionDown);',
   'Section move-down dispatch',
 )
 replaceAllRequired(
@@ -134,6 +136,9 @@ if (/waitForSequenceFocus|waitForSectionFocus|waitForSectionIdentityFocus/.test(
 }
 if (/document\.activeElement === (?:button|row)/.test(source)) {
   throw new Error('Generated packaged tracer still asserts transient row DOM focus')
+}
+if (!source.includes("sequenceOwner.getAttribute('aria-activedescendant')")) {
+  throw new Error('Generated packaged tracer does not verify the stable Sequence owner')
 }
 
 await mkdir(resolve(root, 'build/generated'), { recursive: true })
