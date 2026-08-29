@@ -11,7 +11,11 @@ const sourceScriptNames = [
   'workspace-handoff.js',
   'workspace.js',
 ]
-const packagedScriptNames = [...sourceScriptNames, 'workspace-focus.js']
+const packagedScriptNames = [
+  ...sourceScriptNames,
+  'workspace-sequence-targets.js',
+  'workspace-focus.js',
+]
 
 await rm(outputRoot, { recursive: true, force: true })
 await mkdir(outputRoot, { recursive: true })

@@ -1,5 +1,39 @@
 button { min-width: 44px; }
 
+.slide-entry { position: relative; }
+.slide-entry > .slide-focus-target,
+.slide-entry > .slide-row {
+  grid-column: 1;
+  grid-row: 1;
+}
+.slide-entry > .slide-tools {
+  grid-column: 2;
+  grid-row: 1;
+  position: relative;
+  z-index: 3;
+}
+.slide-entry > .slide-focus-target {
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  min-width: 44px;
+  min-height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  opacity: 0;
+  cursor: pointer;
+  caret-color: transparent;
+}
+.slide-entry > .slide-row {
+  pointer-events: none;
+}
+.slide-entry > .slide-focus-target:focus-visible + .slide-row {
+  outline: 3px solid #2865d8;
+  outline-offset: 2px;
+}
+
 @media print {
   .phase-view { visibility: hidden !important; opacity: 0 !important; pointer-events: none !important; }
   .assemble-phase { visibility: visible !important; opacity: 1 !important; pointer-events: auto !important; }
