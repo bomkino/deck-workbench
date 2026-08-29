@@ -2,16 +2,22 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
-const focus = await readFile(new URL('../packages/workspace/app/workspace-focus.js', import.meta.url), 'utf8')
+const [focus, verifier] = await Promise.all([
+  readFile(new URL('../packages/workspace/app/workspace-focus.js', import.meta.url), 'utf8'),
+  readFile(new URL('../scripts/verify-packaged-macos.sh', import.meta.url), 'utf8'),
+])
 
-test('semantic sequence hosts explicitly focus their shadow text-input proxy on macOS WebKit', () => {
-  assert.match(focus, /attachShadow\(\{ mode: 'open', delegatesFocus: true \}\)/)
-  assert.match(focus, /const proxy = document\.createElement\('input'\)/)
-  assert.match(focus, /proxy\.readOnly = true/)
-  assert.match(focus, /const focusProxy = \(options\) =>/)
-  assert.match(focus, /proxy\.focus\(options\)/)
-  assert.match(focus, /Object\.defineProperty\(node, 'focus'/)
-  assert.match(focus, /row\.setAttribute\('role', 'button'\)/)
-  assert.match(focus, /moveSlideByKeyboard\(event, sectionId, slideId\)/)
-  assert.match(focus, /document\.activeElement === node/)
+test('production focus restoration remains semantic and does not inject test-only proxies', () => {
+  assert.match(focus, /function scheduleWorkspaceFocusLease\(target\)/)
+  assert.match(focus, /restoreWorkspaceFocus\(focus, \{ lease: true \}\)/)
+  assert.match(focus, /node\.focus\(\)/)
+  assert.doesNotMatch(focus, /attachShadow|sequence-focus-proxy|Object\.defineProperty\(node, 'focus'/)
+})
+
+test('packaged macOS keyboard journey enables and restores the standard keyboard UI mode', () => {
+  assert.match(verifier, /defaults read NSGlobalDomain AppleKeyboardUIMode/)
+  assert.match(verifier, /defaults write NSGlobalDomain AppleKeyboardUIMode -int 3/)
+  assert.match(verifier, /defaults delete NSGlobalDomain AppleKeyboardUIMode/)
+  assert.match(verifier, /trap cleanup EXIT/)
+  assert.match(verifier, /packaged accessibility journey/)
 })

@@ -6,12 +6,36 @@ COMMIT_SHA="$(git -C "$REPOSITORY_ROOT" rev-parse HEAD)"
 ZIP="${1:-$REPOSITORY_ROOT/artifacts/Deck-Workbench-apple-silicon-${COMMIT_SHA}.app.zip}"
 EXTRACT_ROOT="$(mktemp -d)"
 JOURNEY_ROOT="$(mktemp -d)"
-trap 'rm -rf "$EXTRACT_ROOT" "$JOURNEY_ROOT"' EXIT
+KEYBOARD_UI_MODE_PRESENT=0
+KEYBOARD_UI_MODE_BEFORE=""
+if KEYBOARD_UI_MODE_BEFORE="$(defaults read NSGlobalDomain AppleKeyboardUIMode 2>/dev/null)"; then
+  KEYBOARD_UI_MODE_PRESENT=1
+fi
+
+cleanup() {
+  local status=$?
+  trap - EXIT
+  if [[ "$KEYBOARD_UI_MODE_PRESENT" == "1" ]]; then
+    defaults write NSGlobalDomain AppleKeyboardUIMode -int "$KEYBOARD_UI_MODE_BEFORE" >/dev/null
+  else
+    defaults delete NSGlobalDomain AppleKeyboardUIMode >/dev/null 2>&1 || true
+  fi
+  rm -rf "$EXTRACT_ROOT" "$JOURNEY_ROOT"
+  exit "$status"
+}
+trap cleanup EXIT
 
 if [[ "$(uname -s)" != "Darwin" || "$(uname -m)" != "arm64" ]]; then
   echo "NativeGate: packaged verification requires Apple-Silicon macOS" >&2
   exit 2
 fi
+
+defaults write NSGlobalDomain AppleKeyboardUIMode -int 3 >/dev/null
+if [[ "$(defaults read NSGlobalDomain AppleKeyboardUIMode)" != "3" ]]; then
+  echo "NativeGate: packaged keyboard journey requires Full Keyboard Access" >&2
+  exit 2
+fi
+echo "DW-T00 keyboard UI mode enabled for packaged accessibility journey"
 
 test -f "$ZIP"
 test -f "$ZIP.sha256"

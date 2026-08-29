@@ -41,119 +41,26 @@ function expectedWorkspaceFocus() {
     : null
 }
 
-function installDelegatedFocusHost(node) {
-  if (!node || node.shadowRoot || typeof node.attachShadow !== 'function') return node
-  const shadow = node.attachShadow({ mode: 'open', delegatesFocus: true })
-  const style = document.createElement('style')
-  style.textContent = `
-    :host { position: relative; }
-    input {
-      position: absolute;
-      inline-size: 1px;
-      block-size: 1px;
-      min-inline-size: 1px;
-      min-block-size: 1px;
-      inset: 0 auto auto 0;
-      margin: 0;
-      padding: 0;
-      border: 0;
-      opacity: 0;
-      pointer-events: none;
-    }
-    slot { display: contents; }
-  `
-  const proxy = document.createElement('input')
-  proxy.type = 'text'
-  proxy.readOnly = true
-  proxy.tabIndex = 0
-  proxy.className = 'sequence-focus-proxy'
-  proxy.autocomplete = 'off'
-  proxy.spellcheck = false
-  proxy.setAttribute('aria-label', node.getAttribute('aria-label') ?? 'Sequence focus target')
-  const slot = document.createElement('slot')
-  shadow.append(style, proxy, slot)
-  const focusProxy = (options) => {
-    try {
-      proxy.focus(options)
-    } catch {
-      proxy.focus()
-    }
-  }
-  Object.defineProperty(node, 'focus', {
-    configurable: true,
-    enumerable: false,
-    value: focusProxy,
-  })
-  return node
-}
-
-function makeWorkspaceNodeFocusable(node) {
-  if (!node) return null
-  if (node.matches?.('[data-slide-id], [data-section-id]')) {
-    node.tabIndex = 0
-    if (node.tagName !== 'BUTTON') installDelegatedFocusHost(node)
-  }
-  return node
-}
-
-function replaceNativeSlideButton(button, sectionId) {
-  const slideId = button.dataset.slideId
-  if (!slideId || !sectionId) return button
-  const row = document.createElement('div')
-  for (const attribute of button.attributes) {
-    if (attribute.name !== 'type') row.setAttribute(attribute.name, attribute.value)
-  }
-  row.setAttribute('role', 'button')
-  row.tabIndex = 0
-  while (button.firstChild) row.append(button.firstChild)
-  row.addEventListener('click', () => selectSlide(slideId))
-  row.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault()
-      void selectSlide(slideId)
-      return
-    }
-    moveSlideByKeyboard(event, sectionId, slideId)
-  })
-  button.replaceWith(row)
-  return installDelegatedFocusHost(row)
-}
-
-function ensureSequenceKeyboardFocusability() {
-  let sectionId = null
-  for (const child of elements.sequenceList.children) {
-    if (child.matches?.('[data-section-id]')) {
-      sectionId = child.dataset.sectionId
-      child.tabIndex = 0
-      installDelegatedFocusHost(child)
-      continue
-    }
-    const button = child.querySelector?.('button.slide-row[data-slide-id]')
-    if (button) replaceNativeSlideButton(button, sectionId)
-  }
-}
-
 function workspaceFocusNode(target) {
   if (!target) return null
-  let node = null
-  if (target.blockId) node = storyField(target.blockId)
-  else if (target.headline) node = elements.headline
-  else if (target.slideId) {
-    node = [...elements.sequenceList.querySelectorAll('[data-slide-id]')]
+  if (target.blockId) return storyField(target.blockId)
+  if (target.headline) return elements.headline
+  if (target.slideId) {
+    return [...elements.sequenceList.querySelectorAll('[data-slide-id]')]
       .find((candidate) => candidate.dataset.slideId === target.slideId) ?? null
-  } else if (target.sectionId) {
-    node = [...elements.sequenceList.querySelectorAll('[data-section-id]')]
+  }
+  if (target.sectionId) {
+    return [...elements.sequenceList.querySelectorAll('[data-section-id]')]
       .find((candidate) => candidate.dataset.sectionId === target.sectionId) ?? null
   }
-  return makeWorkspaceNodeFocusable(node)
+  return null
 }
 
 function focusWorkspaceNode(node, target) {
-  node = makeWorkspaceNodeFocusable(node)
   if (!node || node.disabled || !node.isConnected) return false
   applyingWorkspaceFocus = true
   try {
-    node.focus({ preventScroll: true })
+    node.focus()
     if (
       target.selectionStart !== null
       && target.selectionStart !== undefined
@@ -226,7 +133,6 @@ const renderSequenceWithoutFocusPreservation = renderSequence
 renderSequence = function renderSequenceWithFocusPreservation(next) {
   const target = captureWorkspaceFocus() ?? expectedWorkspaceFocus()
   renderSequenceWithoutFocusPreservation(next)
-  ensureSequenceKeyboardFocusability()
   restoreWorkspaceFocus(target)
 }
 
