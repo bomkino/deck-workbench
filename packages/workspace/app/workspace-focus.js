@@ -1,8 +1,10 @@
 let workspaceFocusLease = 0
 let workspaceInteractionGeneration = 0
+let workspaceExpectedFocus = null
+let workspaceExpectedFocusGeneration = 0
+let applyingWorkspaceFocus = false
 
-function captureWorkspaceFocus() {
-  const active = document.activeElement
+function workspaceFocusTarget(active) {
   if (!active || active === document.body || active === document.documentElement) return null
   const slideId = active?.dataset?.slideId
     ?? active?.closest?.('.slide-entry')?.querySelector?.('[data-slide-id]')?.dataset?.slideId
@@ -12,6 +14,7 @@ function captureWorkspaceFocus() {
     ?? null
   const blockId = active?.dataset?.blockId ?? null
   const headline = active === elements.headline
+  if (!slideId && !sectionId && !blockId && !headline) return null
   return {
     slideId,
     sectionId,
@@ -20,6 +23,22 @@ function captureWorkspaceFocus() {
     selectionStart: typeof active?.selectionStart === 'number' ? active.selectionStart : null,
     selectionEnd: typeof active?.selectionEnd === 'number' ? active.selectionEnd : null,
   }
+}
+
+function captureWorkspaceFocus() {
+  return workspaceFocusTarget(document.activeElement)
+}
+
+function rememberWorkspaceFocus(target) {
+  if (!target) return
+  workspaceExpectedFocus = { ...target }
+  workspaceExpectedFocusGeneration = workspaceInteractionGeneration
+}
+
+function expectedWorkspaceFocus() {
+  return workspaceExpectedFocusGeneration === workspaceInteractionGeneration
+    ? workspaceExpectedFocus
+    : null
 }
 
 function workspaceFocusNode(target) {
@@ -39,21 +58,28 @@ function workspaceFocusNode(target) {
 
 function focusWorkspaceNode(node, target) {
   if (!node || node.disabled || !node.isConnected) return false
-  node.focus()
-  if (
-    target.selectionStart !== null
-    && target.selectionStart !== undefined
-    && target.selectionEnd !== null
-    && target.selectionEnd !== undefined
-    && typeof node.setSelectionRange === 'function'
-  ) {
-    const maximum = node.value?.length ?? 0
-    node.setSelectionRange(
-      Math.min(target.selectionStart, maximum),
-      Math.min(target.selectionEnd, maximum),
-    )
+  applyingWorkspaceFocus = true
+  try {
+    node.focus()
+    if (
+      target.selectionStart !== null
+      && target.selectionStart !== undefined
+      && target.selectionEnd !== null
+      && target.selectionEnd !== undefined
+      && typeof node.setSelectionRange === 'function'
+    ) {
+      const maximum = node.value?.length ?? 0
+      node.setSelectionRange(
+        Math.min(target.selectionStart, maximum),
+        Math.min(target.selectionEnd, maximum),
+      )
+    }
+  } finally {
+    applyingWorkspaceFocus = false
   }
-  return document.activeElement === node
+  const restored = document.activeElement === node
+  if (restored) rememberWorkspaceFocus(target)
+  return restored
 }
 
 function cancelWorkspaceFocusLease() {
@@ -63,13 +89,22 @@ function cancelWorkspaceFocusLease() {
 function recordTrustedWorkspaceInteraction(event) {
   if (!event.isTrusted) return
   workspaceInteractionGeneration += 1
+  workspaceExpectedFocus = null
+  workspaceExpectedFocusGeneration = workspaceInteractionGeneration
   cancelWorkspaceFocusLease()
 }
 
 document.addEventListener('pointerdown', recordTrustedWorkspaceInteraction, true)
 document.addEventListener('keydown', recordTrustedWorkspaceInteraction, true)
+document.addEventListener('focusin', (event) => {
+  if (applyingWorkspaceFocus) return
+  const target = workspaceFocusTarget(event.target)
+  if (target) rememberWorkspaceFocus(target)
+}, true)
 
 function scheduleWorkspaceFocusLease(target) {
+  if (!target) return
+  rememberWorkspaceFocus(target)
   const leaseId = ++workspaceFocusLease
   const interactionGeneration = workspaceInteractionGeneration
   globalThis.setTimeout(() => {
@@ -77,38 +112,30 @@ function scheduleWorkspaceFocusLease(target) {
       leaseId !== workspaceFocusLease
       || interactionGeneration !== workspaceInteractionGeneration
     ) return
-    const node = workspaceFocusNode(target)
+    const expected = expectedWorkspaceFocus() ?? target
+    const node = workspaceFocusNode(expected)
     if (!node || document.activeElement === node) return
-    focusWorkspaceNode(node, target)
+    focusWorkspaceNode(node, expected)
   }, 0)
 }
 
-function restoreWorkspaceFocus(target, { onlyIfLost = false, lease = false } = {}) {
+function restoreWorkspaceFocus(target, { lease = false } = {}) {
   if (!target) return false
-  const node = workspaceFocusNode(target)
-  const activeIsTarget = Boolean(node && document.activeElement === node)
-  const focusIsDocumentFallback = !document.activeElement
-    || document.activeElement === document.body
-    || document.activeElement === document.documentElement
-    || document.activeElement === elements.workbench
-    || document.activeElement === elements.phaseWorkspaces
-  const restored = onlyIfLost && !focusIsDocumentFallback
-    ? activeIsTarget
-    : focusWorkspaceNode(node, target)
+  const restored = focusWorkspaceNode(workspaceFocusNode(target), target)
   if (lease) scheduleWorkspaceFocusLease(target)
   return restored
 }
 
 const renderSequenceWithoutFocusPreservation = renderSequence
 renderSequence = function renderSequenceWithFocusPreservation(next) {
-  const target = captureWorkspaceFocus()
+  const target = captureWorkspaceFocus() ?? expectedWorkspaceFocus()
   renderSequenceWithoutFocusPreservation(next)
   restoreWorkspaceFocus(target)
 }
 
 const renderPlanEditorWithoutFocusPreservation = renderPlanEditor
 renderPlanEditor = function renderPlanEditorWithFocusPreservation() {
-  const target = captureWorkspaceFocus()
+  const target = captureWorkspaceFocus() ?? expectedWorkspaceFocus()
   renderPlanEditorWithoutFocusPreservation()
   restoreWorkspaceFocus(target)
 }
@@ -117,11 +144,14 @@ const nativeDeckBridge = window.deckBridge
 window.deckBridge = Object.freeze({
   ...nativeDeckBridge,
   async query(payload = {}) {
-    const target = captureWorkspaceFocus()
+    const interactionGeneration = workspaceInteractionGeneration
+    const target = captureWorkspaceFocus() ?? expectedWorkspaceFocus()
     try {
       return await nativeDeckBridge.query(payload)
     } finally {
-      restoreWorkspaceFocus(target, { onlyIfLost: true, lease: true })
+      if (interactionGeneration === workspaceInteractionGeneration) {
+        restoreWorkspaceFocus(target, { lease: true })
+      }
     }
   },
 })
