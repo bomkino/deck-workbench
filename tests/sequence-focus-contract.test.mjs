@@ -10,39 +10,43 @@ const [focus, targets, verifier, build, hardening] = await Promise.all([
   readFile(new URL('../packages/workspace/app/packaged-hardening.css', import.meta.url), 'utf8'),
 ])
 
-test('production focus restoration remains semantic and does not inject shadow-DOM test proxies', () => {
-  assert.match(focus, /function scheduleWorkspaceFocusLease\(target\)/)
+test('Sequence uses one stable editable focus owner and semantic active-descendant identity', () => {
+  assert.match(targets, /elements\.sequenceList\.setAttribute\('role', 'tree'\)/)
+  assert.match(targets, /elements\.sequenceList\.setAttribute\('contenteditable', 'true'\)/)
+  assert.match(targets, /elements\.sequenceList\.setAttribute\('aria-readonly', 'true'\)/)
+  assert.match(targets, /elements\.sequenceList\.setAttribute\('aria-activedescendant', activeNode\.id\)/)
+  assert.match(targets, /function focusSequenceTarget\(target, options = \{\}\)/)
+  assert.match(targets, /document\.activeElement === elements\.sequenceList/)
+  assert.match(targets, /function sequenceFocusState\(\)/)
+})
+
+test('keyed semantic rows retain stable IDs and keyboard reorder acts on the active identity', () => {
+  assert.match(targets, /const sequenceNodeRegistry = new Map\(\)/)
+  assert.match(targets, /row\.setAttribute\('role', 'treeitem'\)/)
+  assert.match(targets, /row\.setAttribute\('aria-level', '2'\)/)
+  assert.match(targets, /row\.dataset\.sectionId = section\.id/)
+  assert.match(targets, /moveSlideByKeyboard\(event, activeSequenceTarget\.sectionId, activeSequenceTarget\.id\)/)
+  assert.match(targets, /moveSectionByKeyboard\(event, activeSequenceTarget\.id\)/)
+  assert.match(targets, /event\.key === 'Enter' \|\| event\.key === ' '/)
+  assert.match(targets, /renderSequence = renderPersistentSequence/)
+  assert.match(build, /'workspace-sequence-targets\.js',[\s\S]*'workspace-focus\.js'/)
+})
+
+test('focus restoration preserves semantic Sequence identity across query and reorder', () => {
+  assert.match(focus, /sequenceFocusState\(\)/)
+  assert.match(focus, /focusSequenceTarget\(\{ kind: target\.sequenceKind, id: target\.sequenceId \}\)/)
   assert.match(focus, /restoreWorkspaceFocus\(focus, \{ lease: true \}\)/)
-  assert.match(focus, /node\.focus\(\)/)
+  assert.match(focus, /sequenceKind: 'slide', sequenceId: slideId/)
+  assert.match(focus, /sequenceKind: 'section', sequenceId: sectionId/)
   assert.doesNotMatch(focus, /attachShadow|sequence-focus-proxy|Object\.defineProperty\(node, 'focus'/)
 })
 
-test('packaged Slide rows retain one keyed, visibly rendered text control across reorder', () => {
-  assert.match(targets, /const sequenceNodeRegistry = new Map\(\)/)
-  assert.match(targets, /function createSlideSequenceEntry\(slideId\)/)
-  assert.match(targets, /document\.createElement\('textarea'\)/)
-  assert.match(targets, /target\.rows = 1/)
-  assert.match(targets, /target\.value = 'Slide'/)
-  assert.match(targets, /target\.setAttribute\('aria-multiline', 'false'\)/)
-  assert.doesNotMatch(targets, /target\.setAttribute\('role', 'button'\)/)
-  assert.match(targets, /target\.dataset\.displayValue = displayValue/)
-  assert.match(targets, /target\.addEventListener\('beforeinput', preventSequenceTargetMutation\)/)
-  assert.match(targets, /event\.key === 'Enter' \|\| event\.key === ' '/)
-  assert.match(targets, /moveSlideByKeyboard\(event, target\.dataset\.sectionId, target\.dataset\.slideId\)/)
-  assert.match(targets, /function protectedSequenceNode\(\)/)
-  assert.match(targets, /node !== protectedNode && node\.nextSibling !== reference/)
-  assert.match(targets, /renderSequence = renderPersistentSequence/)
-  assert.match(build, /'workspace-sequence-targets\.js',[\s\S]*'workspace-focus\.js'/)
-  const targetRule = hardening.match(/\.slide-entry > \.slide-focus-target \{([\s\S]*?)\n\}/)?.[1] ?? ''
-  assert.ok(targetRule, 'missing packaged Slide focus-target rule')
-  assert.match(targetRule, /min-height: 44px/)
-  assert.match(targetRule, /background: transparent/)
-  assert.match(targetRule, /color: var\(--ink\)/)
-  assert.match(targetRule, /-webkit-text-fill-color: currentColor/)
-  assert.match(targetRule, /resize: none/)
-  assert.doesNotMatch(targetRule, /opacity:\s*0/)
-  assert.match(hardening, /\.slide-focus-target:focus-visible/)
-  assert.match(hardening, /\.slide-entry > \.slide-row \{\s*display: none;/)
+test('packaged styling exposes active semantic focus without fake textarea overlays', () => {
+  assert.match(hardening, /\.sequence-list\[role="tree"\]/)
+  assert.match(hardening, /caret-color: transparent/)
+  assert.match(hardening, /data-sequence-active="true"/)
+  assert.match(hardening, /\.sequence-list:focus-visible \[data-sequence-active="true"\]/)
+  assert.doesNotMatch(hardening, /slide-focus-target/)
 })
 
 test('packaged macOS keyboard journey enables and restores the standard keyboard UI mode', () => {
