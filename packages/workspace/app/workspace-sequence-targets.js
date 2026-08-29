@@ -1,13 +1,144 @@
 const sequenceNodeRegistry = new Map()
+let activeSequenceTarget = null
+
+function sequenceDomToken(value) {
+  return String(value ?? '').replace(/[^A-Za-z0-9_-]/g, '-')
+}
+
+function sequenceItemId(kind, id) {
+  return `sequence-${kind}-${sequenceDomToken(id)}`
+}
+
+function configureSequenceComposite() {
+  elements.sequenceList.tabIndex = 0
+  elements.sequenceList.setAttribute('role', 'tree')
+  elements.sequenceList.setAttribute('aria-label', 'Deck sequence')
+  elements.sequenceList.setAttribute('aria-readonly', 'true')
+  elements.sequenceList.setAttribute('contenteditable', 'true')
+  elements.sequenceList.setAttribute('inputmode', 'none')
+  elements.sequenceList.spellcheck = false
+  elements.sequenceList.addEventListener('beforeinput', (event) => event.preventDefault())
+  elements.sequenceList.addEventListener('paste', (event) => event.preventDefault())
+  elements.sequenceList.addEventListener('drop', (event) => event.preventDefault())
+  elements.sequenceList.addEventListener('keydown', handleSequenceCompositeKeydown)
+}
+
+function sequenceTargetNode(kind, id) {
+  return [...elements.sequenceList.querySelectorAll('[data-sequence-kind]')]
+    .find((node) => node.dataset.sequenceKind === kind && node.dataset.sequenceId === id) ?? null
+}
+
+function sequenceFocusState() {
+  return Object.freeze({
+    kind: activeSequenceTarget?.kind ?? null,
+    id: activeSequenceTarget?.id ?? null,
+    ownerFocused: document.activeElement === elements.sequenceList,
+    activeDescendant: elements.sequenceList.getAttribute('aria-activedescendant'),
+  })
+}
+
+function updateSequenceActivePresentation() {
+  const activeNode = activeSequenceTarget
+    ? sequenceTargetNode(activeSequenceTarget.kind, activeSequenceTarget.id)
+    : null
+  if (activeNode) elements.sequenceList.setAttribute('aria-activedescendant', activeNode.id)
+  else elements.sequenceList.removeAttribute('aria-activedescendant')
+  for (const node of elements.sequenceList.querySelectorAll('[data-sequence-kind]')) {
+    const active = node === activeNode
+    node.dataset.sequenceActive = String(active)
+    node.setAttribute('aria-selected', String(active))
+  }
+}
+
+function focusSequenceTarget(target, options = {}) {
+  const kind = target?.kind
+  const id = target?.id
+  if (!['slide', 'section'].includes(kind) || !id) return false
+  const node = sequenceTargetNode(kind, id)
+  if (!node) return false
+  activeSequenceTarget = { kind, id, sectionId: node.dataset.sectionId ?? null }
+  updateSequenceActivePresentation()
+  if (options.focus !== false) {
+    try {
+      elements.sequenceList.focus({ preventScroll: true })
+    } catch {
+      elements.sequenceList.focus()
+    }
+  }
+  return document.activeElement === elements.sequenceList
+    && elements.sequenceList.getAttribute('aria-activedescendant') === node.id
+}
+
+function semanticSequenceItems() {
+  return [...elements.sequenceList.querySelectorAll('[data-sequence-kind]')]
+}
+
+function moveSequenceActiveTarget(direction) {
+  const items = semanticSequenceItems()
+  if (!items.length) return
+  const current = activeSequenceTarget
+    ? items.findIndex((node) => node.dataset.sequenceKind === activeSequenceTarget.kind && node.dataset.sequenceId === activeSequenceTarget.id)
+    : -1
+  const nextIndex = direction === 'first'
+    ? 0
+    : direction === 'last'
+      ? items.length - 1
+      : Math.max(0, Math.min(items.length - 1, current + (direction === 'previous' ? -1 : 1)))
+  const next = items[nextIndex]
+  if (!next) return
+  focusSequenceTarget({ kind: next.dataset.sequenceKind, id: next.dataset.sequenceId })
+  if (next.dataset.sequenceKind === 'slide') void selectSlide(next.dataset.sequenceId)
+}
+
+function activateSequenceTarget() {
+  if (activeSequenceTarget?.kind === 'slide') void selectSlide(activeSequenceTarget.id)
+}
+
+function handleSequenceCompositeKeydown(event) {
+  if (event.target !== elements.sequenceList) return
+  if (event.altKey && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
+    if (activeSequenceTarget?.kind === 'slide') {
+      moveSlideByKeyboard(event, activeSequenceTarget.sectionId, activeSequenceTarget.id)
+      return
+    }
+    if (activeSequenceTarget?.kind === 'section') {
+      moveSectionByKeyboard(event, activeSequenceTarget.id)
+      return
+    }
+  }
+  if (event.key === 'ArrowUp') {
+    event.preventDefault()
+    moveSequenceActiveTarget('previous')
+  } else if (event.key === 'ArrowDown') {
+    event.preventDefault()
+    moveSequenceActiveTarget('next')
+  } else if (event.key === 'Home') {
+    event.preventDefault()
+    moveSequenceActiveTarget('first')
+  } else if (event.key === 'End') {
+    event.preventDefault()
+    moveSequenceActiveTarget('last')
+  } else if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault()
+    activateSequenceTarget()
+  }
+}
 
 function createSectionSequenceRow(sectionId) {
   const row = document.createElement('div')
   row.className = 'section-row'
-  row.tabIndex = 0
+  row.id = sequenceItemId('section', sectionId)
   row.dataset.sectionId = sectionId
-  row.setAttribute('role', 'group')
+  row.dataset.sequenceKind = 'section'
+  row.dataset.sequenceId = sectionId
+  row.setAttribute('role', 'treeitem')
+  row.setAttribute('aria-level', '1')
+  row.setAttribute('contenteditable', 'false')
   row.setAttribute('aria-keyshortcuts', 'Alt+ArrowUp Alt+ArrowDown')
-  row.addEventListener('keydown', (event) => moveSectionByKeyboard(event, row.dataset.sectionId))
+  row.addEventListener('click', (event) => {
+    if (event.target.closest('button')) return
+    focusSequenceTarget({ kind: 'section', id: row.dataset.sectionId })
+  })
   const title = document.createElement('strong')
   title.dataset.sectionTitle = ''
   const tools = document.createElement('span')
@@ -17,7 +148,9 @@ function createSectionSequenceRow(sectionId) {
 }
 
 function updateSectionSequenceRow(row, section, story) {
+  row.id = sequenceItemId('section', section.id)
   row.dataset.sectionId = section.id
+  row.dataset.sequenceId = section.id
   row.setAttribute('aria-label', `${section.title} Section`)
   row.querySelector('[data-section-title]').textContent = section.title
   const tools = row.querySelector('.section-tools')
@@ -53,79 +186,57 @@ function updateSectionSequenceRow(row, section, story) {
   }
 }
 
-function preventSequenceTargetMutation(event) {
-  event.preventDefault()
-}
-
 function createSlideSequenceEntry(slideId) {
   const entry = document.createElement('div')
   entry.className = 'slide-entry'
   entry.dataset.sequenceSlideEntry = slideId
 
-  const target = document.createElement('textarea')
-  target.rows = 1
-  target.wrap = 'off'
-  target.autocomplete = 'off'
-  target.spellcheck = false
-  target.className = 'slide-focus-target'
-  target.dataset.slideId = slideId
-  target.value = 'Slide'
-  target.tabIndex = 0
-  target.setAttribute('aria-multiline', 'false')
-  target.addEventListener('beforeinput', preventSequenceTargetMutation)
-  target.addEventListener('paste', preventSequenceTargetMutation)
-  target.addEventListener('drop', preventSequenceTargetMutation)
-  target.addEventListener('input', (event) => {
-    event.currentTarget.value = event.currentTarget.dataset.displayValue ?? 'Slide'
+  const row = document.createElement('div')
+  row.className = 'slide-row'
+  row.id = sequenceItemId('slide', slideId)
+  row.dataset.slideId = slideId
+  row.dataset.sequenceKind = 'slide'
+  row.dataset.sequenceId = slideId
+  row.setAttribute('role', 'treeitem')
+  row.setAttribute('aria-level', '2')
+  row.setAttribute('contenteditable', 'false')
+  row.setAttribute('aria-keyshortcuts', 'Alt+ArrowUp Alt+ArrowDown')
+  row.innerHTML = '<span class="slide-number"></span><span data-slide-label></span><span class="sequence-status"></span>'
+  row.addEventListener('click', () => {
+    focusSequenceTarget({ kind: 'slide', id: row.dataset.slideId })
+    void selectSlide(row.dataset.slideId)
   })
-  target.addEventListener('click', () => selectSlide(target.dataset.slideId))
-  target.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault()
-      void selectSlide(target.dataset.slideId)
-      return
-    }
-    moveSlideByKeyboard(event, target.dataset.sectionId, target.dataset.slideId)
-  })
-
-  const visual = document.createElement('div')
-  visual.className = 'slide-row'
-  visual.tabIndex = -1
-  visual.setAttribute('aria-hidden', 'true')
-  visual.innerHTML = '<span class="slide-number"></span><span data-slide-label></span><span class="sequence-status"></span>'
 
   const tools = document.createElement('span')
   tools.className = 'slide-tools'
-  entry.append(target, visual, tools)
+  tools.setAttribute('contenteditable', 'false')
+  entry.append(row, tools)
   return entry
 }
 
 function updateSlideSequenceEntry(entry, section, slide, pageNumber, story) {
   const record = planRecordForSlide(slide, section)
   const readiness = planReadiness(record).state
-  const target = entry.querySelector('.slide-focus-target')
-  const visual = entry.querySelector('.slide-row')
+  const row = entry.querySelector('.slide-row')
   const tools = entry.querySelector('.slide-tools')
   const displayNumber = record.metadata.lifecycle === 'included' ? String(pageNumber).padStart(2, '0') : '—'
   const displayLabel = record.metadata.internalTitle || slide.headline?.plainText || slide.intent
-  const displayValue = `${displayNumber}  ${displayLabel}  ${readiness.toUpperCase()}`
 
   entry.dataset.sequenceSlideEntry = slide.id
-  target.dataset.slideId = slide.id
-  target.dataset.sectionId = section.id
-  target.dataset.displayValue = displayValue
-  target.value = displayValue
-  target.setAttribute('aria-label', `Slide ${pageNumber}: ${slide.headline?.plainText || slide.intent}`)
-  target.setAttribute('aria-keyshortcuts', 'Alt+ArrowUp Alt+ArrowDown')
-  if (selectedSlideId === slide.id) target.setAttribute('aria-current', 'page')
-  else target.removeAttribute('aria-current')
-  if (record.metadata.lifecycle !== 'included') target.setAttribute('aria-disabled', 'true')
-  else target.removeAttribute('aria-disabled')
+  row.id = sequenceItemId('slide', slide.id)
+  row.dataset.slideId = slide.id
+  row.dataset.sequenceId = slide.id
+  row.dataset.sectionId = section.id
+  row.setAttribute('aria-label', `Slide ${pageNumber}: ${slide.headline?.plainText || slide.intent}`)
+  if (selectedSlideId === slide.id) row.setAttribute('aria-current', 'page')
+  else row.removeAttribute('aria-current')
+  if (record.metadata.lifecycle !== 'included') row.setAttribute('aria-disabled', 'true')
+  else row.removeAttribute('aria-disabled')
 
-  visual.className = `slide-row${selectedSlideId === slide.id ? ' selected' : ''}`
-  visual.querySelector('.slide-number').textContent = displayNumber
-  visual.querySelector('[data-slide-label]').textContent = displayLabel
-  const status = visual.querySelector('.sequence-status')
+  row.className = `slide-row${selectedSlideId === slide.id ? ' selected' : ''}`
+  row.querySelector('.slide-number').textContent = displayNumber
+  row.querySelector('[data-slide-label]').textContent = displayLabel
+  const status = row.querySelector('.sequence-status')
   status.className = `sequence-status ${readiness}`
   status.textContent = readiness
 
@@ -144,14 +255,7 @@ function updateSlideSequenceEntry(entry, section, slide, pageNumber, story) {
   }
 }
 
-function protectedSequenceNode() {
-  const active = document.activeElement
-  if (!active || !elements.sequenceList.contains(active)) return null
-  return active.closest('.slide-entry')
-    ?? (active.matches?.('[data-section-id]') ? active : null)
-}
-
-function reconcileSequenceOrder(desiredNodes, protectedNode) {
+function reconcileSequenceOrder(desiredNodes) {
   const desired = new Set(desiredNodes)
   for (const child of [...elements.sequenceList.children]) {
     if (!desired.has(child)) {
@@ -161,16 +265,10 @@ function reconcileSequenceOrder(desiredNodes, protectedNode) {
       }
     }
   }
-  for (const node of desiredNodes) {
-    if (node.parentNode !== elements.sequenceList) elements.sequenceList.append(node)
-  }
-  let reference = null
-  for (let index = desiredNodes.length - 1; index >= 0; index -= 1) {
+  for (let index = 0; index < desiredNodes.length; index += 1) {
     const node = desiredNodes[index]
-    if (node !== protectedNode && node.nextSibling !== reference) {
-      elements.sequenceList.insertBefore(node, reference)
-    }
-    reference = node
+    const current = elements.sequenceList.children[index]
+    if (current !== node) elements.sequenceList.insertBefore(node, current ?? null)
   }
 }
 
@@ -178,9 +276,10 @@ function renderPersistentSequence(next) {
   if (!next) {
     elements.sequenceList.replaceChildren()
     sequenceNodeRegistry.clear()
+    activeSequenceTarget = null
+    updateSequenceActivePresentation()
     return
   }
-  const protectedNode = protectedSequenceNode()
   const desiredNodes = []
   let pageNumber = 1
 
@@ -208,7 +307,20 @@ function renderPersistentSequence(next) {
     }
   }
 
-  reconcileSequenceOrder(desiredNodes, protectedNode)
+  reconcileSequenceOrder(desiredNodes)
+  const activeStillExists = activeSequenceTarget
+    && sequenceTargetNode(activeSequenceTarget.kind, activeSequenceTarget.id)
+  if (!activeStillExists) {
+    const selected = selectedSlideId ? sequenceTargetNode('slide', selectedSlideId) : null
+    const fallback = selected ?? elements.sequenceList.querySelector('[data-sequence-kind="slide"], [data-sequence-kind="section"]')
+    activeSequenceTarget = fallback
+      ? { kind: fallback.dataset.sequenceKind, id: fallback.dataset.sequenceId, sectionId: fallback.dataset.sectionId ?? null }
+      : null
+  } else if (activeSequenceTarget.kind === 'slide') {
+    activeSequenceTarget.sectionId = sequenceTargetNode('slide', activeSequenceTarget.id)?.dataset.sectionId ?? null
+  }
+  updateSequenceActivePresentation()
 }
 
+configureSequenceComposite()
 renderSequence = renderPersistentSequence
