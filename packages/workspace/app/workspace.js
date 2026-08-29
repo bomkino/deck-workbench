@@ -36,6 +36,37 @@ renderPlanEditor = function renderPlanEditorWithProjectionFallback() {
   }
 }
 
+let scheduledProjectionRefresh = null
+
+function cancelScheduledProjectionRefresh() {
+  if (scheduledProjectionRefresh === null) return false
+  globalThis.clearTimeout(scheduledProjectionRefresh)
+  scheduledProjectionRefresh = null
+  return true
+}
+
+function scheduleProjectionRefresh(slideId) {
+  cancelScheduledProjectionRefresh()
+  scheduledProjectionRefresh = globalThis.setTimeout(() => {
+    scheduledProjectionRefresh = null
+    void refreshWorkspace(slideId)
+  }, 0)
+}
+
+renderProjection = function renderProjectionWithCancellableHydration(next) {
+  projection = next
+  selectedSlideId = next?.slide?.id ?? selectedSlideId
+  renderAll()
+  if (selectedSlideId) scheduleProjectionRefresh(selectedSlideId)
+  return next
+}
+
+const clearProjectionImmediately = clearProjection
+clearProjection = function clearProjectionAndScheduledHydration() {
+  cancelScheduledProjectionRefresh()
+  return clearProjectionImmediately()
+}
+
 function bindWorkspaceEvents() {
   elements.phaseButtons.forEach((button) => button.addEventListener('click', () => setPhase(button.dataset.phase)))
   elements.undo.addEventListener('click', () => historyAction('undo'))
@@ -88,6 +119,7 @@ async function boot() {
 window.deckWorkbench = Object.freeze({
   renderProjection,
   clearProjection,
+  cancelScheduledRefresh: cancelScheduledProjectionRefresh,
   exportFrame() {
     activePhase = 'assemble'
     renderAll()
