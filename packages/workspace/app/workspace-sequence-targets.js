@@ -1,5 +1,6 @@
 const sequenceNodeRegistry = new Map()
 let activeSequenceTarget = null
+let sequenceFocusOwner = null
 
 function sequenceDomToken(value) {
   return String(value ?? '').replace(/[^A-Za-z0-9_-]/g, '-')
@@ -9,18 +10,36 @@ function sequenceItemId(kind, id) {
   return `sequence-${kind}-${sequenceDomToken(id)}`
 }
 
+function preventSequenceOwnerMutation(event) {
+  event.preventDefault()
+}
+
 function configureSequenceComposite() {
-  elements.sequenceList.tabIndex = 0
-  elements.sequenceList.setAttribute('role', 'tree')
-  elements.sequenceList.setAttribute('aria-label', 'Deck sequence')
-  elements.sequenceList.setAttribute('aria-readonly', 'true')
-  elements.sequenceList.setAttribute('contenteditable', 'true')
-  elements.sequenceList.setAttribute('inputmode', 'none')
-  elements.sequenceList.spellcheck = false
-  elements.sequenceList.addEventListener('beforeinput', (event) => event.preventDefault())
-  elements.sequenceList.addEventListener('paste', (event) => event.preventDefault())
-  elements.sequenceList.addEventListener('drop', (event) => event.preventDefault())
-  elements.sequenceList.addEventListener('keydown', handleSequenceCompositeKeydown)
+  sequenceFocusOwner = document.createElement('textarea')
+  sequenceFocusOwner.id = 'sequence-focus-owner'
+  sequenceFocusOwner.className = 'sequence-focus-owner'
+  sequenceFocusOwner.rows = 1
+  sequenceFocusOwner.wrap = 'off'
+  sequenceFocusOwner.autocomplete = 'off'
+  sequenceFocusOwner.spellcheck = false
+  sequenceFocusOwner.value = 'Deck sequence'
+  sequenceFocusOwner.setAttribute('role', 'tree')
+  sequenceFocusOwner.setAttribute('aria-label', 'Deck sequence keyboard navigation')
+  sequenceFocusOwner.setAttribute('aria-readonly', 'true')
+  sequenceFocusOwner.setAttribute('aria-multiline', 'false')
+  sequenceFocusOwner.setAttribute('inputmode', 'none')
+  sequenceFocusOwner.addEventListener('beforeinput', preventSequenceOwnerMutation)
+  sequenceFocusOwner.addEventListener('paste', preventSequenceOwnerMutation)
+  sequenceFocusOwner.addEventListener('drop', preventSequenceOwnerMutation)
+  sequenceFocusOwner.addEventListener('input', () => updateSequenceActivePresentation())
+  sequenceFocusOwner.addEventListener('keydown', handleSequenceCompositeKeydown)
+  elements.sequenceList.parentElement.insertBefore(sequenceFocusOwner, elements.sequenceList)
+  elements.sequenceList.setAttribute('role', 'group')
+  elements.sequenceList.setAttribute('aria-label', 'Deck sequence items')
+}
+
+function sequenceFocusElement() {
+  return sequenceFocusOwner
 }
 
 function sequenceTargetNode(kind, id) {
@@ -28,21 +47,35 @@ function sequenceTargetNode(kind, id) {
     .find((node) => node.dataset.sequenceKind === kind && node.dataset.sequenceId === id) ?? null
 }
 
+function sequenceTargetLabel(node) {
+  if (!node) return 'Deck sequence'
+  const kind = node.dataset.sequenceKind === 'section' ? 'Part' : 'Slide'
+  return `${kind}: ${node.getAttribute('aria-label') ?? node.textContent?.trim() ?? node.dataset.sequenceId}`
+}
+
 function sequenceFocusState() {
   return Object.freeze({
     kind: activeSequenceTarget?.kind ?? null,
     id: activeSequenceTarget?.id ?? null,
-    ownerFocused: document.activeElement === elements.sequenceList,
-    activeDescendant: elements.sequenceList.getAttribute('aria-activedescendant'),
+    ownerFocused: document.activeElement === sequenceFocusOwner,
+    activeDescendant: sequenceFocusOwner?.getAttribute('aria-activedescendant') ?? null,
   })
 }
 
 function updateSequenceActivePresentation() {
+  if (!sequenceFocusOwner) return
   const activeNode = activeSequenceTarget
     ? sequenceTargetNode(activeSequenceTarget.kind, activeSequenceTarget.id)
     : null
-  if (activeNode) elements.sequenceList.setAttribute('aria-activedescendant', activeNode.id)
-  else elements.sequenceList.removeAttribute('aria-activedescendant')
+  const ownedIds = [...elements.sequenceList.querySelectorAll('[data-sequence-kind]')]
+    .map((node) => node.id)
+    .filter(Boolean)
+  if (ownedIds.length) sequenceFocusOwner.setAttribute('aria-owns', ownedIds.join(' '))
+  else sequenceFocusOwner.removeAttribute('aria-owns')
+  if (activeNode) sequenceFocusOwner.setAttribute('aria-activedescendant', activeNode.id)
+  else sequenceFocusOwner.removeAttribute('aria-activedescendant')
+  sequenceFocusOwner.value = sequenceTargetLabel(activeNode)
+  sequenceFocusOwner.setSelectionRange(0, 0)
   for (const node of elements.sequenceList.querySelectorAll('[data-sequence-kind]')) {
     const active = node === activeNode
     node.dataset.sequenceActive = String(active)
@@ -53,20 +86,20 @@ function updateSequenceActivePresentation() {
 function focusSequenceTarget(target, options = {}) {
   const kind = target?.kind
   const id = target?.id
-  if (!['slide', 'section'].includes(kind) || !id) return false
+  if (!['slide', 'section'].includes(kind) || !id || !sequenceFocusOwner) return false
   const node = sequenceTargetNode(kind, id)
   if (!node) return false
   activeSequenceTarget = { kind, id, sectionId: node.dataset.sectionId ?? null }
   updateSequenceActivePresentation()
   if (options.focus !== false) {
     try {
-      elements.sequenceList.focus({ preventScroll: true })
+      sequenceFocusOwner.focus({ preventScroll: true })
     } catch {
-      elements.sequenceList.focus()
+      sequenceFocusOwner.focus()
     }
   }
-  return document.activeElement === elements.sequenceList
-    && elements.sequenceList.getAttribute('aria-activedescendant') === node.id
+  return document.activeElement === sequenceFocusOwner
+    && sequenceFocusOwner.getAttribute('aria-activedescendant') === node.id
 }
 
 function semanticSequenceItems() {
@@ -95,7 +128,7 @@ function activateSequenceTarget() {
 }
 
 function handleSequenceCompositeKeydown(event) {
-  if (event.target !== elements.sequenceList) return
+  if (event.target !== sequenceFocusOwner) return
   if (event.altKey && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
     if (activeSequenceTarget?.kind === 'slide') {
       moveSlideByKeyboard(event, activeSequenceTarget.sectionId, activeSequenceTarget.id)
@@ -133,7 +166,6 @@ function createSectionSequenceRow(sectionId) {
   row.dataset.sequenceId = sectionId
   row.setAttribute('role', 'treeitem')
   row.setAttribute('aria-level', '1')
-  row.setAttribute('contenteditable', 'false')
   row.setAttribute('aria-keyshortcuts', 'Alt+ArrowUp Alt+ArrowDown')
   row.addEventListener('click', (event) => {
     if (event.target.closest('button')) return
@@ -199,7 +231,6 @@ function createSlideSequenceEntry(slideId) {
   row.dataset.sequenceId = slideId
   row.setAttribute('role', 'treeitem')
   row.setAttribute('aria-level', '2')
-  row.setAttribute('contenteditable', 'false')
   row.setAttribute('aria-keyshortcuts', 'Alt+ArrowUp Alt+ArrowDown')
   row.innerHTML = '<span class="slide-number"></span><span data-slide-label></span><span class="sequence-status"></span>'
   row.addEventListener('click', () => {
@@ -209,7 +240,6 @@ function createSlideSequenceEntry(slideId) {
 
   const tools = document.createElement('span')
   tools.className = 'slide-tools'
-  tools.setAttribute('contenteditable', 'false')
   entry.append(row, tools)
   return entry
 }
