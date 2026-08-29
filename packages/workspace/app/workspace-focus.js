@@ -80,8 +80,6 @@ window.deckBridge = Object.freeze({
 
 async function executeSequenceMove(type, payload, requestedSlideId, focus, sourceKind) {
   if (!projection) return null
-  cancelScheduledProjectionRefresh?.()
-  refreshGeneration += 1
   setBusy(`Writing ${type}…`)
   try {
     await window.deckBridge.execute({
@@ -112,33 +110,49 @@ async function executeSequenceMove(type, payload, requestedSlideId, focus, sourc
   }
 }
 
-moveSlide = async function moveSlideWithAtomicFocus(sectionId, slideId, direction) {
-  const payload = slideMovePlan(storyDocument, sectionId, slideId, direction)
-  if (!payload) return
-  await executeSequenceMove('slide.move', payload, slideId, { slideId }, 'ui')
+async function planSlideMove(sectionId, slideId, direction, sourceKind) {
+  const canonicalStory = await window.deckBridge.query({ name: 'story.document', params: {} })
+  storyDocument = canonicalStory
+  const payload = slideMovePlan(canonicalStory, sectionId, slideId, direction)
+  if (!payload) {
+    setStatus(`Slide cannot move ${direction}`)
+    restoreWorkspaceFocus({ slideId })
+    return null
+  }
+  return executeSequenceMove('slide.move', payload, slideId, { slideId }, sourceKind)
 }
 
-moveSlideByKeyboard = function moveSlideByKeyboardWithAtomicFocus(event, sectionId, slideId) {
+async function planSectionMove(sectionId, direction, sourceKind) {
+  const canonicalStory = await window.deckBridge.query({ name: 'story.document', params: {} })
+  storyDocument = canonicalStory
+  const payload = sectionMovePlan(canonicalStory, sectionId, direction)
+  if (!payload) {
+    setStatus(`Part cannot move ${direction}`)
+    restoreWorkspaceFocus({ sectionId })
+    return null
+  }
+  return executeSequenceMove('section.move', payload, selectedSlideId, { sectionId }, sourceKind)
+}
+
+moveSlide = async function moveSlideFromCanonicalStory(sectionId, slideId, direction) {
+  await planSlideMove(sectionId, slideId, direction, 'ui')
+}
+
+moveSlideByKeyboard = function moveSlideByKeyboardFromCanonicalStory(event, sectionId, slideId) {
   const direction = sequenceShortcut(event)
   if (!direction) return
-  const payload = slideMovePlan(storyDocument, sectionId, slideId, direction)
-  if (!payload) return
   event.preventDefault()
-  void executeSequenceMove('slide.move', payload, slideId, { slideId }, 'keyboard')
+  void planSlideMove(sectionId, slideId, direction, 'keyboard')
 }
 
-moveSection = async function moveSectionWithAtomicFocus(sectionId, direction) {
-  const payload = sectionMovePlan(storyDocument, sectionId, direction)
-  if (!payload) return
-  await executeSequenceMove('section.move', payload, selectedSlideId, { sectionId }, 'ui')
+moveSection = async function moveSectionFromCanonicalStory(sectionId, direction) {
+  await planSectionMove(sectionId, direction, 'ui')
 }
 
-moveSectionByKeyboard = function moveSectionByKeyboardWithAtomicFocus(event, sectionId) {
+moveSectionByKeyboard = function moveSectionByKeyboardFromCanonicalStory(event, sectionId) {
   if (event.target !== event.currentTarget) return
   const direction = sequenceShortcut(event)
   if (!direction) return
-  const payload = sectionMovePlan(storyDocument, sectionId, direction)
-  if (!payload) return
   event.preventDefault()
-  void executeSequenceMove('section.move', payload, selectedSlideId, { sectionId }, 'keyboard')
+  void planSectionMove(sectionId, direction, 'keyboard')
 }
