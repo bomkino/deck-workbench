@@ -340,7 +340,7 @@ const expectedScreenshots = new Map([
   ...['landscape', 'square', 'portrait'].flatMap((canvas) => ['light', 'dark']
     .map((theme) => [`canvas-${canvas}-${theme}-1440x900.png`, { width: 1440, height: 900 }])),
 ])
-if (!Array.isArray(runtimeUI.screenshots)
+const screenshotManifestInvalid = !Array.isArray(runtimeUI.screenshots)
   || runtimeUI.screenshots.length !== expectedScreenshots.size
   || runtimeUI.screenshots.some((screenshot) => {
     const expected = expectedScreenshots.get(screenshot.file)
@@ -350,8 +350,18 @@ if (!Array.isArray(runtimeUI.screenshots)
       || screenshot.bytes < 100
       || !/^[a-f0-9]{64}$/.test(screenshot.sha256 ?? '')
   })
-  || new Set(runtimeUI.screenshots.map((screenshot) => screenshot.sha256)).size !== expectedScreenshots.size) {
-  throw new Error(`${label}: runtime UI screenshots are incomplete or invalid`)
+  || new Set(runtimeUI.screenshots?.map((screenshot) => screenshot.sha256) ?? []).size !== expectedScreenshots.size
+if (screenshotManifestInvalid) {
+  const manifest = Array.isArray(runtimeUI.screenshots)
+    ? runtimeUI.screenshots.map(({ file, width, height, bytes, sha256 }) => ({
+        file,
+        width,
+        height,
+        bytes,
+        sha256: typeof sha256 === 'string' ? sha256.slice(0, 12) : null,
+      }))
+    : runtimeUI.screenshots
+  throw new Error(`${label}: runtime UI screenshots are incomplete or invalid (${JSON.stringify(manifest)})`)
 }
 for (const screenshot of runtimeUI.screenshots) {
   const bytes = readFileSync(resolve(dirname(resultPath), screenshot.file))
