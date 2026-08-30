@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "component": "@phosphor-icons/web",
+  "version": "2.1.2",
+  "sourceRepository": "https://github.com/phosphor-icons/web",
+  "sourceCommit": "70854726d7bd82ae21f0dc81b5b5c35240a77066",
+  "licenseIdentifier": "MIT",
+  "npmIntegrity": "sha512-rPAR9o/bEcp4Cw4DEeZHXf+nlGCMNGkNDRizYHM47NLxz9vvEHp/Tt6FMK1NcWadzw/pFDPnRBGi/ofRya958A==",
+  "files": [
+    { "path": "packages/workspace/app/icons/phosphor/Phosphor.woff2", "sha256": "c2ea45ea05ff5c7df1936770c104725f2a68f43fd343f35f3da23a30b27de32a" },
+    { "path": "apps/macos/Resources/Fonts/Phosphor.ttf", "sha256": "06b91e022b7ee899a63efced879392a74f0bacbda54e4467e9f663220d173a10" }
+  ]
+}

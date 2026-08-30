@@ -3,13 +3,22 @@ import WebKit
 
 final class WorkspaceSchemeHandler: NSObject, WKURLSchemeHandler {
     private let workspaceRoot: URL
-    private let allowedFiles: Set<String> = [
-        "index.html",
-        "styles.css",
-        "workspace.js",
-        "bridge.generated.js",
-        "scale-model.mjs",
-        "workbench-mark.svg",
+    private let allowedFiles: [String: String] = [
+        "/": "index.html",
+        "/index.html": "index.html",
+        "/styles.css": "styles.css",
+        "/workspace.js": "workspace.js",
+        "/bridge.generated.js": "bridge.generated.js",
+        "/scale-model.mjs": "scale-model.mjs",
+        "/workbench-mark.svg": "workbench-mark.svg",
+        "/fonts/v13/pd-head.woff2": "fonts/v13/pd-head.woff2",
+        "/fonts/v13/pd-head-alt.woff2": "fonts/v13/pd-head-alt.woff2",
+        "/fonts/v13/pd-body-roman.woff2": "fonts/v13/pd-body-roman.woff2",
+        "/fonts/v13/pd-body-italic.woff2": "fonts/v13/pd-body-italic.woff2",
+        "/fonts/v13/pd-body-alt-roman.woff2": "fonts/v13/pd-body-alt-roman.woff2",
+        "/fonts/v13/pd-body-alt-italic.woff2": "fonts/v13/pd-body-alt-italic.woff2",
+        "/fonts/v13/pd-eyebrow-site.woff2": "fonts/v13/pd-eyebrow-site.woff2",
+        "/icons/phosphor/Phosphor.woff2": "icons/phosphor/Phosphor.woff2",
     ]
 
     init(bundle: Bundle = .main) throws {
@@ -27,8 +36,8 @@ final class WorkspaceSchemeHandler: NSObject, WKURLSchemeHandler {
             urlSchemeTask.didFailWithError(WorkbenchFailure(name: "WorkspaceUnavailable", message: "Invalid workspace resource identity"))
             return
         }
-        let name = url.lastPathComponent.isEmpty ? "index.html" : url.lastPathComponent
-        guard allowedFiles.contains(name), !name.contains("..") else {
+        let path = url.path.isEmpty ? "/" : url.path
+        guard let name = allowedFiles[path], !path.contains("..") else {
             urlSchemeTask.didFailWithError(WorkbenchFailure(name: "WorkspaceUnavailable", message: "Workspace resource is not authorised"))
             return
         }
@@ -55,6 +64,7 @@ final class WorkspaceSchemeHandler: NSObject, WKURLSchemeHandler {
         if name.hasSuffix(".html") { return "text/html" }
         if name.hasSuffix(".css") { return "text/css" }
         if name.hasSuffix(".svg") { return "image/svg+xml" }
+        if name.hasSuffix(".woff2") { return "font/woff2" }
         return "text/javascript"
     }
 }

@@ -32,12 +32,28 @@ const allowedWorkspaceFiles = new Map([
   ['/styles.css', 'styles.css'],
   ['/workspace.js', 'workspace.js'],
   ['/workbench-mark.svg', 'workbench-mark.svg'],
+  ['/fonts/v13/pd-head.woff2', 'fonts/v13/pd-head.woff2'],
+  ['/fonts/v13/pd-head-alt.woff2', 'fonts/v13/pd-head-alt.woff2'],
+  ['/fonts/v13/pd-body-roman.woff2', 'fonts/v13/pd-body-roman.woff2'],
+  ['/fonts/v13/pd-body-italic.woff2', 'fonts/v13/pd-body-italic.woff2'],
+  ['/fonts/v13/pd-body-alt-roman.woff2', 'fonts/v13/pd-body-alt-roman.woff2'],
+  ['/fonts/v13/pd-body-alt-italic.woff2', 'fonts/v13/pd-body-alt-italic.woff2'],
+  ['/fonts/v13/pd-eyebrow-site.woff2', 'fonts/v13/pd-eyebrow-site.woff2'],
+  ['/icons/phosphor/Phosphor.woff2', 'icons/phosphor/Phosphor.woff2'],
 ])
 const workspaceContentTypes = Object.freeze({
   'index.html': 'text/html; charset=utf-8',
   'styles.css': 'text/css; charset=utf-8',
   'workspace.js': 'text/javascript; charset=utf-8',
   'workbench-mark.svg': 'image/svg+xml',
+  'fonts/v13/pd-head.woff2': 'font/woff2',
+  'fonts/v13/pd-head-alt.woff2': 'font/woff2',
+  'fonts/v13/pd-body-roman.woff2': 'font/woff2',
+  'fonts/v13/pd-body-italic.woff2': 'font/woff2',
+  'fonts/v13/pd-body-alt-roman.woff2': 'font/woff2',
+  'fonts/v13/pd-body-alt-italic.woff2': 'font/woff2',
+  'fonts/v13/pd-eyebrow-site.woff2': 'font/woff2',
+  'icons/phosphor/Phosphor.woff2': 'font/woff2',
 })
 
 app.commandLine.appendSwitch('disable-background-networking')
@@ -264,17 +280,29 @@ async function persistPreferences(next) {
 
 async function exportOnePagePDF(destination) {
   if (!mainWindow || mainWindow.isDestroyed()) throw namedError('WorkspaceUnavailable', 'Workspace is unavailable')
-  const cssKey = await mainWindow.webContents.insertCSS(`
-    @media print {
-      @page { size: 257.6mm 108mm; margin: 0; }
-      html, body { width: 257.6mm !important; height: 108mm !important; margin: 0 !important; overflow: hidden !important; }
-      body > * { display: none !important; }
-      .workbench, .editorial-spine, .stage, .stage-scroll, #artboard { display: block !important; }
-      .workbench > :not(.editorial-spine), .editorial-spine > :not(.stage), .stage > :not(.stage-scroll) { display: none !important; }
-      #artboard { position: fixed !important; inset: 0 !important; width: 257.6mm !important; height: 108mm !important; transform: none !important; margin: 0 !important; }
-    }
-  `)
+  const frame = await mainWindow.webContents.executeJavaScript(`deckWorkbench.exportFrame('linux')`, true)
+  if (frame?.error === 'CompositionOverflow') {
+    throw namedError('CompositionOverflow', `${frame.overflowCount} authored element(s) exceed the composition frame`)
+  }
+  if (frame?.error === 'ExportBusy') throw namedError('ExportBusy', 'Another PDF export is already in progress')
+  if (frame?.error === 'ExportStale') throw namedError('ExportStale', 'The active Slide changed while preparing export')
+  if (typeof frame?.token !== 'string' || !frame.token) {
+    throw namedError('WorkspaceUnavailable', 'Slide export frame is invalid')
+  }
+  let cssKey = null
+  let result = null
+  let operationFailure = null
   try {
+    cssKey = await mainWindow.webContents.insertCSS(`
+      @media print {
+        @page { size: 257.6mm 108mm; margin: 0; }
+        html, body { width: 257.6mm !important; height: 108mm !important; margin: 0 !important; overflow: hidden !important; }
+        body > * { display: none !important; }
+        .workbench, .editorial-spine, .stage, .stage-scroll, #artboard { display: block !important; }
+        .workbench > :not(.editorial-spine), .editorial-spine > :not(.stage), .stage > :not(.stage-scroll) { display: none !important; }
+        #artboard { margin: 0 !important; }
+      }
+    `)
     const pdf = await mainWindow.webContents.printToPDF({
       printBackground: true,
       pageSize: { width: 257600, height: 108000 },
@@ -282,10 +310,30 @@ async function exportOnePagePDF(destination) {
       preferCSSPageSize: true,
     })
     await writeAtomically(destination, pdf)
-    return { bytes: pdf.byteLength, sha256: createHash('sha256').update(pdf).digest('hex') }
-  } finally {
-    await mainWindow.webContents.removeInsertedCSS(cssKey)
+    result = { bytes: pdf.byteLength, sha256: createHash('sha256').update(pdf).digest('hex') }
+  } catch (error) {
+    operationFailure = error
   }
+  const cleanupFailures = []
+  if (cssKey) {
+    try {
+      await mainWindow.webContents.removeInsertedCSS(cssKey)
+    } catch (error) {
+      cleanupFailures.push(error)
+    }
+  }
+  try {
+    const cleanup = await mainWindow.webContents.executeJavaScript(
+      `deckWorkbench.finishExport(${JSON.stringify(frame.token)})`,
+      true,
+    )
+    if (cleanup?.finished !== true) cleanupFailures.push(namedError('ExportCleanupFailed', 'Workspace export session did not close'))
+  } catch (error) {
+    cleanupFailures.push(error)
+  }
+  if (operationFailure) throw operationFailure
+  if (cleanupFailures.length) throw cleanupFailures[0]
+  return result
 }
 
 async function presentPDFExport() {
@@ -586,6 +634,7 @@ async function createWindow({ hidden = false } = {}) {
       sandbox: true,
       webSecurity: true,
       allowRunningInsecureContent: false,
+      backgroundThrottling: !hidden,
     },
   })
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
@@ -647,10 +696,398 @@ async function inspectRendererBoundary() {
   }
 }
 
+const runtimeUIViewports = Object.freeze([
+  Object.freeze({ label: 'mac-post-toolbar-proxy', width: 1180, height: 605 }),
+  Object.freeze({ label: 'compact-desktop', width: 1280, height: 720 }),
+])
+const runtimeUIScales = Object.freeze([1, 1.25, 1.5, 1.75])
+
+async function configureRuntimeUI(viewport, scale) {
+  mainWindow.setContentSize(viewport.width, viewport.height)
+  return mainWindow.webContents.executeJavaScript(`(async () => {
+    const requested = ${JSON.stringify({ viewport: null, scale: null })};
+    requested.viewport = ${JSON.stringify(viewport)};
+    requested.scale = ${JSON.stringify(scale)};
+    const scaleResult = await globalThis.deckBridge.setInterfaceScale({ value: requested.scale });
+    interfaceScale = scaleResult.interfaceScale;
+    applyScales();
+    const requiredFonts = [
+      { family: 'PD Head', font: '500 16px "PD Head"', sample: 'Deck Workbench' },
+      { family: 'PD Head Alt', font: '500 16px "PD Head Alt"', sample: 'Deck Workbench' },
+      { family: 'PD Body', font: '400 16px "PD Body"', sample: 'Deck Workbench' },
+      { family: 'PD Body Alt', font: '400 16px "PD Body Alt"', sample: 'Deck Workbench' },
+      { family: 'PD Eyebrow', font: '500 16px "PD Eyebrow"', sample: 'PLAN 0123' },
+      { family: 'Phosphor', font: '400 16px "Phosphor"', sample: '\\uE038' },
+    ];
+    const fontLoads = await Promise.all(requiredFonts.map(async (entry) => ({
+      family: entry.family,
+      faceCount: (await document.fonts.load(entry.font, entry.sample)).length,
+      check: document.fonts.check(entry.font, entry.sample),
+    })));
+    await document.fonts.ready;
+    await new Promise((resolveFrame) => requestAnimationFrame(() => requestAnimationFrame(resolveFrame)));
+    const familyOf = (selector) => {
+      const element = document.querySelector(selector);
+      return element ? getComputedStyle(element).fontFamily : '';
+    };
+    const computedFamilies = {
+      body: familyOf('body'),
+      head: familyOf('.plan-empty-title'),
+      eyebrow: familyOf('.eyebrow'),
+      icon: familyOf('.phosphor-icon'),
+    };
+    const bindingsCorrect = computedFamilies.body.includes('PD Body')
+      && computedFamilies.head.includes('PD Head')
+      && computedFamilies.eyebrow.includes('PD Eyebrow')
+      && computedFamilies.icon.includes('Phosphor');
+    return {
+      requestedViewport: requested.viewport,
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      scale: interfaceScale,
+      layout: document.documentElement.dataset.workspaceLayout,
+      fontsReady: document.fonts.status === 'loaded',
+      fontsLoaded: fontLoads.every((entry) => entry.faceCount > 0 && entry.check) && bindingsCorrect,
+      fontLoads,
+      computedFamilies,
+      exactViewport: window.innerWidth === requested.viewport.width
+        && window.innerHeight === requested.viewport.height,
+    };
+  })()`, true)
+}
+
+async function inspectColdRuntimeUI() {
+  return mainWindow.webContents.executeJavaScript(`(() => {
+    const rect = (element) => {
+      const value = element.getBoundingClientRect();
+      return {
+        left: value.left,
+        top: value.top,
+        right: value.right,
+        bottom: value.bottom,
+        width: value.width,
+        height: value.height,
+      };
+    };
+    const fullyInsideViewport = (element) => {
+      if (!element || element.hidden || getComputedStyle(element).display === 'none') return false;
+      const value = element.getBoundingClientRect();
+      return value.width > 0
+        && value.height > 0
+        && value.left >= -1
+        && value.top >= -1
+        && value.right <= window.innerWidth + 1
+        && value.bottom <= window.innerHeight + 1;
+    };
+    const toolbar = document.querySelector('.toolbar');
+    const createDeck = document.querySelector('#create-deck');
+    const openDeck = document.querySelector('#open-deck');
+    const toolbarRect = toolbar.getBoundingClientRect();
+    const toolbarChildren = [...toolbar.children]
+      .filter((child) => !child.hidden && getComputedStyle(child).display !== 'none')
+      .map((child) => ({
+        id: child.id,
+        className: child.className,
+        rect: rect(child),
+      }));
+    return {
+      createDeckRect: rect(createDeck),
+      openDeckRect: rect(openDeck),
+      createDeckFullyVisible: fullyInsideViewport(createDeck),
+      openDeckFullyVisible: fullyInsideViewport(openDeck),
+      toolbar: {
+        rect: rect(toolbar),
+        clientWidth: toolbar.clientWidth,
+        scrollWidth: toolbar.scrollWidth,
+        children: toolbarChildren,
+      },
+      toolbarFitsHorizontally: toolbar.scrollWidth <= toolbar.clientWidth + 1
+        && toolbarChildren.every((child) => child.rect.left >= toolbarRect.left - 1
+          && child.rect.right <= toolbarRect.right + 1),
+      documentScrollTop: document.scrollingElement.scrollTop,
+      bodyScrollTop: document.body.scrollTop,
+    };
+  })()`, true)
+}
+
+async function inspectDocumentRuntimeUI() {
+  return mainWindow.webContents.executeJavaScript(`(async () => {
+    const settle = () => new Promise((resolveFrame) => requestAnimationFrame(() => requestAnimationFrame(resolveFrame)));
+    const rect = (element) => {
+      const value = element.getBoundingClientRect();
+      return {
+        left: value.left,
+        top: value.top,
+        right: value.right,
+        bottom: value.bottom,
+        width: value.width,
+        height: value.height,
+      };
+    };
+    const intersectionRatio = (element, clip) => {
+      const value = element.getBoundingClientRect();
+      const clips = Array.isArray(clip) ? clip.map((entry) => entry.getBoundingClientRect()) : [clip.getBoundingClientRect()];
+      let left = value.left;
+      let top = value.top;
+      let right = value.right;
+      let bottom = value.bottom;
+      for (const item of clips) {
+        left = Math.max(left, item.left, 0);
+        top = Math.max(top, item.top, 0);
+        right = Math.min(right, item.right, window.innerWidth);
+        bottom = Math.min(bottom, item.bottom, window.innerHeight);
+      }
+      const visibleArea = Math.max(0, right - left) * Math.max(0, bottom - top);
+      const area = Math.max(1, value.width * value.height);
+      return visibleArea / area;
+    };
+    const toolbarEvidence = (selector) => {
+      const element = document.querySelector(selector);
+      if (!element) return { selector, present: false, fits: false };
+      const bounds = element.getBoundingClientRect();
+      const children = [...element.children]
+        .filter((child) => !child.hidden && getComputedStyle(child).display !== 'none')
+        .map((child) => ({
+          id: child.id,
+          className: child.className,
+          rect: rect(child),
+        }));
+      const childrenInside = children.every((child) => child.rect.left >= bounds.left - 1
+        && child.rect.right <= bounds.right + 1);
+      return {
+        selector,
+        present: true,
+        fits: element.scrollWidth <= element.clientWidth + 1 && childrenInside,
+        clientWidth: element.clientWidth,
+        scrollWidth: element.scrollWidth,
+        rect: rect(element),
+        children,
+      };
+    };
+    const activate = async (phase) => {
+      await enterPhaseForSlide(phase);
+      const view = document.querySelector('[data-phase-view="' + phase + '"]');
+      view.scrollTop = 0;
+      await settle();
+      return view;
+    };
+
+    const curateView = await activate('curate');
+    const mediaScroll = document.querySelector('#media-scroll');
+    const mediaCanvas = document.querySelector('#media-canvas');
+    const previousDensity = elements.thumbnailDensity.value;
+    elements.thumbnailDensity.value = elements.thumbnailDensity.min;
+    const virtualCard = curateVirtualMetrics(1);
+    const badgeProbe = document.createElement('div');
+    badgeProbe.className = 'media-card';
+    badgeProbe.style.setProperty('--card-left', '0px');
+    badgeProbe.style.setProperty('--card-top', '0px');
+    badgeProbe.style.setProperty('--card-width', virtualCard.cardWidth + 'px');
+    badgeProbe.style.setProperty('--card-height', virtualCard.cardHeight + 'px');
+    const badgeProbeThumb = document.createElement('div');
+    badgeProbeThumb.className = 'media-thumb';
+    const badgeProbeCopy = document.createElement('div');
+    badgeProbeCopy.className = 'media-card-copy';
+    const badgeProbeTitle = document.createElement('strong');
+    badgeProbeTitle.textContent = 'A representative media asset';
+    const badgeProbeBadges = document.createElement('span');
+    badgeProbeBadges.className = 'media-badges';
+    for (const [label, kind] of [['5/5', 'project'], ['shortlisted', 'project'], ['Pick', 'project'], ['Compare', 'compare'], ['alternate', 'slide']]) {
+      const badge = document.createElement('span');
+      badge.className = 'media-badge ' + kind;
+      badge.textContent = label;
+      badgeProbeBadges.append(badge);
+    }
+    const badgeProbePath = document.createElement('small');
+    badgeProbePath.textContent = 'media/representative-wide-image.jpg';
+    badgeProbeCopy.append(badgeProbeTitle, badgeProbeBadges, badgeProbePath);
+    badgeProbe.append(badgeProbeThumb, badgeProbeCopy);
+    mediaCanvas.append(badgeProbe);
+    await settle();
+    const badgeProbeEvidence = {
+      cardRect: rect(badgeProbe),
+      copyClientWidth: badgeProbeCopy.clientWidth,
+      copyScrollWidth: badgeProbeCopy.scrollWidth,
+      copyClientHeight: badgeProbeCopy.clientHeight,
+      copyScrollHeight: badgeProbeCopy.scrollHeight,
+      badgesClientWidth: badgeProbeBadges.clientWidth,
+      badgesScrollWidth: badgeProbeBadges.scrollWidth,
+      everyBadgeFits: [...badgeProbeBadges.children].every((badge) => badge.scrollWidth <= badge.clientWidth + 1),
+    };
+    const badgeProbeRect = badgeProbe.getBoundingClientRect();
+    const badgeProbeCopyRect = badgeProbeCopy.getBoundingClientRect();
+    badgeProbeEvidence.copyInsideCard = badgeProbeCopyRect.left >= badgeProbeRect.left - 1
+      && badgeProbeCopyRect.right <= badgeProbeRect.right + 1
+      && badgeProbeCopyRect.top >= badgeProbeRect.top - 1
+      && badgeProbeCopyRect.bottom <= badgeProbeRect.bottom + 1;
+    badgeProbeEvidence.noClipping = badgeProbeEvidence.copyScrollWidth <= badgeProbeEvidence.copyClientWidth + 1
+      && badgeProbeEvidence.copyScrollHeight <= badgeProbeEvidence.copyClientHeight + 1
+      && badgeProbeEvidence.badgesScrollWidth <= badgeProbeEvidence.badgesClientWidth + 1
+      && badgeProbeEvidence.everyBadgeFits
+      && badgeProbeEvidence.copyInsideCard;
+    badgeProbe.remove();
+    elements.thumbnailDensity.value = previousDensity;
+    const curateToolbars = [
+      toolbarEvidence('.toolbar'),
+      toolbarEvidence('.media-toolbar'),
+      toolbarEvidence('.media-source-bar'),
+      toolbarEvidence('.media-action-bar'),
+    ];
+    const curate = {
+      phaseRect: rect(curateView),
+      mediaScrollRect: rect(mediaScroll),
+      mediaScrollHeight: mediaScroll.clientHeight,
+      virtualCardHeight: virtualCard.cardHeight,
+      mediaScrollFitsVirtualCard: mediaScroll.clientHeight >= virtualCard.cardHeight,
+      maxBadgeCard: badgeProbeEvidence,
+      maxBadgeCardFits: badgeProbeEvidence.noClipping,
+      toolbars: curateToolbars,
+      noToolbarHorizontalClipping: curateToolbars.every((entry) => entry.fits),
+    };
+
+    const handoffView = await activate('handoff');
+    const handoffIntro = document.querySelector('.handoff-phase .phase-introduction');
+    const handoffCopy = handoffIntro.querySelector('p:last-child');
+    const introRect = handoffIntro.getBoundingClientRect();
+    const copyRect = handoffCopy.getBoundingClientRect();
+    const handoff = {
+      phaseRect: rect(handoffView),
+      introRect: rect(handoffIntro),
+      copyRect: rect(handoffCopy),
+      introNotClipped: handoffIntro.scrollHeight <= handoffIntro.clientHeight + 1
+        && copyRect.bottom <= introRect.bottom + 1,
+      introFullyVisible: intersectionRatio(handoffIntro, handoffView) >= 0.999,
+      globalToolbar: toolbarEvidence('.toolbar'),
+    };
+
+    const assembleView = await activate('assemble');
+    const stageScroll = document.querySelector('#stage-scroll');
+    const artboard = document.querySelector('#artboard');
+    const assembleToolbars = [toolbarEvidence('.toolbar'), toolbarEvidence('.stage-toolbar')];
+    const assemble = {
+      phaseRect: rect(assembleView),
+      stageRect: rect(stageScroll),
+      artboardRect: rect(artboard),
+      artboardVisibleRatio: intersectionRatio(artboard, [stageScroll, assembleView]),
+      artboardMajorityInitiallyVisible: intersectionRatio(artboard, [stageScroll, assembleView]) >= 0.5,
+      toolbars: assembleToolbars,
+      noToolbarHorizontalClipping: assembleToolbars.every((entry) => entry.fits),
+    };
+
+    return {
+      curate,
+      handoff,
+      assemble,
+      documentScrollTop: document.scrollingElement.scrollTop,
+      bodyScrollTop: document.body.scrollTop,
+    };
+  })()`, true)
+}
+
+async function presentRuntimePhaseForScreenshot(phase) {
+  await mainWindow.webContents.executeJavaScript(`(async () => {
+    await enterPhaseForSlide(${JSON.stringify(phase)});
+    const view = document.querySelector('[data-phase-view="${phase}"]');
+    view.scrollTop = 0;
+    await new Promise((resolveFrame) => requestAnimationFrame(() => requestAnimationFrame(resolveFrame)));
+  })()`, true)
+}
+
+async function captureRuntimeUIScreenshot(outputDirectory, name) {
+  const capture = await mainWindow.webContents.capturePage()
+  const png = capture.toPNG()
+  const size = capture.getSize()
+  await writeDurably(resolve(outputDirectory, name), png)
+  return {
+    file: name,
+    width: size.width,
+    height: size.height,
+    bytes: png.byteLength,
+    sha256: createHash('sha256').update(png).digest('hex'),
+  }
+}
+
+function runtimeUICasePassed(entry, kind) {
+  if (!entry.configuration.exactViewport
+    || !entry.configuration.fontsReady
+    || !entry.configuration.fontsLoaded) return false
+  if (kind === 'cold') {
+    return entry.geometry.createDeckFullyVisible
+      && entry.geometry.openDeckFullyVisible
+      && entry.geometry.toolbarFitsHorizontally
+      && entry.geometry.documentScrollTop === 0
+      && entry.geometry.bodyScrollTop === 0
+  }
+  return entry.geometry.curate.mediaScrollFitsVirtualCard
+    && entry.geometry.curate.maxBadgeCardFits
+    && entry.geometry.curate.noToolbarHorizontalClipping
+    && entry.geometry.handoff.introNotClipped
+    && entry.geometry.handoff.introFullyVisible
+    && entry.geometry.handoff.globalToolbar.fits
+    && entry.geometry.assemble.artboardMajorityInitiallyVisible
+    && entry.geometry.assemble.noToolbarHorizontalClipping
+    && entry.geometry.documentScrollTop === 0
+    && entry.geometry.bodyScrollTop === 0
+}
+
+async function inspectPackagedColdRuntimeUI(outputDirectory) {
+  const cases = []
+  const screenshots = []
+  for (const viewport of runtimeUIViewports) {
+    for (const scale of runtimeUIScales) {
+      const configuration = await configureRuntimeUI(viewport, scale)
+      const geometry = await inspectColdRuntimeUI()
+      const entry = { viewport, scale, configuration, geometry }
+      entry.ok = runtimeUICasePassed(entry, 'cold')
+      cases.push(entry)
+      if (viewport.label === 'mac-post-toolbar-proxy' && scale === 1.75) {
+        screenshots.push(await captureRuntimeUIScreenshot(
+          outputDirectory,
+          'ui-cold-1180x605-175.png',
+        ))
+      }
+    }
+  }
+  return { cases, screenshots, ok: cases.every((entry) => entry.ok) }
+}
+
+async function inspectPackagedDocumentRuntimeUI(outputDirectory) {
+  const cases = []
+  const screenshots = []
+  for (const viewport of runtimeUIViewports) {
+    for (const scale of runtimeUIScales) {
+      const configuration = await configureRuntimeUI(viewport, scale)
+      const geometry = await inspectDocumentRuntimeUI()
+      const entry = { viewport, scale, configuration, geometry }
+      entry.ok = runtimeUICasePassed(entry, 'document')
+      cases.push(entry)
+      if (viewport.label === 'mac-post-toolbar-proxy' && scale === 1.75) {
+        screenshots.push(await captureRuntimeUIScreenshot(
+          outputDirectory,
+          'ui-assemble-1180x605-175.png',
+        ))
+        await presentRuntimePhaseForScreenshot('handoff')
+        screenshots.push(await captureRuntimeUIScreenshot(
+          outputDirectory,
+          'ui-handoff-1180x605-175.png',
+        ))
+        await presentRuntimePhaseForScreenshot('curate')
+        screenshots.push(await captureRuntimeUIScreenshot(
+          outputDirectory,
+          'ui-curate-1180x605-175.png',
+        ))
+      }
+    }
+  }
+  await configureRuntimeUI({ label: 'default', width: 1440, height: 900 }, 1.25)
+  await presentRuntimePhaseForScreenshot('plan')
+  return { cases, screenshots, ok: cases.every((entry) => entry.ok) }
+}
+
 async function runPackagedTracerCreate(outputDirectory) {
   if (!isAbsolute(outputDirectory)) throw namedError('InvalidCommand', 'Tracer output directory must be absolute')
   await mkdir(outputDirectory, { recursive: true })
   const packagePath = resolve(outputDirectory, 'tracer.pitchdeck')
+  const runtimeUICold = await inspectPackagedColdRuntimeUI(outputDirectory)
 
   const seed = {
     deckId: '00000000-0000-4000-8000-000000000101',
@@ -790,6 +1227,16 @@ async function runPackagedTracerCreate(outputDirectory) {
   const sectionOrder = structuredStory.sections.map((section) => section.id)
   const openingSlideOrder = structuredStory.sections[1].slides.map((slide) => slide.id)
   const bodyText = storyBlockPlainText(structuredStory, packagedStoryIds.bodyBlockId)
+  const runtimeUIDocument = await inspectPackagedDocumentRuntimeUI(outputDirectory)
+  const runtimeUI = {
+    schemaVersion: 1,
+    viewports: runtimeUIViewports,
+    scales: runtimeUIScales,
+    cold: runtimeUICold.cases,
+    document: runtimeUIDocument.cases,
+    screenshots: [...runtimeUICold.screenshots, ...runtimeUIDocument.screenshots],
+    ok: runtimeUICold.ok && runtimeUIDocument.ok,
+  }
 
   const saved = await utility.request('document.save')
   await utility.request('document.close')
@@ -821,6 +1268,7 @@ async function runPackagedTracerCreate(outputDirectory) {
       bodyBlockId: packagedStoryIds.bodyBlockId,
       bodyOriginalText: 'A body block that survives design.',
       bodyText,
+      runtimeUI,
     },
   }
   result.ok = result.checks.utilityOwner === 'electron-utility-process'
@@ -850,6 +1298,7 @@ async function runPackagedTracerCreate(outputDirectory) {
     && result.checks.renamedSectionTitle === 'Act II'
     && result.checks.secondSlideIntent === 'editorial-body'
     && result.checks.bodyText === 'A body block.\n\nThat survives design.'
+    && result.checks.runtimeUI.ok === true
   await writeDurably(
     resolve(outputDirectory, 'journey-create-result.json'),
     `${JSON.stringify(result, null, 2)}\n`,
@@ -928,6 +1377,7 @@ async function runPackagedTracerReopen(outputDirectory, { requireDistinctProcess
       reopenedBodyText: storyBlockPlainText(reopenedStory, createResult.checks.bodyBlockId),
       reopenedUndoBodyText: storyBlockPlainText(reopenedUndoStory, createResult.checks.bodyBlockId),
       reopenedRedoBodyText: storyBlockPlainText(reopenedRedoStory, createResult.checks.bodyBlockId),
+      runtimeUI: createResult.checks.runtimeUI,
       pdfBytes: pdf.bytes,
       pdfSHA256: pdf.sha256,
     },
@@ -966,6 +1416,7 @@ async function runPackagedTracerReopen(outputDirectory, { requireDistinctProcess
     || result.checks.reopenedBodyText !== 'A body block.\n\nThat survives design.'
     || result.checks.reopenedUndoBodyText !== createResult.checks.bodyOriginalText
     || result.checks.reopenedRedoBodyText !== 'A body block.\n\nThat survives design.'
+    || result.checks.runtimeUI?.ok !== true
     || result.checks.pdfBytes < 100
     || (requireDistinctProcess && !result.processLifecycle.distinctProcesses)
   result.ok = !failed

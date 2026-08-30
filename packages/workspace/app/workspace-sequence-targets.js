@@ -201,8 +201,7 @@ function updateSectionSequenceRow(row, section, story) {
     move.type = 'button'
     move.className = 'move-sequence'
     move.dataset.direction = direction
-    move.textContent = direction === 'up' ? '↑' : '↓'
-    move.setAttribute('aria-label', `Move ${section.title} ${direction}`)
+    setPhosphorIconButton(move, direction === 'up' ? 'arrowUp' : 'arrowDown', `Move ${section.title} ${direction}`)
     move.addEventListener('click', () => moveSection(section.id, direction))
     tools.append(move)
   }
@@ -210,8 +209,7 @@ function updateSectionSequenceRow(row, section, story) {
   if (section.slides.length === 0 && story.sections.length > 1) {
     const remove = document.createElement('button')
     remove.type = 'button'
-    remove.textContent = '×'
-    remove.setAttribute('aria-label', `Remove empty Section ${section.title}`)
+    setPhosphorIconButton(remove, 'trashSimple', `Remove empty Section ${section.title}`)
     remove.addEventListener('click', () => removeSection(section.id))
     tools.append(remove)
   }
@@ -281,8 +279,7 @@ function updateSlideSequenceEntry(entry, section, slide, pageNumber, story) {
     move.type = 'button'
     move.className = 'move-sequence'
     move.dataset.direction = direction
-    move.textContent = direction === 'up' ? '↑' : '↓'
-    move.setAttribute('aria-label', `Move ${lifecycleLabel}: ${displayLabel} ${direction}`)
+    setPhosphorIconButton(move, direction === 'up' ? 'arrowUp' : 'arrowDown', `Move ${lifecycleLabel}: ${displayLabel} ${direction}`)
     move.addEventListener('click', () => moveSlide(section.id, slide.id, direction))
     tools.append(move)
   }

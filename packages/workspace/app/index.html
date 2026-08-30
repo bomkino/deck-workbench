@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' pitchdog-asset:; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' pitchdog-asset:; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#e7edef" />
@@ -43,8 +43,8 @@
 
         <div class="toolbar-actions" aria-label="History and interface controls">
           <div class="history-actions" role="group" aria-label="History">
-            <button id="undo" type="button" disabled aria-label="Undo">↶</button>
-            <button id="redo" type="button" disabled aria-label="Redo">↷</button>
+            <button id="undo" class="icon-button" type="button" disabled aria-label="Undo" title="Undo"><span class="phosphor-icon" aria-hidden="true">&#xE038;</span></button>
+            <button id="redo" class="icon-button" type="button" disabled aria-label="Redo" title="Redo"><span class="phosphor-icon" aria-hidden="true">&#xE036;</span></button>
           </div>
           <label class="interface-control">
             <span>Interface</span>
@@ -118,7 +118,7 @@
               </div>
             </div>
             <div id="plan-empty" class="empty-workspace">
-              <strong>Create or open a Deck.</strong>
+              <strong class="plan-empty-title">Create or open a Deck.</strong>
               <p>Workbench begins after the writing has been divided into Slides.</p>
               <div class="empty-actions">
                 <button id="create-deck" class="primary-action" type="button">New Deck…</button>
@@ -126,6 +126,7 @@
               </div>
             </div>
             <form id="plan-form" class="plan-form" hidden>
+              <div class="plan-form-fields">
               <div class="form-row two-up">
                 <label>
                   <span>Internal title</span>
@@ -205,6 +206,7 @@
                 </div>
                 <div id="supporting-items" class="supporting-items"></div>
               </section>
+              </div>
 
               <footer class="plan-actions">
                 <button id="cut-slide" class="quiet-action" type="button">Move to Cut Bin</button>
@@ -374,6 +376,7 @@
           <aside class="assembly-controls panel" aria-label="Assembly controls">
             <section>
               <h3>Starter Pattern</h3>
+              <p id="assembly-overflow-state" class="assembly-overflow-state" role="status" aria-live="polite" hidden></p>
               <label><span>Pattern</span><select id="pattern-choice" disabled><option value="cover">Cover</option><option value="full-bleed-statement">Full-bleed Statement</option><option value="editorial-body">Editorial Body</option></select></label>
               <label><span>Body binding</span><select id="pattern-body-block" disabled></select></label>
               <button id="apply-pattern" class="primary-action" type="button" disabled>Apply new Assembly</button>
@@ -412,6 +415,7 @@
             <p class="panel-label">Available now</p>
             <h3>Active Slide PDF proof</h3>
             <p>Use this for review only. It is not a designer handoff package.</p>
+            <p id="handoff-export-state" class="handoff-export-state" role="status" aria-live="polite" hidden></p>
             <button id="export-pdf" class="primary-action" type="button" disabled>Export active Slide PDF</button>
           </aside>
         </section>

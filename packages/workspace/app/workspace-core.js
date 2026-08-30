@@ -113,7 +113,7 @@ function workspaceLayoutMode({ viewportWidth: requestedViewportWidth, interfaceS
   if (!Number.isFinite(viewportWidth) || viewportWidth <= 0) throw new RangeError('Viewport width must be positive')
   if (!INTERFACE_SCALE_STEPS.includes(scale)) throw new RangeError('Interface Scale must use an allowed step')
   const remPixels = 16 * scale
-  if (viewportWidth < 56 * remPixels) return 'single-column'
+  if (viewportWidth < 68 * remPixels) return 'single-column'
   if (viewportWidth < 88 * remPixels) return 'two-column'
   return 'four-column'
 }
@@ -362,6 +362,25 @@ function contentPatternLabel(value) {
   }[value] ?? value
 }
 
+const PHOSPHOR_GLYPH_ENTITIES = Object.freeze({
+  arrowUp: '&#xE08E;',
+  arrowDown: '&#xE03E;',
+  trashSimple: '&#xE4A8;',
+})
+
+function phosphorIconMarkup(name) {
+  const glyph = PHOSPHOR_GLYPH_ENTITIES[name]
+  if (!glyph) throw new RangeError(`Unknown Phosphor icon: ${name}`)
+  return `<span class="phosphor-icon" aria-hidden="true">${glyph}</span>`
+}
+
+function setPhosphorIconButton(button, name, label) {
+  button.classList.add('icon-button')
+  button.setAttribute('aria-label', label)
+  button.title = label
+  button.innerHTML = phosphorIconMarkup(name)
+}
+
 const elements = {
   workbench: document.querySelector('.workbench'),
   phaseWorkspaces: document.querySelector('#phase-workspaces'),
@@ -463,6 +482,7 @@ const elements = {
   artboardHeadline: document.querySelector('#artboard-headline'),
   semanticFallback: document.querySelector('#semantic-fallback'),
   compositionLayer: document.querySelector('#composition-layer'),
+  assemblyOverflowState: document.querySelector('#assembly-overflow-state'),
   artboardZoom: document.querySelector('#artboard-zoom'),
   zoomLabel: document.querySelector('#zoom-label'),
   fitArtboard: document.querySelector('#fit-artboard'),
@@ -479,6 +499,7 @@ const elements = {
   applyCrop: document.querySelector('#apply-crop'),
   handoffSummary: document.querySelector('#handoff-summary'),
   handoffList: document.querySelector('#handoff-list'),
+  handoffExportState: document.querySelector('#handoff-export-state'),
   exportPDF: document.querySelector('#export-pdf'),
 }
 

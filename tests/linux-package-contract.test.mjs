@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -10,6 +11,141 @@ import test from 'node:test'
 const execFileAsync = promisify(execFile)
 const journeyVerifierPath = new URL('../scripts/linux/verify-linux-journey-result.mjs', import.meta.url)
 const runtimePackage = JSON.parse(await readFile(new URL('../scripts/linux/runtime-package.json', import.meta.url), 'utf8'))
+const runtimeUIViewports = [
+  { label: 'mac-post-toolbar-proxy', width: 1180, height: 605 },
+  { label: 'compact-desktop', width: 1280, height: 720 },
+]
+const runtimeUIScales = [1, 1.25, 1.5, 1.75]
+
+function runtimeUIRect(left, top, width, height) {
+  return { left, top, right: left + width, bottom: top + height, width, height }
+}
+
+function runtimeUIToolbar(viewport, selector = '.toolbar') {
+  return {
+    selector,
+    present: true,
+    fits: true,
+    clientWidth: viewport.width,
+    scrollWidth: viewport.width,
+    rect: runtimeUIRect(0, 0, viewport.width, 64),
+    children: [],
+  }
+}
+
+function runtimeUIConfiguration(viewport, scale) {
+  return {
+    requestedViewport: viewport,
+    viewport: { width: viewport.width, height: viewport.height },
+    scale,
+    layout: scale === 1.75 ? 'single-column' : 'two-column',
+    fontsReady: true,
+    fontsLoaded: true,
+    fontLoads: ['PD Head', 'PD Head Alt', 'PD Body', 'PD Body Alt', 'PD Eyebrow', 'Phosphor']
+      .map((family) => ({ family, faceCount: 1, check: true })),
+    computedFamilies: {
+      body: '"PD Body", sans-serif',
+      head: '"PD Head", sans-serif',
+      eyebrow: '"PD Eyebrow", sans-serif',
+      icon: 'Phosphor',
+    },
+    exactViewport: true,
+  }
+}
+
+function runtimeUICase(viewport, scale, kind) {
+  const configuration = runtimeUIConfiguration(viewport, scale)
+  if (kind === 'cold') {
+    const geometry = {
+      createDeckRect: runtimeUIRect(400, 390, 170, 48),
+      openDeckRect: runtimeUIRect(590, 390, 170, 48),
+      createDeckFullyVisible: true,
+      openDeckFullyVisible: true,
+      toolbar: runtimeUIToolbar(viewport),
+      toolbarFitsHorizontally: true,
+      documentScrollTop: 0,
+      bodyScrollTop: 0,
+    }
+    return { viewport, scale, configuration, geometry, ok: true }
+  }
+
+  const geometry = {
+    curate: {
+      mediaScrollHeight: 320,
+      virtualCardHeight: 240,
+      mediaScrollFitsVirtualCard: true,
+      maxBadgeCard: {
+        copyClientWidth: 210,
+        copyScrollWidth: 210,
+        copyClientHeight: 132,
+        copyScrollHeight: 132,
+        badgesClientWidth: 194,
+        badgesScrollWidth: 194,
+        everyBadgeFits: true,
+        copyInsideCard: true,
+        noClipping: true,
+      },
+      maxBadgeCardFits: true,
+      toolbars: [
+        runtimeUIToolbar(viewport),
+        runtimeUIToolbar(viewport, '.media-toolbar'),
+        runtimeUIToolbar(viewport, '.media-source-bar'),
+        runtimeUIToolbar(viewport, '.media-action-bar'),
+      ],
+      noToolbarHorizontalClipping: true,
+    },
+    handoff: {
+      introRect: runtimeUIRect(0, 64, viewport.width, 180),
+      copyRect: runtimeUIRect(24, 150, viewport.width - 48, 60),
+      introNotClipped: true,
+      introFullyVisible: true,
+      globalToolbar: runtimeUIToolbar(viewport),
+    },
+    assemble: {
+      artboardVisibleRatio: 0.72,
+      artboardMajorityInitiallyVisible: true,
+      toolbars: [runtimeUIToolbar(viewport), runtimeUIToolbar(viewport, '.stage-toolbar')],
+      noToolbarHorizontalClipping: true,
+    },
+    documentScrollTop: 0,
+    bodyScrollTop: 0,
+  }
+  return { viewport, scale, configuration, geometry, ok: true }
+}
+
+function runtimeUIEvidence() {
+  return {
+    schemaVersion: 1,
+    viewports: runtimeUIViewports,
+    scales: runtimeUIScales,
+    cold: runtimeUIViewports.flatMap((viewport) => runtimeUIScales
+      .map((scale) => runtimeUICase(viewport, scale, 'cold'))),
+    document: runtimeUIViewports.flatMap((viewport) => runtimeUIScales
+      .map((scale) => runtimeUICase(viewport, scale, 'document'))),
+    screenshots: [
+      'ui-cold-1180x605-175.png',
+      'ui-assemble-1180x605-175.png',
+      'ui-handoff-1180x605-175.png',
+      'ui-curate-1180x605-175.png',
+    ].map((file, index) => {
+      const bytes = runtimeUIScreenshotBytes(index)
+      return {
+        file,
+        width: 1180,
+        height: 605,
+        bytes: bytes.byteLength,
+        sha256: createHash('sha256').update(bytes).digest('hex'),
+      }
+    }),
+    ok: true,
+  }
+}
+
+function runtimeUIScreenshotBytes(index) {
+  const bytes = Buffer.alloc(128, index + 1)
+  Buffer.from('89504e470d0a1a0a', 'hex').copy(bytes)
+  return bytes
+}
 
 const [
   packageJSON,
@@ -149,12 +285,18 @@ test('journey evidence accepts distinct process instances and rejects a reused i
       artboardZoom: 0.5,
       persistedInterfaceScale: 1.25,
       persistedArtboardZoom: 0.5,
+      runtimeUI: runtimeUIEvidence(),
       pdfBytes: 1024,
       pdfSHA256: 'a'.repeat(64),
     },
   }
 
   try {
+    await Promise.all(result.checks.runtimeUI.screenshots
+      .map((screenshot, index) => writeFile(
+        join(directory, screenshot.file),
+        runtimeUIScreenshotBytes(index),
+      )))
     await writeFile(resultPath, `${JSON.stringify(result)}\n`)
     await execFileAsync(process.execPath, [fileURLToPath(journeyVerifierPath), resultPath, 'test AppImage'])
 
@@ -163,6 +305,23 @@ test('journey evidence accepts distinct process instances and rejects a reused i
     await assert.rejects(
       execFileAsync(process.execPath, [fileURLToPath(journeyVerifierPath), resultPath, 'test AppImage']),
       /full application process relaunch was not proved/,
+    )
+
+    result.processLifecycle.reopenInstanceId = 'reopen-instance'
+    result.checks.runtimeUI.cold[0].geometry.createDeckFullyVisible = false
+    await writeFile(resultPath, `${JSON.stringify(result)}\n`)
+    await assert.rejects(
+      execFileAsync(process.execPath, [fileURLToPath(journeyVerifierPath), resultPath, 'test AppImage']),
+      /runtime UI cold actions or toolbar clip/,
+    )
+
+    result.checks.runtimeUI.cold[0].geometry.createDeckFullyVisible = true
+    result.checks.runtimeUI.document[0].geometry.curate.maxBadgeCard.copyScrollWidth = 211.5
+    result.checks.runtimeUI.document[0].geometry.curate.maxBadgeCardFits = false
+    await writeFile(resultPath, `${JSON.stringify(result)}\n`)
+    await assert.rejects(
+      execFileAsync(process.execPath, [fileURLToPath(journeyVerifierPath), resultPath, 'test AppImage']),
+      /runtime UI Curate geometry clips/,
     )
   } finally {
     await rm(directory, { recursive: true, force: true })

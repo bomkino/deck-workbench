@@ -60,7 +60,12 @@ test "$(plutil -extract LSMinimumSystemVersion raw "$APP/Contents/Info.plist")" 
 test "$(plutil -extract DeckWorkbenchCommit raw "$APP/Contents/Info.plist")" = "$COMMIT_SHA"
 test "$(plutil -extract CFBundleShortVersionString raw "$APP/Contents/Info.plist")" = "0.0.1"
 test "$(plutil -extract CFBundleIconFile raw "$APP/Contents/Info.plist")" = "DeckWorkbench.icns"
+test "$(plutil -extract ATSApplicationFontsPath raw "$APP/Contents/Info.plist")" = "Fonts"
 test -s "$APP/Contents/Resources/DeckWorkbench.icns"
+node "$REPOSITORY_ROOT/scripts/verify-workspace-type-assets.mjs" \
+  "$APP/Contents/Resources/Workspace" \
+  "$APP/Contents/Resources/Legal" \
+  "$APP/Contents/Resources/Fonts/Phosphor.ttf"
 
 DOCUMENT="$JOURNEY_ROOT/Tracer.pitchdeck"
 CREATE_RESULT="$JOURNEY_ROOT/create-result.json"

@@ -25,8 +25,11 @@ test('every static shared-workspace action declares its button behaviour explici
 
 test('every packaged control retains at least a 44 pixel target at every Interface Scale step', () => {
   const root = styles.match(/:root \{([\s\S]*?)\n\}/)?.[1] ?? ''
-  assert.match(root, /--control-size:\s*max\(2\.75rem, 44px\)/)
-  for (const scale of [0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75]) assert.ok(Math.max(2.75 * 16 * scale, 44) >= 44)
+  const control = root.match(/--control-size:\s*max\(([\d.]+)rem,\s*([\d.]+)px\)/)
+  assert.ok(control, 'control size must combine scalable rem geometry with a physical pixel floor')
+  for (const scale of [0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75]) {
+    assert.ok(Math.max(Number(control[1]) * 16 * scale, Number(control[2])) >= 44)
+  }
   assert.match(styles, /font-size: calc\(16px \* var\(--interface-scale\)\)/)
   assert.match(styles, /button, input, select, textarea, \.slide-row, \.section-row \{ min-height: var\(--control-size\); \}/)
   assert.match(hardening, /select \{[\s\S]*-webkit-appearance: none;[\s\S]*height: var\(--control-size\);[\s\S]*min-height: var\(--control-size\);/)

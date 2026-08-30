@@ -236,7 +236,9 @@ test('default four-region layout keeps Curate controls inside the 1440px wall', 
   assert.match(styles, /\.slide-media-actions \{[^}]*flex-wrap: wrap/)
   assert.match(styles, /\.media-action-bar \{[^}]*grid-template-columns: minmax\(10rem, 0\.44fr\) minmax\(0, 1fr\)/)
   assert.doesNotMatch(styles, /\.media-action-bar \{[^}]*auto auto/)
-  assert.match(styles, /\.project-media-judgment \{ position: relative;/)
+  assert.match(styles, /\.media-action-bar \{ position: relative;/)
+  assert.match(styles, /\.project-media-judgment \{ position: static;/)
+  assert.match(styles, /\.project-media-actions \{ position: absolute;[^}]*width: min\(25rem, calc\(100% - 1\.5rem\), calc\(100vw - 2rem\)\)/)
 })
 
 test('shared workspace build preserves Curate script order', () => {

@@ -7,6 +7,17 @@ APP="$BUILD_ROOT/Deck Workbench.app"
 ARTIFACT_ROOT="$REPOSITORY_ROOT/artifacts"
 COMMIT_SHA="$(git -C "$REPOSITORY_ROOT" rev-parse HEAD)"
 
+verify_font_sha256() {
+  local path="$1"
+  local expected="$2"
+  local actual
+  actual="$(shasum -a 256 "$path" | awk '{print $1}')"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "NativeFontGate: unexpected SHA-256 for $path" >&2
+    exit 2
+  fi
+}
+
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "NativeGate: macOS is required" >&2
   exit 2
@@ -24,6 +35,10 @@ if (( MACOS_MAJOR < 26 )); then
 fi
 
 cd "$REPOSITORY_ROOT"
+verify_font_sha256 apps/macos/Resources/Fonts/pd-body-400.otf 195288dfbb409db3624ebfc3ba167aa6309c6eedd321b8a09fcf834e05fdd688
+verify_font_sha256 apps/macos/Resources/Fonts/pd-body-600.otf dd46bb32b881122bd815befdb0af8a272ec648b654d878c38c975e8cb8429cd9
+verify_font_sha256 apps/macos/Resources/Fonts/pd-body-700.otf 78a04f141bb723d746aa40802bc4a365277f489fab09e11eb78e9b591d90fdbc
+verify_font_sha256 apps/macos/Resources/Fonts/Phosphor.ttf 06b91e022b7ee899a63efced879392a74f0bacbda54e4467e9f663220d173a10
 npm run generate
 node scripts/build-packaged-tracer.mjs
 
@@ -41,6 +56,15 @@ cp build/generated/workspace/index.html "$APP/Contents/Resources/Workspace/index
 cp build/generated/workspace/styles.css "$APP/Contents/Resources/Workspace/styles.css"
 cp build/generated/workspace/workspace.js "$APP/Contents/Resources/Workspace/workspace.js"
 cp build/generated/workspace/workbench-mark.svg "$APP/Contents/Resources/Workspace/workbench-mark.svg"
+mkdir -p "$APP/Contents/Resources/Workspace/fonts/v13" "$APP/Contents/Resources/Workspace/icons/phosphor" "$APP/Contents/Resources/Fonts" "$APP/Contents/Resources/Legal"
+cp build/generated/workspace/fonts/v13/*.woff2 "$APP/Contents/Resources/Workspace/fonts/v13/"
+cp build/generated/workspace/icons/phosphor/Phosphor.woff2 "$APP/Contents/Resources/Workspace/icons/phosphor/Phosphor.woff2"
+cp apps/macos/Resources/Fonts/pd-body-400.otf "$APP/Contents/Resources/Fonts/pd-body-400.otf"
+cp apps/macos/Resources/Fonts/pd-body-600.otf "$APP/Contents/Resources/Fonts/pd-body-600.otf"
+cp apps/macos/Resources/Fonts/pd-body-700.otf "$APP/Contents/Resources/Fonts/pd-body-700.otf"
+cp apps/macos/Resources/Fonts/Phosphor.ttf "$APP/Contents/Resources/Fonts/Phosphor.ttf"
+cp -R legal/fontblind-v13 "$APP/Contents/Resources/Legal/fontblind-v13"
+cp -R legal/phosphor-icons "$APP/Contents/Resources/Legal/phosphor-icons"
 scripts/build-macos-icon.sh "$APP/Contents/Resources/DeckWorkbench.icns"
 cp build/generated/bridge.generated.js "$APP/Contents/Resources/Workspace/bridge.generated.js"
 cp build/generated/deck-kernel.js "$APP/Contents/Resources/Kernel/deck-kernel.js"

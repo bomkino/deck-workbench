@@ -19,6 +19,8 @@ function renderAssemble() {
     elements.artboardHeadline.textContent = 'No Deck open'
     elements.artboardIntent.textContent = '—'
     elements.compositionLayer.replaceChildren()
+    elements.assemblyOverflowState.hidden = true
+    elements.assemblyOverflowState.textContent = ''
     elements.semanticFallback.hidden = false
     syncVisualControls(null)
     applyScales()
@@ -41,8 +43,15 @@ function renderComposition(next) {
   elements.compositionLayer.replaceChildren()
   const composition = next.composition
   elements.semanticFallback.hidden = Boolean(composition)
+  elements.assemblyOverflowState.hidden = true
+  elements.assemblyOverflowState.textContent = ''
   if (!composition) return
-  composition.elements.forEach((element, index) => {
+  appendCompositionElements(elements.compositionLayer, next)
+  scheduleCompositionOverflowCheck()
+}
+
+function appendCompositionElements(layer, next) {
+  next.composition?.elements.forEach((element, index) => {
     const node = document.createElement('div')
     node.className = `composition-element composition-${element.kind === 'image' ? 'image-placeholder' : element.kind}`
     node.dataset.elementId = element.id
@@ -53,6 +62,7 @@ function renderComposition(next) {
     node.style.zIndex = String(index + 1)
     if (element.kind === 'text') {
       const content = next.contentBlocks.find((block) => block.id === element.contentBlockId)
+      node.dataset.contentRole = content?.role ?? element.contentRole ?? element.contentSlot ?? 'text'
       node.textContent = content?.plainText ?? `Missing Content Block · ${element.contentBlockId ?? 'unbound'}`
       node.setAttribute('aria-label', `${compositionElementLabel(element)} from canonical Story`)
     } else if (element.kind === 'image') {
@@ -65,8 +75,43 @@ function renderComposition(next) {
       node.textContent = compositionElementLabel(element)
       node.setAttribute('aria-label', compositionElementLabel(element))
     }
-    elements.compositionLayer.append(node)
+    layer.append(node)
   })
+}
+
+function compositionOverflowNodes(layer) {
+  return [...layer.querySelectorAll('.composition-element')]
+    .filter((node) => node.scrollWidth > node.clientWidth + 1 || node.scrollHeight > node.clientHeight + 1)
+}
+
+function compositionOverflowCountForProjection(next) {
+  if (!next?.composition) return 0
+  const surface = document.createElement('div')
+  surface.className = 'artboard composition-preflight-artboard'
+  surface.setAttribute('aria-hidden', 'true')
+  surface.inert = true
+  const layer = document.createElement('div')
+  layer.className = 'composition-preflight-layer'
+  surface.append(layer)
+  appendCompositionElements(layer, next)
+  document.body.append(surface)
+  try {
+    return compositionOverflowNodes(layer).length
+  } finally {
+    surface.remove()
+  }
+}
+
+function scheduleCompositionOverflowCheck() {
+  const check = () => {
+    const clipped = compositionOverflowNodes(elements.compositionLayer)
+    elements.assemblyOverflowState.hidden = clipped.length === 0
+    elements.assemblyOverflowState.textContent = clipped.length
+      ? `${clipped.length} authored element${clipped.length === 1 ? '' : 's'} exceed the composition frame. Shorten the copy or choose another Pattern before handoff.`
+      : ''
+  }
+  requestAnimationFrame(check)
+  void document.fonts?.ready.then(check)
 }
 
 function syncVisualControls(next) {
