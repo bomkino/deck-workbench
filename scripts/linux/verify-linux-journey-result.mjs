@@ -93,6 +93,16 @@ const toolbarFits = (toolbar, width) => toolbar?.present !== false
   && Array.isArray(toolbar.children)
   && toolbar.children.every((child) => child.rect?.left >= toolbar.rect.left - 1
     && child.rect?.right <= toolbar.rect.right + 1)
+const scrollOwnerAtOrigin = (owner) => Number.isFinite(owner?.scrollTop)
+  && owner.scrollTop === 0
+  && Number.isFinite(owner.scrollLeft)
+  && owner.scrollLeft === 0
+  && Number.isFinite(owner.clientWidth)
+  && owner.clientWidth > 0
+  && Number.isFinite(owner.scrollWidth)
+  && owner.scrollWidth <= owner.clientWidth + 1
+const scrollOwnersAtOrigin = (owners, expectedNames) => expectedNames
+  .every((name) => scrollOwnerAtOrigin(owners?.[name]))
 
 if (runtimeUI.schemaVersion !== 1
   || runtimeUI.ok !== true
@@ -135,8 +145,15 @@ function verifyRuntimeUICases(cases, kind) {
     }
 
     const geometry = entry.geometry ?? {}
-    if (geometry.documentScrollTop !== 0 || geometry.bodyScrollTop !== 0) {
-      throw new Error(`${label}: runtime UI ${kind} moved the document scroll owner at ${key}`)
+    const expectedScrollOwners = kind === 'cold'
+      ? ['document', 'body', 'workbench', 'phaseWorkspaces', 'activePhase']
+      : ['document', 'body', 'workbench', 'phaseWorkspaces']
+    if (geometry.documentScrollTop !== 0
+      || geometry.documentScrollLeft !== 0
+      || geometry.bodyScrollTop !== 0
+      || geometry.bodyScrollLeft !== 0
+      || !scrollOwnersAtOrigin(geometry.scrollOwners, expectedScrollOwners)) {
+      throw new Error(`${label}: runtime UI ${kind} scroll ownership drifted at ${key}`)
     }
     if (kind === 'cold') {
       if (geometry.createDeckFullyVisible !== true
@@ -152,6 +169,9 @@ function verifyRuntimeUICases(cases, kind) {
 
     const curate = geometry.curate ?? {}
     const maxBadgeCard = curate.maxBadgeCard ?? {}
+    if (!scrollOwnerAtOrigin(curate.scroll)) {
+      throw new Error(`${label}: runtime UI Curate scroll ownership drifted at ${key}`)
+    }
     if (curate.mediaScrollFitsVirtualCard !== true
       || !Number.isFinite(curate.mediaScrollHeight)
       || !Number.isFinite(curate.virtualCardHeight)
@@ -180,6 +200,9 @@ function verifyRuntimeUICases(cases, kind) {
     }
 
     const handoff = geometry.handoff ?? {}
+    if (!scrollOwnerAtOrigin(handoff.scroll)) {
+      throw new Error(`${label}: runtime UI Handoff scroll ownership drifted at ${key}`)
+    }
     if (handoff.introNotClipped !== true
       || handoff.introFullyVisible !== true
       || !numberCloseTo(handoff.introRect?.height, handoff.introRect?.bottom - handoff.introRect?.top)
@@ -190,6 +213,9 @@ function verifyRuntimeUICases(cases, kind) {
     }
 
     const assemble = geometry.assemble ?? {}
+    if (!scrollOwnerAtOrigin(assemble.scroll)) {
+      throw new Error(`${label}: runtime UI Assemble scroll ownership drifted at ${key}`)
+    }
     if (assemble.artboardMajorityInitiallyVisible !== true
       || !Number.isFinite(assemble.artboardVisibleRatio)
       || assemble.artboardVisibleRatio < 0.5

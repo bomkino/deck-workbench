@@ -774,6 +774,12 @@ async function configureRuntimeUI(viewport, scale) {
 
 async function inspectColdRuntimeUI() {
   return mainWindow.webContents.executeJavaScript(`(() => {
+    const scrollEvidence = (element) => element ? ({
+      scrollTop: element.scrollTop,
+      scrollLeft: element.scrollLeft,
+      clientWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+    }) : null;
     const rect = (element) => {
       const value = element.getBoundingClientRect();
       return {
@@ -798,6 +804,9 @@ async function inspectColdRuntimeUI() {
     const toolbar = document.querySelector('.toolbar');
     const createDeck = document.querySelector('#create-deck');
     const openDeck = document.querySelector('#open-deck');
+    const workbench = document.querySelector('.workbench');
+    const phaseWorkspaces = document.querySelector('.phase-workspaces');
+    const activePhaseView = document.querySelector('.phase-view.is-active');
     const toolbarRect = toolbar.getBoundingClientRect();
     const toolbarChildren = [...toolbar.children]
       .filter((child) => !child.hidden && getComputedStyle(child).display !== 'none')
@@ -820,8 +829,17 @@ async function inspectColdRuntimeUI() {
       toolbarFitsHorizontally: toolbar.scrollWidth <= toolbar.clientWidth + 1
         && toolbarChildren.every((child) => child.rect.left >= toolbarRect.left - 1
           && child.rect.right <= toolbarRect.right + 1),
+      scrollOwners: {
+        document: scrollEvidence(document.scrollingElement),
+        body: scrollEvidence(document.body),
+        workbench: scrollEvidence(workbench),
+        phaseWorkspaces: scrollEvidence(phaseWorkspaces),
+        activePhase: scrollEvidence(activePhaseView),
+      },
       documentScrollTop: document.scrollingElement.scrollTop,
+      documentScrollLeft: document.scrollingElement.scrollLeft,
       bodyScrollTop: document.body.scrollTop,
+      bodyScrollLeft: document.body.scrollLeft,
     };
   })()`, true)
 }
@@ -829,6 +847,12 @@ async function inspectColdRuntimeUI() {
 async function inspectDocumentRuntimeUI() {
   return mainWindow.webContents.executeJavaScript(`(async () => {
     const settle = () => new Promise((resolveFrame) => requestAnimationFrame(() => requestAnimationFrame(resolveFrame)));
+    const scrollEvidence = (element) => element ? ({
+      scrollTop: element.scrollTop,
+      scrollLeft: element.scrollLeft,
+      clientWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+    }) : null;
     const rect = (element) => {
       const value = element.getBoundingClientRect();
       return {
@@ -883,7 +907,6 @@ async function inspectDocumentRuntimeUI() {
     const activate = async (phase) => {
       await enterPhaseForSlide(phase);
       const view = document.querySelector('[data-phase-view="' + phase + '"]');
-      view.scrollTop = 0;
       await settle();
       return view;
     };
@@ -959,6 +982,7 @@ async function inspectDocumentRuntimeUI() {
       maxBadgeCardFits: badgeProbeEvidence.noClipping,
       toolbars: curateToolbars,
       noToolbarHorizontalClipping: curateToolbars.every((entry) => entry.fits),
+      scroll: scrollEvidence(curateView),
     };
 
     const handoffView = await activate('handoff');
@@ -974,6 +998,7 @@ async function inspectDocumentRuntimeUI() {
         && copyRect.bottom <= introRect.bottom + 1,
       introFullyVisible: intersectionRatio(handoffIntro, handoffView) >= 0.999,
       globalToolbar: toolbarEvidence('.toolbar'),
+      scroll: scrollEvidence(handoffView),
     };
 
     const assembleView = await activate('assemble');
@@ -988,14 +1013,25 @@ async function inspectDocumentRuntimeUI() {
       artboardMajorityInitiallyVisible: intersectionRatio(artboard, [stageScroll, assembleView]) >= 0.5,
       toolbars: assembleToolbars,
       noToolbarHorizontalClipping: assembleToolbars.every((entry) => entry.fits),
+      scroll: scrollEvidence(assembleView),
     };
 
+    const workbench = document.querySelector('.workbench');
+    const phaseWorkspaces = document.querySelector('.phase-workspaces');
     return {
       curate,
       handoff,
       assemble,
+      scrollOwners: {
+        document: scrollEvidence(document.scrollingElement),
+        body: scrollEvidence(document.body),
+        workbench: scrollEvidence(workbench),
+        phaseWorkspaces: scrollEvidence(phaseWorkspaces),
+      },
       documentScrollTop: document.scrollingElement.scrollTop,
+      documentScrollLeft: document.scrollingElement.scrollLeft,
       bodyScrollTop: document.body.scrollTop,
+      bodyScrollLeft: document.body.scrollLeft,
     };
   })()`, true)
 }
@@ -1004,7 +1040,17 @@ async function presentRuntimePhaseForScreenshot(phase) {
   await mainWindow.webContents.executeJavaScript(`(async () => {
     await enterPhaseForSlide(${JSON.stringify(phase)});
     const view = document.querySelector('[data-phase-view="${phase}"]');
-    view.scrollTop = 0;
+    const screenshotOwners = [
+      document.scrollingElement,
+      document.body,
+      document.querySelector('.workbench'),
+      document.querySelector('.phase-workspaces'),
+      view,
+    ];
+    for (const owner of screenshotOwners) {
+      owner.scrollTop = 0;
+      owner.scrollLeft = 0;
+    }
     await new Promise((resolveFrame) => requestAnimationFrame(() => requestAnimationFrame(resolveFrame)));
   })()`, true)
 }
@@ -1023,6 +1069,21 @@ async function captureRuntimeUIScreenshot(outputDirectory, name) {
   }
 }
 
+function runtimeUIScrollOwnerPassed(owner) {
+  return Number.isFinite(owner?.scrollTop)
+    && owner.scrollTop === 0
+    && Number.isFinite(owner.scrollLeft)
+    && owner.scrollLeft === 0
+    && Number.isFinite(owner.clientWidth)
+    && owner.clientWidth > 0
+    && Number.isFinite(owner.scrollWidth)
+    && owner.scrollWidth <= owner.clientWidth + 1
+}
+
+function runtimeUIScrollOwnersPassed(owners, expectedNames) {
+  return expectedNames.every((name) => runtimeUIScrollOwnerPassed(owners?.[name]))
+}
+
 function runtimeUICasePassed(entry, kind) {
   if (!entry.configuration.exactViewport
     || !entry.configuration.fontsReady
@@ -1032,7 +1093,12 @@ function runtimeUICasePassed(entry, kind) {
       && entry.geometry.openDeckFullyVisible
       && entry.geometry.toolbarFitsHorizontally
       && entry.geometry.documentScrollTop === 0
+      && entry.geometry.documentScrollLeft === 0
       && entry.geometry.bodyScrollTop === 0
+      && entry.geometry.bodyScrollLeft === 0
+      && runtimeUIScrollOwnersPassed(entry.geometry.scrollOwners, [
+        'document', 'body', 'workbench', 'phaseWorkspaces', 'activePhase',
+      ])
   }
   return entry.geometry.curate.mediaScrollFitsVirtualCard
     && entry.geometry.curate.maxBadgeCardFits
@@ -1043,7 +1109,14 @@ function runtimeUICasePassed(entry, kind) {
     && entry.geometry.assemble.artboardMajorityInitiallyVisible
     && entry.geometry.assemble.noToolbarHorizontalClipping
     && entry.geometry.documentScrollTop === 0
+    && entry.geometry.documentScrollLeft === 0
     && entry.geometry.bodyScrollTop === 0
+    && entry.geometry.bodyScrollLeft === 0
+    && runtimeUIScrollOwnersPassed(entry.geometry.scrollOwners, [
+      'document', 'body', 'workbench', 'phaseWorkspaces',
+    ])
+    && [entry.geometry.curate, entry.geometry.handoff, entry.geometry.assemble]
+      .every((phase) => runtimeUIScrollOwnerPassed(phase.scroll))
 }
 
 async function inspectPackagedColdRuntimeUI(outputDirectory) {
