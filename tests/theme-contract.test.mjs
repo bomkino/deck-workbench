@@ -22,6 +22,7 @@ test('workbench offers Light, Dark, and System without changing layout geometry'
   assert.match(styles, /color-scheme: dark/)
   assert.match(styles, /--paper: #171a1c/)
   assert.doesNotMatch(styles, /data-theme-effective="dark"[^}]*--(?:interface-scale|artboard-zoom|space-|control-size)/)
+  assert.match(styles, /data-workspace-layout="single-column"[^}]*\.theme-control > span[^}]*display: none/)
   assert.match(core, /function applyThemePreference\(preference\)/)
   assert.match(workspace, /themeMediaQuery\?\.addEventListener\('change'/)
 })

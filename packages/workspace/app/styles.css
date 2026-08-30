@@ -456,6 +456,7 @@ html[data-workspace-layout="single-column"] .brand-cluster { grid-area: brand; b
 html[data-workspace-layout="single-column"] .brand-mark { width: 3rem; height: 3rem; }
 html[data-workspace-layout="single-column"] .phase-navigation { grid-area: phases; border-top: 1px solid var(--rule); }
 html[data-workspace-layout="single-column"] .toolbar-actions { grid-area: actions; position: static; justify-content: flex-end; flex-wrap: wrap; }
+html[data-workspace-layout="single-column"] .theme-control > span, html[data-workspace-layout="single-column"] .interface-control > span { display: none; }
 html[data-workspace-layout="single-column"] .plan-phase { grid-template-areas: "sequence" "map" "editor"; grid-template-columns: minmax(0, 1fr); grid-template-rows: 22rem 24rem minmax(28rem, 1fr); overflow: auto; }
 html[data-workspace-layout="single-column"] .sequence, html[data-workspace-layout="single-column"] .deck-map-panel { border-right: 0; border-bottom: 1px solid var(--rule); }
 html[data-workspace-layout="single-column"] .form-row.two-up, html[data-workspace-layout="single-column"] .form-row.three-up { grid-template-columns: minmax(0, 1fr); }
