@@ -10,6 +10,7 @@
     { "name": "deck.redo", "swiftCase": "deckRedo", "javascriptName": "redo" },
     { "name": "deck.exportPDF", "swiftCase": "deckExportPDF", "javascriptName": "exportPDF" },
     { "name": "ui.getPreferences", "swiftCase": "uiGetPreferences", "javascriptName": "getPreferences" },
+    { "name": "ui.setTheme", "swiftCase": "uiSetTheme", "javascriptName": "setTheme" },
     { "name": "ui.setInterfaceScale", "swiftCase": "uiSetInterfaceScale", "javascriptName": "setInterfaceScale" },
     { "name": "ui.setArtboardZoom", "swiftCase": "uiSetArtboardZoom", "javascriptName": "setArtboardZoom" }
   ]

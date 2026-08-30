@@ -10,12 +10,21 @@ import {
   parsePreferences,
 } from '../apps/linux/preferences.mjs'
 
-test('preference parsing accepts only the bounded schema', () => {
+test('preference parsing accepts the bounded theme schema', () => {
+  assert.deepEqual(parsePreferences(JSON.stringify({
+    schemaVersion: 2,
+    theme: 'dark',
+    interfaceScale: 1.25,
+    artboardZoom: 0.5,
+  })), { theme: 'dark', interfaceScale: 1.25, artboardZoom: 0.5 })
+})
+
+test('preference parsing migrates version one to System theme', () => {
   assert.deepEqual(parsePreferences(JSON.stringify({
     schemaVersion: 1,
     interfaceScale: 1.25,
     artboardZoom: 0.5,
-  })), { interfaceScale: 1.25, artboardZoom: 0.5 })
+  })), { theme: 'system', interfaceScale: 1.25, artboardZoom: 0.5 })
 })
 
 test('preference parsing rejects extra keys and out-of-range values', () => {
@@ -32,6 +41,15 @@ test('preference parsing rejects extra keys and out-of-range values', () => {
     () => parsePreferences(JSON.stringify({
       schemaVersion: 1,
       interfaceScale: 9,
+      artboardZoom: 0.35,
+    })),
+    (error) => error.name === 'InvalidPreferences',
+  )
+  assert.throws(
+    () => parsePreferences(JSON.stringify({
+      schemaVersion: 2,
+      theme: 'sepia',
+      interfaceScale: 1,
       artboardZoom: 0.35,
     })),
     (error) => error.name === 'InvalidPreferences',

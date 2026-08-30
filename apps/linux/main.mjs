@@ -9,6 +9,7 @@ import {
   ipcMain,
   Menu,
   nativeImage,
+  nativeTheme,
   protocol,
   session,
   shell,
@@ -18,7 +19,7 @@ import { bridgeChannel, readBridgeContract } from './bridge-contract.mjs'
 import { performNativeAction } from './native-action.mjs'
 import { SerialOperationQueue } from './serial-operation-queue.mjs'
 import { UtilityKernelClient } from './utility-client.mjs'
-import { defaultPreferences, interfaceScaleSteps, loadPreferencesFile } from './preferences.mjs'
+import { defaultPreferences, interfaceScaleSteps, loadPreferencesFile, themeValues } from './preferences.mjs'
 import { MediaGrantStore } from './media-grants.mjs'
 import { LinuxMediaSession } from './media-session.mjs'
 import { settleRuntimeViewport } from './runtime-viewport.mjs'
@@ -266,6 +267,7 @@ function preferencesPath() {
 async function loadPreferences() {
   const loaded = await loadPreferencesFile(preferencesPath())
   preferences = loaded.preferences
+  nativeTheme.themeSource = preferences.theme
   if (loaded.warning) process.stderr.write(`InvalidPreferences: ${loaded.warning}
 `)
 }
@@ -273,9 +275,10 @@ async function loadPreferences() {
 async function persistPreferences(next) {
   await writeAtomically(
     preferencesPath(),
-    `${JSON.stringify({ schemaVersion: 1, ...next }, null, 2)}\n`,
+    `${JSON.stringify({ schemaVersion: 2, ...next }, null, 2)}\n`,
   )
   preferences = next
+  nativeTheme.themeSource = preferences.theme
   return { ...preferences }
 }
 
@@ -510,6 +513,13 @@ async function dispatchBridge(method, rawPayload = {}) {
     case 'deck.redo': return utility.request('document.redo')
     case 'deck.exportPDF': return presentPDFExport()
     case 'ui.getPreferences': return { ...preferences }
+    case 'ui.setTheme': {
+      const value = String(payload.value ?? '')
+      if (!themeValues.includes(value)) {
+        throw namedError('InvalidCommand', 'Theme must be System, Light, or Dark')
+      }
+      return preferencesQueue.run(() => persistPreferences({ ...preferences, theme: value }))
+    }
     case 'ui.setInterfaceScale': {
       const value = Number(payload.value)
       if (!interfaceScaleSteps.includes(value)) {
@@ -636,6 +646,7 @@ async function createWindow({ hidden = false } = {}) {
     height: 900,
     show: !hidden,
     title: 'Deck Workbench',
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#171a1c' : '#e7edef',
     webPreferences: {
       preload: preloadPath,
       nodeIntegration: false,
@@ -1302,25 +1313,37 @@ async function captureRuntimeUIScreenshot(outputDirectory, name) {
 async function captureRepresentativeRuntimeUIScreenshots(outputDirectory) {
   const screenshots = []
   const previousArtboardZoom = await mainWindow.webContents.executeJavaScript('artboardZoom', true)
-  for (const phase of ['plan', 'curate', 'assemble', 'handoff']) {
-    await presentRuntimePhaseForScreenshot(phase)
-    if (phase === 'assemble') {
-      await mainWindow.webContents.executeJavaScript(`(() => {
-        artboardZoom = 0.65;
-        elements.artboardZoom.value = String(artboardZoom);
-        applyScales();
-      })()`, true)
-      await new Promise((resolveFrame) => setTimeout(resolveFrame, 50))
+  const previousTheme = preferences.theme
+  for (const theme of ['light', 'dark']) {
+    await mainWindow.webContents.executeJavaScript(`(async () => {
+      const result = await globalThis.deckBridge.setTheme({ value: ${JSON.stringify(theme)} });
+      applyThemePreference(result.theme);
+      await new Promise((resolveFrame) => requestAnimationFrame(() => requestAnimationFrame(resolveFrame)));
+    })()`, true)
+    for (const phase of ['plan', 'curate', 'assemble', 'handoff']) {
+      await presentRuntimePhaseForScreenshot(phase)
+      if (phase === 'assemble') {
+        await mainWindow.webContents.executeJavaScript(`(() => {
+          artboardZoom = 0.65;
+          elements.artboardZoom.value = String(artboardZoom);
+          applyScales();
+        })()`, true)
+        await new Promise((resolveFrame) => setTimeout(resolveFrame, 50))
+      }
+      screenshots.push(await captureRuntimeUIScreenshot(
+        outputDirectory,
+        `ui-${phase}-${theme}-1440x900-100.png`,
+      ))
     }
-    screenshots.push(await captureRuntimeUIScreenshot(
-      outputDirectory,
-      `ui-${phase}-1440x900-100.png`,
-    ))
   }
   await mainWindow.webContents.executeJavaScript(`(() => {
     artboardZoom = ${JSON.stringify(previousArtboardZoom)};
     elements.artboardZoom.value = String(artboardZoom);
     applyScales();
+  })()`, true)
+  await mainWindow.webContents.executeJavaScript(`(async () => {
+    const result = await globalThis.deckBridge.setTheme({ value: ${JSON.stringify(previousTheme)} });
+    applyThemePreference(result.theme);
   })()`, true)
   return screenshots
 }
@@ -1476,6 +1499,7 @@ async function runPackagedTracerCreate(outputDirectory) {
   const redoneResult = await invokeInWorkspace('redo')
   const redone = redoneResult.projection
   await renderProjection(redone)
+  const theme = await invokeInWorkspace('setTheme', { value: 'dark' })
   const scale = await invokeInWorkspace('setInterfaceScale', { value: 1.25 })
   const zoom = await invokeInWorkspace('setArtboardZoom', { value: 0.5 })
 
@@ -1605,8 +1629,10 @@ async function runPackagedTracerCreate(outputDirectory) {
       undoneHeadline: undone.headline.plainText,
       redoneHeadline: redone.headline.plainText,
       savedRevision: saved.revision,
+      theme: theme.theme,
       interfaceScale: scale.interfaceScale,
       artboardZoom: zoom.artboardZoom,
+      persistedTheme: persistedPreferences.theme,
       persistedInterfaceScale: persistedPreferences.interfaceScale,
       persistedArtboardZoom: persistedPreferences.artboardZoom,
       storyRevision: structuredStory.revision,
@@ -1631,8 +1657,10 @@ async function runPackagedTracerCreate(outputDirectory) {
     && result.checks.undoneHeadline === 'Untitled Story'
     && result.checks.redoneHeadline === 'Linux Story Traced'
     && result.checks.savedRevision === 11
+    && result.checks.theme === 'dark'
     && result.checks.interfaceScale === 1.25
     && result.checks.artboardZoom === 0.5
+    && result.checks.persistedTheme === 'dark'
     && result.checks.persistedInterfaceScale === 1.25
     && result.checks.persistedArtboardZoom === 0.5
     && result.checks.storyRevision === 11
@@ -1726,8 +1754,10 @@ async function runPackagedTracerReopen(outputDirectory, { requireDistinctProcess
       finalUndoDepth: history.undoDepth,
       savedRevision: createResult.checks.savedRevision,
       reopenSavedRevision: reopenedSaved.revision,
+      theme: createResult.checks.theme,
       interfaceScale: createResult.checks.interfaceScale,
       artboardZoom: createResult.checks.artboardZoom,
+      persistedTheme: reopenedPreferences.theme,
       persistedInterfaceScale: reopenedPreferences.interfaceScale,
       persistedArtboardZoom: reopenedPreferences.artboardZoom,
       reopenedStoryRevision: reopenedStory.revision,
@@ -1765,8 +1795,10 @@ async function runPackagedTracerReopen(outputDirectory, { requireDistinctProcess
     || result.checks.reopenedUndoDepth !== 9
     || result.checks.savedRevision !== 11
     || result.checks.reopenSavedRevision !== 13
+    || result.checks.theme !== 'dark'
     || result.checks.interfaceScale !== 1.25
     || result.checks.artboardZoom !== 0.5
+    || result.checks.persistedTheme !== 'dark'
     || result.checks.persistedInterfaceScale !== 1.25
     || result.checks.persistedArtboardZoom !== 0.5
     || result.checks.reopenedStoryRevision !== 11
@@ -1819,6 +1851,15 @@ function installMenu() {
       label: 'View',
       submenu: [
         {
+          label: 'Theme',
+          submenu: themeValues.map((value) => ({
+            label: value === 'system' ? 'System' : `${value[0].toUpperCase()}${value.slice(1)}`,
+            type: 'radio',
+            checked: preferences.theme === value,
+            click: () => void performNativeAction(() => setThemeFromMenu(value), presentNativeFailure),
+          })),
+        },
+        {
           label: 'Interface Scale',
           submenu: interfaceScaleSteps.map((value) => ({
             label: `${Math.round(value * 100)}%`,
@@ -1849,6 +1890,15 @@ async function setInterfaceScaleFromMenu(value) {
     const result = await globalThis.deckBridge.setInterfaceScale({ value: ${JSON.stringify(value)} })
     interfaceScale = result.interfaceScale
     applyScales()
+    return result
+  })()`, true)
+}
+
+async function setThemeFromMenu(value) {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  await mainWindow.webContents.executeJavaScript(`(async () => {
+    const result = await globalThis.deckBridge.setTheme({ value: ${JSON.stringify(value)} })
+    applyThemePreference(result.theme)
     return result
   })()`, true)
 }

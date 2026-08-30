@@ -49,7 +49,7 @@ manufacture evidence.
 
 Deck Workbench is pre-alpha source with bounded integrated tracers. It is not a
 public v1, notarized distribution or production-ready editor. The owner
-authorized the `v0.0.1` public pre-release line. A published build must remain
+authorized the `v0.0.2` public pre-release line. A published build must remain
 marked as a GitHub pre-release, target its exact CI-passed `main` commit, use
 artifacts produced for that same commit, and keep the unverified Curate and
 target-machine boundaries explicit. Source text or a tag alone does not prove

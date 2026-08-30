@@ -189,7 +189,7 @@ test('media focus remains a stable composite while cards recycle', () => {
   assert.match(curate, /event\.key\.toLowerCase\(\) === 'p'/)
   assert.match(focus, /mediaAssetId: curateFocusedAssetId\(\)/)
   assert.match(focus, /focusCurateAsset\(target\.mediaAssetId\)/)
-  assert.match(styles, /\.media-focus-owner:focus-visible \+ \.media-scroll \.media-card\[data-active="true"\] \{ outline: 3px solid #2865d8/)
+  assert.match(styles, /\.media-focus-owner:focus-visible \+ \.media-scroll \.media-card\[data-active="true"\] \{ outline: 3px solid var\(--focus\)/)
   assert.match(styles, /@media \(forced-colors: active\)/)
 })
 

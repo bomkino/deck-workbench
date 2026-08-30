@@ -152,6 +152,15 @@ struct DeckWorkbenchApp: App {
             }
             CommandGroup(after: .toolbar) {
                 Divider()
+                Menu("Theme") {
+                    ForEach(DeckSessionController.themeValues, id: \.self) { value in
+                        Button(controller.theme == value
+                            ? "\(value.capitalized) ✓"
+                            : value.capitalized) {
+                            Task { await controller.perform { _ = try controller.setTheme(value) } }
+                        }
+                    }
+                }
                 Menu("Interface Scale") {
                     ForEach(DeckSessionController.interfaceScaleSteps, id: \.self) { value in
                         Button(controller.interfaceScale == value

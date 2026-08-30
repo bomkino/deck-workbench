@@ -249,6 +249,15 @@ function bindWorkspaceEvents() {
   elements.phaseButtons.forEach((button) => button.addEventListener('click', () => void enterPhaseForSlide(button.dataset.phase)))
   elements.undo.addEventListener('click', () => historyAction('undo'))
   elements.redo.addEventListener('click', () => historyAction('redo'))
+  elements.theme.addEventListener('change', async () => {
+    try {
+      const result = await window.deckBridge.setTheme({ value: elements.theme.value })
+      applyThemePreference(result.theme)
+    } catch (error) {
+      elements.theme.value = themePreference
+      setStatus(`${error.name ?? 'Error'}: ${error.message}`)
+    }
+  })
   elements.interfaceScale.addEventListener('change', async () => {
     try {
       const result = await window.deckBridge.setInterfaceScale({ value: Number(elements.interfaceScale.value) })
@@ -275,6 +284,9 @@ function bindWorkspaceEvents() {
     }
   })
   window.addEventListener('resize', applyScales)
+  themeMediaQuery?.addEventListener('change', () => {
+    if (themePreference === 'system') applyThemePreference('system')
+  })
 }
 
 async function presentDocumentAction(method, busyLabel) {
@@ -296,6 +308,7 @@ async function boot() {
   try {
     await loadWorkbenchFonts()
     const preferences = await window.deckBridge.getPreferences()
+    applyThemePreference(preferences.theme ?? 'system')
     interfaceScale = preferences.interfaceScale
     artboardZoom = preferences.artboardZoom
     markArtboardZoomPersisted(artboardZoom)
@@ -407,6 +420,9 @@ window.deckWorkbench = Object.freeze({
   saveDrafts: saveWorkspaceDrafts,
   phase() {
     return activePhase
+  },
+  theme() {
+    return applyThemePreference(themePreference)
   },
 })
 

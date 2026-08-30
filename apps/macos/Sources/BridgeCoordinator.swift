@@ -257,6 +257,11 @@ final class BridgeCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDel
             return ["url": try await controller.presentPDFExport().path]
         case .uiGetPreferences:
             return controller.preferences()
+        case .uiSetTheme:
+            guard let value = payload["value"] as? String else {
+                throw WorkbenchFailure(name: "InvalidCommand", message: "Theme value is required")
+            }
+            return try controller.setTheme(value)
         case .uiSetInterfaceScale:
             guard let value = payload["value"] as? Double else {
                 throw WorkbenchFailure(name: "InvalidCommand", message: "Interface Scale value is required")

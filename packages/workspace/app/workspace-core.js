@@ -390,6 +390,7 @@ const elements = {
   renameDeck: document.querySelector('#rename-deck'),
   undo: document.querySelector('#undo'),
   redo: document.querySelector('#redo'),
+  theme: document.querySelector('#theme'),
   interfaceScale: document.querySelector('#interface-scale'),
   saveState: document.querySelector('#save-state'),
   sequenceList: document.querySelector('#sequence-list'),
@@ -509,6 +510,7 @@ const elements = {
 let projection = null
 let storyDocument = null
 let selectedSlideId = null
+let themePreference = 'system'
 let interfaceScale = 1
 let artboardZoom = 0.65
 let activePhase = 'plan'
@@ -517,6 +519,31 @@ let planFilter = 'all'
 let draftSupportingItems = []
 let refreshGeneration = 0
 let pendingWorkspaceSlideId = null
+
+const themeMediaQuery = window.matchMedia?.('(prefers-color-scheme: dark)') ?? null
+
+function effectiveTheme(preference = themePreference) {
+  return preference === 'dark' || (preference === 'system' && themeMediaQuery?.matches)
+    ? 'dark'
+    : 'light'
+}
+
+function applyThemePreference(preference) {
+  if (!['system', 'light', 'dark'].includes(preference)) {
+    throw new RangeError('Theme must be System, Light, or Dark')
+  }
+  themePreference = preference
+  const resolved = effectiveTheme(preference)
+  document.documentElement.dataset.theme = preference
+  document.documentElement.dataset.themeEffective = resolved
+  document.documentElement.style.colorScheme = resolved
+  document.querySelector('meta[name="theme-color"]')?.setAttribute(
+    'content',
+    resolved === 'dark' ? '#171a1c' : '#e7edef',
+  )
+  if (elements.theme) elements.theme.value = preference
+  return { theme: preference, effectiveTheme: resolved }
+}
 
 function setStatus(message) {
   if (elements.saveState.textContent !== message) elements.saveState.textContent = message
