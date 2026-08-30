@@ -296,8 +296,8 @@
             <div class="media-action-bar" aria-label="Focused Asset actions">
               <div class="media-action-heading">
                 <span id="focused-asset-summary">No Asset selected</span>
-                <details class="project-media-judgment">
-                  <summary>Project review</summary>
+                <details id="project-media-judgment" class="project-media-judgment">
+                  <summary id="project-media-summary"><span class="phosphor-icon disclosure-caret" aria-hidden="true">&#xE136;</span><span>Project review</span></summary>
                   <div class="project-media-actions" role="group" aria-label="Project-level Asset judgment">
                     <button id="toggle-project-pick" type="button" disabled aria-pressed="false">Project Pick</button>
                     <label><span>Rating</span><select id="project-rating" disabled><option value="0">Unrated</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></label>
@@ -309,11 +309,11 @@
                 <span class="action-scope">For this Slide</span>
                 <button id="preview-media" type="button" disabled aria-keyshortcuts="Space">Preview</button>
                 <button id="shortlist-media" type="button" disabled aria-keyshortcuts="S">Shortlist</button>
-                <button id="assign-primary-media" class="primary-action" type="button" disabled aria-keyshortcuts="M">Assign primary</button>
+                <button id="assign-primary-media" class="primary-action" type="button" disabled aria-keyshortcuts="M">Assign to slot</button>
                 <button id="alternate-media" type="button" disabled aria-keyshortcuts="A">Use as alternate</button>
                 <button id="reject-slide-media" class="danger-action" type="button" disabled aria-keyshortcuts="X">Reject for Slide</button>
                 <button id="clear-slide-media" class="quiet-action" type="button" disabled aria-keyshortcuts="Shift+X">Clear Slide choice</button>
-                <button id="toggle-compare-media" type="button" disabled aria-pressed="false">Add to Compare</button>
+                <button id="toggle-compare-media" type="button" disabled aria-pressed="false">Compare choice</button>
                 <button id="open-media-compare" type="button" disabled aria-keyshortcuts="C">Compare <span id="compare-count">0</span></button>
               </div>
             </div>
@@ -334,7 +334,7 @@
             </div>
             <div id="curate-brief-content" class="curate-brief-content"></div>
             <details id="find-more-panel" class="find-more-panel">
-              <summary><span>Find more media</span><strong id="find-more-summary">Not needed</strong></summary>
+              <summary id="find-more-summary-trigger"><span class="disclosure-label"><span class="phosphor-icon disclosure-caret" aria-hidden="true">&#xE136;</span><span>Find more media</span></span><strong id="find-more-summary">Not needed</strong></summary>
               <form id="find-more-form" class="find-more-form">
                 <label><span>State</span><select id="find-more-state" disabled><option value="not-needed">Not needed</option><option value="needed">Needed</option><option value="resolved">Resolved</option><option value="waived">Waived</option></select></label>
                 <label><span>Existing Primary</span><select id="find-more-primary-status" disabled><option value="none">None</option><option value="temporary">Temporary</option><option value="usable">Usable</option><option value="approved">Approved</option></select></label>
@@ -356,8 +356,8 @@
           <header class="stage-toolbar">
             <div><p class="panel-label">03 / Assemble</p><h2>Rough visual direction</h2></div>
             <div class="stage-controls">
-              <label><span>Artboard</span><input id="artboard-zoom" type="range" min="0.15" max="0.8" step="0.05" value="0.35" aria-label="Artboard Zoom" /></label>
-              <span id="zoom-label">35%</span>
+              <label><span>Artboard</span><input id="artboard-zoom" type="range" min="0.15" max="0.8" step="0.05" value="0.65" aria-label="Artboard Zoom" /></label>
+              <span id="zoom-label">65%</span>
               <button id="fit-artboard" type="button" aria-label="Fit Artboard to Stage">Fit</button>
             </div>
           </header>

@@ -387,6 +387,7 @@ enum PackagedTracer {
             const openingSequenceSection = [...document.querySelectorAll('#sequence-list [data-section-id]')]
               .find((row) => row.dataset.sectionId === openingSectionId);
             const priorInterfaceScale = interfaceScale;
+            await enterPhaseForSlide('plan', secondSlideId);
             const targetSizesByScale = [];
             const artboardWidthsByScale = [];
             for (const scale of INTERFACE_SCALE_STEPS) {
@@ -399,6 +400,9 @@ enum PackagedTracer {
                 const rect = element.getBoundingClientRect();
                 return { tag: element.tagName, id: element.id, width: rect.width, height: rect.height };
               }).filter((target) => target.width < 43.5 || target.height < 43.5);
+              await enterPhaseForSlide('assemble', secondSlideId);
+              applyScales();
+              document.documentElement.getBoundingClientRect();
               const artboardRect = document.querySelector('#artboard').getBoundingClientRect();
               const shellRect = document.querySelector('#artboard-shell').getBoundingClientRect();
               targetSizesByScale.push({ scale, targetCount: targets.length, violations });
@@ -409,28 +413,62 @@ enum PackagedTracer {
                 shellWidth: shellRect.width,
                 shellHeight: shellRect.height
               });
+              await enterPhaseForSlide('plan', secondSlideId);
             }
             interfaceScale = 1.75;
             applyScales();
             document.documentElement.getBoundingClientRect();
-            const essentialControls = [
-              '#add-section', '#add-slide', '#headline', '#commit-headline', '#slide-intent'
-            ].map((selector) => document.querySelector(selector));
+            const planView = document.querySelector('[data-phase-view="plan"]');
+            const scrollOwners = [planView, ...planView.querySelectorAll('*')]
+              .filter((element) => element.scrollHeight > element.clientHeight + 1 || element.scrollWidth > element.clientWidth + 1)
+              .map((element) => ({ element, scrollTop: element.scrollTop, scrollLeft: element.scrollLeft }));
+            const essentialControlSelectors = ['#add-section', '#add-slide', '#slide-intent', '#headline', '#save-plan'];
+            const essentialControlReachability = essentialControlSelectors.map((selector) => {
+              const element = document.querySelector(selector);
+              if (!element) return { selector, reachable: false, width: 0, height: 0 };
+              element.scrollIntoView({ block: 'center', inline: 'nearest' });
+              document.documentElement.getBoundingClientRect();
+              const rect = element.getBoundingClientRect();
+              const style = getComputedStyle(element);
+              return {
+                selector,
+                reachable: element.getClientRects().length > 0
+                  && style.display !== 'none'
+                  && style.visibility !== 'hidden'
+                  && rect.width > 0
+                  && rect.height > 0
+                  && rect.left >= -1
+                  && rect.top >= -1
+                  && rect.right <= document.documentElement.clientWidth + 1
+                  && rect.bottom <= document.documentElement.clientHeight + 1,
+                width: rect.width,
+                height: rect.height,
+                left: rect.left,
+                top: rect.top,
+                right: rect.right,
+                bottom: rect.bottom
+              };
+            });
+            scrollOwners.forEach(({ element, scrollTop, scrollLeft }) => {
+              element.scrollTop = scrollTop;
+              element.scrollLeft = scrollLeft;
+            });
+            const canvas = projection?.canvas ?? { width: 2576, height: 1080 };
             const scaleReflowContract = {
               interfaceScale,
               viewportWidth: document.documentElement.clientWidth,
+              viewportHeight: document.documentElement.clientHeight,
               documentWidth: document.documentElement.scrollWidth,
+              artboardZoom,
+              canvasAspectRatio: canvas.width / canvas.height,
               layout1440At150: workspaceLayoutMode({ viewportWidth: 1440, interfaceScale: 1.5 }),
               layout1440At175: workspaceLayoutMode({ viewportWidth: 1440, interfaceScale: 1.75 }),
               layout1512At150: workspaceLayoutMode({ viewportWidth: 1512, interfaceScale: 1.5 }),
               layout1512At175: workspaceLayoutMode({ viewportWidth: 1512, interfaceScale: 1.75 }),
               targetSizesByScale,
               artboardWidthsByScale,
-              essentialControlsInsideViewport: essentialControls.every((element) => {
-                if (!element) return false;
-                const rect = element.getBoundingClientRect();
-                return rect.left >= -1 && rect.right <= document.documentElement.clientWidth + 1;
-              })
+              essentialControlReachability,
+              essentialControlsInsideViewport: essentialControlReachability.every(({ reachable }) => reachable)
             };
             interfaceScale = priorInterfaceScale;
             applyScales();
@@ -643,17 +681,36 @@ enum PackagedTracer {
                   && (($0["violations"] as? [[String: Any]])?.isEmpty == true) }),
               let artboardWidthsByScale = scaleReflow["artboardWidthsByScale"] as? [[String: Any]],
               artboardWidthsByScale.count == 7,
+              let artboardZoom = (scaleReflow["artboardZoom"] as? NSNumber)?.doubleValue,
+              artboardZoom >= 0.1,
+              let canvasAspectRatio = (scaleReflow["canvasAspectRatio"] as? NSNumber)?.doubleValue,
+              canvasAspectRatio > 1,
               artboardWidthsByScale.allSatisfy({ entry in
                   guard let artboardWidth = (entry["artboardWidth"] as? NSNumber)?.doubleValue,
                         let artboardHeight = (entry["artboardHeight"] as? NSNumber)?.doubleValue,
                         let shellWidth = (entry["shellWidth"] as? NSNumber)?.doubleValue,
                         let shellHeight = (entry["shellHeight"] as? NSNumber)?.doubleValue else { return false }
-                  return abs(artboardWidth - shellWidth) <= 1 && abs(artboardHeight - shellHeight) <= 1
+                  let expectedWidth = 1088 * artboardZoom
+                  let expectedHeight = expectedWidth / canvasAspectRatio
+                  return artboardWidth > 1 && artboardHeight > 1 && shellWidth > 1 && shellHeight > 1
+                      && abs(artboardWidth - expectedWidth) <= 1
+                      && abs(artboardHeight - expectedHeight) <= 1
+                      && abs((artboardWidth / artboardHeight) - canvasAspectRatio) <= 0.01
+                      && abs(artboardWidth - shellWidth) <= 1 && abs(artboardHeight - shellHeight) <= 1
               }),
               let firstArtboardWidth = (artboardWidthsByScale.first?["artboardWidth"] as? NSNumber)?.doubleValue,
+              let firstArtboardHeight = (artboardWidthsByScale.first?["artboardHeight"] as? NSNumber)?.doubleValue,
               artboardWidthsByScale.allSatisfy({ entry in
-                  guard let width = (entry["artboardWidth"] as? NSNumber)?.doubleValue else { return false }
-                  return abs(width - firstArtboardWidth) <= 1
+                  guard let width = (entry["artboardWidth"] as? NSNumber)?.doubleValue,
+                        let height = (entry["artboardHeight"] as? NSNumber)?.doubleValue else { return false }
+                  return abs(width - firstArtboardWidth) <= 1 && abs(height - firstArtboardHeight) <= 1
+              }),
+              let essentialControlReachability = scaleReflow["essentialControlReachability"] as? [[String: Any]],
+              essentialControlReachability.count == 5,
+              essentialControlReachability.allSatisfy({ entry in
+                  entry["reachable"] as? Bool == true
+                      && ((entry["width"] as? NSNumber)?.doubleValue ?? 0) > 0
+                      && ((entry["height"] as? NSNumber)?.doubleValue ?? 0) > 0
               }),
               scaleReflow["essentialControlsInsideViewport"] as? Bool == true
         else {

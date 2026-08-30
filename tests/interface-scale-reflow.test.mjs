@@ -48,6 +48,22 @@ test('layout choice preserves roomy desktop Plan and reflows at scaled widths', 
 test('packaged WebKit journey still measures 175 percent reachability and independent artboard geometry', () => {
   assert.match(tracer, /interfaceScale = 1\.75;/)
   assert.match(tracer, /document\.documentElement\.getBoundingClientRect\(\)/)
+  const assembleActivation = tracer.indexOf("await enterPhaseForSlide('assemble', secondSlideId)")
+  const artboardMeasurement = tracer.indexOf("document.querySelector('#artboard').getBoundingClientRect()")
+  assert.notEqual(assembleActivation, -1)
+  assert.notEqual(artboardMeasurement, -1)
+  assert.ok(
+    assembleActivation < artboardMeasurement,
+    'the Assemble phase must be visible before artboard geometry is measured',
+  )
+  assert.match(tracer, /artboardWidth > 1 && artboardHeight > 1 && shellWidth > 1 && shellHeight > 1/)
+  assert.match(tracer, /abs\(artboardWidth - expectedWidth\) <= 1/)
+  assert.match(tracer, /abs\(\(artboardWidth \/ artboardHeight\) - canvasAspectRatio\) <= 0\.01/)
+  assert.match(tracer, /abs\(height - firstArtboardHeight\) <= 1/)
+  assert.match(tracer, /essentialControlSelectors = \['#add-section', '#add-slide', '#slide-intent', '#headline', '#save-plan'\]/)
+  assert.match(tracer, /scrollIntoView\(\{ block: 'center', inline: 'nearest' \}\)/)
+  assert.match(tracer, /rect\.left >= -1[\s\S]+?rect\.top >= -1[\s\S]+?rect\.right <= document\.documentElement\.clientWidth \+ 1[\s\S]+?rect\.bottom <= document\.documentElement\.clientHeight \+ 1/)
+  assert.match(tracer, /essentialControlReachability\.count == 5/)
   assert.match(tracer, /essentialControlsInsideViewport/)
   assert.match(tracer, /layout1512At175/)
   assert.match(tracer, /scaleReflow\["layout1440At150"\] as\? String == "single-column"/)
@@ -78,6 +94,7 @@ test('packaged Electron journey settles real compact viewports before inspecting
   assert.match(linuxHost, /documentScrollLeft/)
   assert.match(linuxHost, /bodyScrollLeft/)
   assert.match(linuxHost, /phaseWorkspaces: scrollEvidence\(phaseWorkspaces\)/)
+  assert.match(linuxHost, /const curateView = await activate\('curate'\)/)
   assert.match(linuxHost, /owner\.scrollWidth <= owner\.clientWidth \+ 1/)
   assert.match(linuxHost, /owner\.scrollLeft = 0/)
   const documentInspection = linuxHost.slice(

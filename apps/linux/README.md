@@ -28,3 +28,9 @@ assertion or runtime error exits nonzero. `--run-packaged-tracer` remains a
 single-process compatibility seam and labels that limitation in its result.
 Target-desktop picker, portal, drag/drop and reveal acceptance still requires
 Garuda KDE/Wayland.
+
+The create phase also captures Plan, Curate, Assemble and Handoff at
+`1440×900 @ 100%`, plus the existing `1180×605 @ 175%` stress views. CI uploads
+those eight PNGs with `journey-result.json` as a small, short-lived UI-evidence
+artifact; installable packages and checksums remain in the separate release
+artifact. This keeps visual review independent of the large package download.

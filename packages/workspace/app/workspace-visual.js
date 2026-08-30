@@ -1,3 +1,8 @@
+let pendingArtboardZoomFrame = null
+let pendingArtboardZoom = artboardZoom
+let persistedArtboardZoom = artboardZoom
+let artboardZoomGeneration = 0
+
 function bindVisualEvents() {
   elements.patternChoice.addEventListener('change', () => {
     if (projection) syncVisualControls(projection)
@@ -10,7 +15,8 @@ function bindVisualEvents() {
     button.addEventListener('click', () => alignSelectedElement(button.dataset.align))
   })
   elements.applyCrop.addEventListener('click', applySelectedCrop)
-  elements.artboardZoom.addEventListener('input', () => setArtboardZoom(Number(elements.artboardZoom.value)))
+  elements.artboardZoom.addEventListener('input', () => previewArtboardZoom(Number(elements.artboardZoom.value)))
+  elements.artboardZoom.addEventListener('change', () => void setArtboardZoom(Number(elements.artboardZoom.value)))
   elements.fitArtboard.addEventListener('click', () => setArtboardZoom(fittedArtboardZoom()))
 }
 
@@ -208,12 +214,51 @@ function applyScales() {
   elements.zoomLabel.textContent = `${Math.round(artboardZoom * 100)}%`
 }
 
+function boundedArtboardZoom(requested) {
+  const minimum = Number(elements.artboardZoom.min)
+  const maximum = Number(elements.artboardZoom.max)
+  return Math.min(maximum, Math.max(minimum, Number(requested)))
+}
+
+function flushArtboardZoomPreview() {
+  if (pendingArtboardZoomFrame !== null) cancelAnimationFrame(pendingArtboardZoomFrame)
+  pendingArtboardZoomFrame = null
+  artboardZoom = pendingArtboardZoom
+  applyScales()
+}
+
+function previewArtboardZoom(requested) {
+  pendingArtboardZoom = boundedArtboardZoom(requested)
+  artboardZoomGeneration += 1
+  if (pendingArtboardZoomFrame !== null) return artboardZoomGeneration
+  pendingArtboardZoomFrame = requestAnimationFrame(() => {
+    pendingArtboardZoomFrame = null
+    artboardZoom = pendingArtboardZoom
+    applyScales()
+  })
+  return artboardZoomGeneration
+}
+
+function markArtboardZoomPersisted(value) {
+  persistedArtboardZoom = boundedArtboardZoom(value)
+  pendingArtboardZoom = persistedArtboardZoom
+}
+
 async function setArtboardZoom(requested) {
+  const generation = previewArtboardZoom(requested)
+  flushArtboardZoomPreview()
   try {
-    const result = await window.deckBridge.setArtboardZoom({ value: requested })
+    const result = await window.deckBridge.setArtboardZoom({ value: pendingArtboardZoom })
+    if (generation !== artboardZoomGeneration) return
+    persistedArtboardZoom = result.artboardZoom
     artboardZoom = result.artboardZoom
+    pendingArtboardZoom = result.artboardZoom
     applyScales()
   } catch (error) {
+    if (generation !== artboardZoomGeneration) return
+    artboardZoom = persistedArtboardZoom
+    pendingArtboardZoom = persistedArtboardZoom
+    applyScales()
     setStatus(`${error.name ?? 'Error'}: ${error.message}`)
   }
 }

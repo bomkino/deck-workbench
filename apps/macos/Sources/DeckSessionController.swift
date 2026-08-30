@@ -26,7 +26,7 @@ final class DeckSessionController: ObservableObject {
     @Published var presentedFailure: PresentedWorkbenchFailure?
 
     @Published private(set) var interfaceScale: Double
-    private(set) var artboardZoom: Double = 0.35
+    private(set) var artboardZoom: Double = 0.65
     private let requiresWorkspaceDraftFlush: Bool
     private let kernelURL: URL
     private var kernel: DeckKernelHost

@@ -74,6 +74,13 @@ jobs:
             artifacts/*.pkg.tar.zst.sha256
             artifacts/*.AppImage
             artifacts/*.AppImage.sha256
-            artifacts/evidence/linux/*
-            artifacts/evidence/linux/journey/*
           if-no-files-found: error
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: deck-workbench-dw-g01-ui-evidence-${{ env.EXPECTED_SHA }}
+          path: |
+            artifacts/evidence/linux/journey/journey-result.json
+            artifacts/evidence/linux/journey/ui-*-1180x605-175.png
+            artifacts/evidence/linux/journey/ui-*-1440x900-100.png
+          if-no-files-found: error
+          retention-days: 14

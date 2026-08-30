@@ -24,7 +24,8 @@ A commit may become canonical `main` when:
 3. the macOS workflow builds the arm64-only ad-hoc-signed app ZIP and completes
    the packaged create/edit/save/quit/reopen/undo/PDF journey;
 4. the Ubuntu workflow builds and verifies the x86-64 tarball, Arch package
-   structure and reproducible AppImage, including two-process persistence;
+   structure and reproducible AppImage, including two-process persistence,
+   rendered geometry and the exact-SHA packaged screenshot set;
 5. AGPL-3.0, notices and `THIRD_PARTY.md` remain coherent;
 6. documentation distinguishes verified, waived and unverified surfaces; and
 7. the promotion is a fast-forward or an explicitly reviewed merge.
