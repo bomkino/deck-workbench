@@ -326,7 +326,7 @@ window.deckWorkbench = Object.freeze({
     if (workspaceExportSession) return { error: 'ExportBusy' }
     const exportProjection = projection
     await (document.fonts?.ready ?? Promise.resolve())
-    await new Promise((resolveFrame) => requestAnimationFrame(() => requestAnimationFrame(resolveFrame)))
+    document.documentElement.getBoundingClientRect()
     if (projection !== exportProjection) return { error: 'ExportStale' }
     const overflowCount = compositionOverflowCountForProjection(exportProjection)
     if (overflowCount > 0) return { error: 'CompositionOverflow', overflowCount }

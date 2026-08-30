@@ -181,10 +181,21 @@ test('native and Linux export modes preserve one authored artboard with uniform 
   const exportStart = workspace.indexOf('  async exportFrame(')
   const exportEnd = workspace.indexOf('  async tracerEditHeadline', exportStart)
   assert.ok(exportStart >= 0 && exportEnd > exportStart)
+  const exportSource = workspace.slice(exportStart, exportEnd)
   const exportState = { overflow: 0 }
-  const documentState = { documentElement: { dataset: {} }, fonts: { ready: Promise.resolve() } }
+  let exportLayoutReads = 0
+  const documentState = {
+    documentElement: {
+      dataset: {},
+      getBoundingClientRect() {
+        exportLayoutReads += 1
+        return { x: 0, y: 0, width: 0, height: 0 }
+      },
+    },
+    fonts: { ready: Promise.resolve() },
+  }
   const harness = Function(
-    'compositionOverflowCountForProjection', 'initialProjection', 'document', 'elements', 'requestAnimationFrame',
+    'compositionOverflowCountForProjection', 'initialProjection', 'document', 'elements',
     `"use strict";
       let projection = initialProjection;
       let workspaceExportSession = null;
@@ -200,7 +211,6 @@ test('native and Linux export modes preserve one authored artboard with uniform 
     { composition: { elements: [] } },
     documentState,
     { workbench: { inert: false }, artboard: { getBoundingClientRect: () => ({ x: 8, y: 12, width, height }) } },
-    (callback) => callback(),
   )
   await assert.rejects(harness.api.exportFrame('screen'), RangeError)
   exportState.overflow = 2
@@ -223,8 +233,11 @@ test('native and Linux export modes preserve one authored artboard with uniform 
   assert.equal(documentState.documentElement.dataset.workspaceExport, 'linux')
   assert.deepEqual(harness.api.finishExport('2'), { finished: true })
   assert.equal(harness.state().renderCount, 4)
-  assert.match(workspace.slice(exportStart, exportEnd), /await \(document\.fonts\?\.ready/)
-  assert.match(workspace.slice(exportStart, exportEnd), /projection !== exportProjection/)
+  assert.equal(exportLayoutReads, 3)
+  assert.match(exportSource, /await \(document\.fonts\?\.ready/)
+  assert.match(exportSource, /document\.documentElement\.getBoundingClientRect\(\)/)
+  assert.match(exportSource, /projection !== exportProjection/)
+  assert.doesNotMatch(exportSource, /requestAnimationFrame/)
 
   const macExport = macBridge.slice(macBridge.indexOf('func writeOnePagePDF'), macBridge.indexOf('func invokeForTracer'))
   assert.match(macExport, /return await deckWorkbench\.exportFrame\(\)/)
