@@ -102,7 +102,7 @@ test('pitch.dog v13 faces and public UI roles own deliberate typography metrics'
     assert.equal(face['font-style'], expected.style, `${path} posture`)
     assert.equal(face['font-display'], expected.display, `${path} loading policy`)
   }
-  assert.equal(byPath.get('fonts/v13/pd-eyebrow-site.woff2')['font-stretch'], '87.5% 100%')
+  assert.equal(byPath.get('fonts/v13/pd-eyebrow-site.woff2')['font-stretch'], '87.5%')
 
   const root = styleFor(':root')
   assert.equal(root['font-family'], 'var(--font-body)')

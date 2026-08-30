@@ -44,7 +44,7 @@
   font-family: "PD Eyebrow";
   src: url("./fonts/v13/pd-eyebrow-site.woff2") format("woff2");
   font-weight: 100 900;
-  font-stretch: 87.5% 100%;
+  font-stretch: 87.5%;
   font-style: normal;
   font-display: swap;
 }

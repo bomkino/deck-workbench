@@ -16,7 +16,21 @@
     { "name": "pd-body-italic.woff2", "bytes": 218976, "sha256": "6bd35c9ad364e585ca5667c1df74f892eebbe32237005ba926b54ffa61df8a78" },
     { "name": "pd-body-alt-roman.woff2", "bytes": 169540, "sha256": "4ae6044273de9010d1a9660001319c34a4a8ece764279bb7f1e0f81f01dca85b" },
     { "name": "pd-body-alt-italic.woff2", "bytes": 179020, "sha256": "9f59a7f058ba824e0b3e2760204c0c70b7cfb2f61956a460b730e486b1209285" },
-    { "name": "pd-eyebrow-site.woff2", "bytes": 916908, "sha256": "24aeaf1bfb45a874fe807c8138fc0d815b499b1834e8291c2dc46bb5fc32b7a3" },
+    {
+      "name": "pd-eyebrow-site.woff2",
+      "sourcePath": "assets/fonts/pd-eyebrow-site.woff2",
+      "sourceBytes": 916908,
+      "sourceSha256": "24aeaf1bfb45a874fe807c8138fc0d815b499b1834e8291c2dc46bb5fc32b7a3",
+      "distributionPath": "packages/workspace/app/fonts/v13/pd-eyebrow-site.woff2",
+      "bytes": 436064,
+      "sha256": "d461ef973c2c429c29235c30c9100aaa92e36d2db37796b6e194f71be1074b74",
+      "transform": {
+        "tool": "fonttools varLib.instancer 4.61",
+        "arguments": ["wdth=87.5", "ital=0", "--no-recalc-timestamp"],
+        "retainedAxes": { "wght": "100 900" },
+        "unicodeCoverage": "unchanged"
+      }
+    },
     {
       "name": "pd-body-400.otf",
       "sourcePath": "pitchdog-font-handoff-v13/03-STATIC-ANCHORS-NATIVE/pd-body/pd-body-400.otf",
@@ -40,6 +54,7 @@
     }
   ],
   "knownIssues": [
-    "PD Eyebrow's native internal family name is Untitled / Untitled Regular; Deck Workbench uses only the web font in this release."
+    "PD Eyebrow's native internal family name is Untitled / Untitled Regular; Deck Workbench uses only the web font in this release.",
+    "The packaged PD Eyebrow webfont pins the source's unused width and italic axes to the UI contract while retaining its complete character map and 100–900 weight axis."
   ]
 }

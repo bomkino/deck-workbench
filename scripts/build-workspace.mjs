@@ -25,7 +25,7 @@ const fontFiles = Object.freeze([
   ['pd-body-italic.woff2', 218976, '6bd35c9ad364e585ca5667c1df74f892eebbe32237005ba926b54ffa61df8a78'],
   ['pd-body-alt-roman.woff2', 169540, '4ae6044273de9010d1a9660001319c34a4a8ece764279bb7f1e0f81f01dca85b'],
   ['pd-body-alt-italic.woff2', 179020, '9f59a7f058ba824e0b3e2760204c0c70b7cfb2f61956a460b730e486b1209285'],
-  ['pd-eyebrow-site.woff2', 916908, '24aeaf1bfb45a874fe807c8138fc0d815b499b1834e8291c2dc46bb5fc32b7a3'],
+  ['pd-eyebrow-site.woff2', 436064, 'd461ef973c2c429c29235c30c9100aaa92e36d2db37796b6e194f71be1074b74'],
 ])
 const iconFiles = Object.freeze([
   ['Phosphor.woff2', 147380, 'c2ea45ea05ff5c7df1936770c104725f2a68f43fd343f35f3da23a30b27de32a'],
