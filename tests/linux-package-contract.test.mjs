@@ -33,6 +33,26 @@ function runtimeUIToolbar(viewport, selector = '.toolbar') {
   }
 }
 
+function runtimeUIScrollOwner(viewport) {
+  return {
+    scrollTop: 0,
+    scrollLeft: 0,
+    clientWidth: viewport.width,
+    scrollWidth: viewport.width,
+  }
+}
+
+function runtimeUIScrollOwners(viewport, includeActivePhase = false) {
+  const owners = {
+    document: runtimeUIScrollOwner(viewport),
+    body: runtimeUIScrollOwner(viewport),
+    workbench: runtimeUIScrollOwner(viewport),
+    phaseWorkspaces: runtimeUIScrollOwner(viewport),
+  }
+  if (includeActivePhase) owners.activePhase = runtimeUIScrollOwner(viewport)
+  return owners
+}
+
 function runtimeUIConfiguration(viewport, scale) {
   return {
     requestedViewport: viewport,
@@ -63,8 +83,11 @@ function runtimeUICase(viewport, scale, kind) {
       openDeckFullyVisible: true,
       toolbar: runtimeUIToolbar(viewport),
       toolbarFitsHorizontally: true,
+      scrollOwners: runtimeUIScrollOwners(viewport, true),
       documentScrollTop: 0,
+      documentScrollLeft: 0,
       bodyScrollTop: 0,
+      bodyScrollLeft: 0,
     }
     return { viewport, scale, configuration, geometry, ok: true }
   }
@@ -93,6 +116,7 @@ function runtimeUICase(viewport, scale, kind) {
         runtimeUIToolbar(viewport, '.media-action-bar'),
       ],
       noToolbarHorizontalClipping: true,
+      scroll: runtimeUIScrollOwner(viewport),
     },
     handoff: {
       introRect: runtimeUIRect(0, 64, viewport.width, 180),
@@ -100,15 +124,20 @@ function runtimeUICase(viewport, scale, kind) {
       introNotClipped: true,
       introFullyVisible: true,
       globalToolbar: runtimeUIToolbar(viewport),
+      scroll: runtimeUIScrollOwner(viewport),
     },
     assemble: {
       artboardVisibleRatio: 0.72,
       artboardMajorityInitiallyVisible: true,
       toolbars: [runtimeUIToolbar(viewport), runtimeUIToolbar(viewport, '.stage-toolbar')],
       noToolbarHorizontalClipping: true,
+      scroll: runtimeUIScrollOwner(viewport),
     },
+    scrollOwners: runtimeUIScrollOwners(viewport),
     documentScrollTop: 0,
+    documentScrollLeft: 0,
     bodyScrollTop: 0,
+    bodyScrollLeft: 0,
   }
   return { viewport, scale, configuration, geometry, ok: true }
 }
@@ -322,6 +351,23 @@ test('journey evidence accepts distinct process instances and rejects a reused i
     await assert.rejects(
       execFileAsync(process.execPath, [fileURLToPath(journeyVerifierPath), resultPath, 'test AppImage']),
       /runtime UI Curate geometry clips/,
+    )
+
+    result.checks.runtimeUI.document[0].geometry.curate.maxBadgeCard.copyScrollWidth = 210
+    result.checks.runtimeUI.document[0].geometry.curate.maxBadgeCardFits = true
+    result.checks.runtimeUI.document[0].geometry.handoff.scroll.scrollLeft = 1
+    await writeFile(resultPath, `${JSON.stringify(result)}\n`)
+    await assert.rejects(
+      execFileAsync(process.execPath, [fileURLToPath(journeyVerifierPath), resultPath, 'test AppImage']),
+      /runtime UI Handoff scroll ownership drifted/,
+    )
+
+    result.checks.runtimeUI.document[0].geometry.handoff.scroll.scrollLeft = 0
+    result.checks.runtimeUI.document[0].geometry.scrollOwners.workbench.scrollWidth += 2
+    await writeFile(resultPath, `${JSON.stringify(result)}\n`)
+    await assert.rejects(
+      execFileAsync(process.execPath, [fileURLToPath(journeyVerifierPath), resultPath, 'test AppImage']),
+      /runtime UI document scroll ownership drifted/,
     )
   } finally {
     await rm(directory, { recursive: true, force: true })

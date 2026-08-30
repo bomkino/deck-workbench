@@ -75,6 +75,16 @@ test('packaged Electron journey settles real compact viewports before inspecting
   assert.match(linuxHost, /noToolbarHorizontalClipping/)
   assert.match(linuxHost, /introFullyVisible/)
   assert.match(linuxHost, /artboardMajorityInitiallyVisible/)
+  assert.match(linuxHost, /documentScrollLeft/)
+  assert.match(linuxHost, /bodyScrollLeft/)
+  assert.match(linuxHost, /phaseWorkspaces: scrollEvidence\(phaseWorkspaces\)/)
+  assert.match(linuxHost, /owner\.scrollWidth <= owner\.clientWidth \+ 1/)
+  assert.match(linuxHost, /owner\.scrollLeft = 0/)
+  const documentInspection = linuxHost.slice(
+    linuxHost.indexOf('async function inspectDocumentRuntimeUI'),
+    linuxHost.indexOf('async function presentRuntimePhaseForScreenshot'),
+  )
+  assert.doesNotMatch(documentInspection, /view\.scrollTop\s*=\s*0/)
   assert.match(linuxHost, /captureRuntimeUIScreenshot/)
   assert.match(linuxHost, /Runtime UI assertion evidence:/)
 
