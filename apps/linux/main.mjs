@@ -1306,6 +1306,42 @@ async function presentRuntimePhaseForScreenshot(phase) {
     }
     await new Promise((resolveFrame) => requestAnimationFrame(() => requestAnimationFrame(resolveFrame)));
   })()`, true)
+  await waitForRuntimeVisualState({ phase })
+}
+
+async function presentRuntimeThemeForScreenshot(theme) {
+  await mainWindow.webContents.executeJavaScript(`(async () => {
+    const result = await globalThis.deckBridge.setTheme({ value: ${JSON.stringify(theme)} });
+    applyThemePreference(result.theme);
+    await new Promise((resolveFrame) => requestAnimationFrame(() => requestAnimationFrame(resolveFrame)));
+  })()`, true)
+  await waitForRuntimeVisualState({ theme })
+}
+
+async function waitForRuntimeVisualState({ phase = null, theme = null }) {
+  const deadline = Date.now() + 2_000
+  let observed = null
+  do {
+    observed = await mainWindow.webContents.executeJavaScript(`(() => {
+      const phase = typeof activePhase === 'string' ? activePhase : null;
+      const view = phase ? document.querySelector('[data-phase-view="' + phase + '"]') : null;
+      return {
+        phase,
+        phaseVisible: view?.getAttribute('aria-hidden') === 'false',
+        theme: document.documentElement.dataset.themeEffective ?? null,
+      };
+    })()`, true)
+    if ((!phase || (observed.phase === phase && observed.phaseVisible))
+      && (!theme || observed.theme === theme)) {
+      await new Promise((resolveFrame) => setTimeout(resolveFrame, 75))
+      return observed
+    }
+    await new Promise((resolveFrame) => setTimeout(resolveFrame, 25))
+  } while (Date.now() < deadline)
+  throw namedError(
+    'RuntimeUIStateTimeout',
+    `Screenshot state did not settle (${JSON.stringify({ expected: { phase, theme }, observed })})`,
+  )
 }
 
 async function captureRuntimeUIScreenshot(outputDirectory, name) {
@@ -1327,11 +1363,7 @@ async function captureRepresentativeRuntimeUIScreenshots(outputDirectory) {
   const previousArtboardZoom = await mainWindow.webContents.executeJavaScript('artboardZoom', true)
   const previousTheme = preferences.theme
   for (const theme of ['light', 'dark']) {
-    await mainWindow.webContents.executeJavaScript(`(async () => {
-      const result = await globalThis.deckBridge.setTheme({ value: ${JSON.stringify(theme)} });
-      applyThemePreference(result.theme);
-      await new Promise((resolveFrame) => requestAnimationFrame(() => requestAnimationFrame(resolveFrame)));
-    })()`, true)
+    await presentRuntimeThemeForScreenshot(theme)
     for (const phase of ['plan', 'curate', 'assemble', 'handoff']) {
       await presentRuntimePhaseForScreenshot(phase)
       if (phase === 'assemble') {
@@ -1445,11 +1477,7 @@ async function inspectPackagedCanvasPresets(outputDirectory) {
       applyScales();
     })()`, true)
     for (const theme of ['light', 'dark']) {
-      await mainWindow.webContents.executeJavaScript(`(async () => {
-        const result = await globalThis.deckBridge.setTheme({ value: ${JSON.stringify(theme)} });
-        applyThemePreference(result.theme);
-        await new Promise((resolveFrame) => requestAnimationFrame(() => requestAnimationFrame(resolveFrame)));
-      })()`, true)
+      await presentRuntimeThemeForScreenshot(theme)
       screenshots.push(await captureRuntimeUIScreenshot(
         outputDirectory,
         `canvas-${item.slug}-${theme}-1440x900.png`,

@@ -399,6 +399,8 @@ test('Ubuntu package gate verifies an extracted x86-64 artifact without disablin
   assert.match(journeyVerifier, /reopenInstanceId/)
   assert.match(linuxMain, /inspectRuntimeUIPolishStability/)
   assert.match(linuxMain, /captureRepresentativeRuntimeUIScreenshots/)
+  assert.match(linuxMain, /waitForRuntimeVisualState/)
+  assert.match(linuxMain, /RuntimeUIStateTimeout/)
   assert.match(linuxMain, /`ui-\$\{phase\}-\$\{theme\}-1440x900-100\.png`/)
   assert.match(workflow, /deck-workbench-dw-g01-ui-evidence-/)
   assert.match(workflow, /artifacts\/evidence\/linux\/journey\/journey-result\.json/)
