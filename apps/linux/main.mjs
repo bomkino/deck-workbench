@@ -916,7 +916,7 @@ async function inspectDocumentRuntimeUI() {
       return view;
     };
 
-    await activate('curate');
+    const curateView = await activate('curate');
     const mediaScroll = document.querySelector('#media-scroll');
     const mediaCanvas = document.querySelector('#media-canvas');
     const previousDensity = elements.thumbnailDensity.value;

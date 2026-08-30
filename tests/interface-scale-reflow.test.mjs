@@ -94,6 +94,7 @@ test('packaged Electron journey settles real compact viewports before inspecting
   assert.match(linuxHost, /documentScrollLeft/)
   assert.match(linuxHost, /bodyScrollLeft/)
   assert.match(linuxHost, /phaseWorkspaces: scrollEvidence\(phaseWorkspaces\)/)
+  assert.match(linuxHost, /const curateView = await activate\('curate'\)/)
   assert.match(linuxHost, /owner\.scrollWidth <= owner\.clientWidth \+ 1/)
   assert.match(linuxHost, /owner\.scrollLeft = 0/)
   const documentInspection = linuxHost.slice(
