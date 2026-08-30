@@ -710,6 +710,11 @@ const runtimeUIViewports = Object.freeze([
   Object.freeze({ label: 'compact-desktop', width: 1280, height: 720 }),
 ])
 const runtimeUIScales = Object.freeze([1, 1.25, 1.5, 1.75])
+const representativeRuntimeUIViewport = Object.freeze({
+  label: 'representative-desktop',
+  width: 1440,
+  height: 900,
+})
 
 async function configureRuntimeUI(viewport, scale) {
   mainWindow.setContentSize(viewport.width, viewport.height)
@@ -911,7 +916,7 @@ async function inspectDocumentRuntimeUI() {
       return view;
     };
 
-    const curateView = await activate('curate');
+    await activate('curate');
     const mediaScroll = document.querySelector('#media-scroll');
     const mediaCanvas = document.querySelector('#media-canvas');
     const previousDensity = elements.thumbnailDensity.value;
@@ -1036,6 +1041,231 @@ async function inspectDocumentRuntimeUI() {
   })()`, true)
 }
 
+async function inspectRuntimeUIPolishStability() {
+  return mainWindow.webContents.executeJavaScript(`(async () => {
+    const settle = () => new Promise((resolveFrame) => requestAnimationFrame(() => requestAnimationFrame(resolveFrame)));
+    const rect = (element) => {
+      const value = element.getBoundingClientRect();
+      return {
+        left: value.left,
+        top: value.top,
+        right: value.right,
+        bottom: value.bottom,
+        width: value.width,
+        height: value.height,
+      };
+    };
+    const rectInside = (inner, outer, tolerance = 1) => inner.width > 0
+      && inner.height > 0
+      && inner.left >= outer.left - tolerance
+      && inner.top >= outer.top - tolerance
+      && inner.right <= outer.right + tolerance
+      && inner.bottom <= outer.bottom + tolerance;
+    const rectStable = (before, after, tolerance = 1) => [
+      'left', 'top', 'right', 'bottom', 'width', 'height',
+    ].every((field) => Math.abs(before[field] - after[field]) <= tolerance);
+    const scrollSnapshot = () => {
+      const owners = {
+        document: document.scrollingElement,
+        body: document.body,
+        workbench: document.querySelector('.workbench'),
+        phaseWorkspaces: document.querySelector('.phase-workspaces'),
+        activePhase: document.querySelector('.phase-view.is-active'),
+      };
+      return Object.fromEntries(Object.entries(owners).map(([name, element]) => [name, {
+        scrollTop: element.scrollTop,
+        scrollLeft: element.scrollLeft,
+      }]));
+    };
+    const scrollStable = (before, after) => Object.keys(before).every((name) => (
+      before[name].scrollTop === after[name].scrollTop
+        && before[name].scrollLeft === after[name].scrollLeft
+    ));
+    const activate = async (phase) => {
+      await enterPhaseForSlide(phase);
+      await settle();
+      return document.querySelector('[data-phase-view="' + phase + '"]');
+    };
+    const viewportRect = { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
+
+    const curateView = await activate('curate');
+    const disclosureEvidence = async (detailsSelector, overlaySelector) => {
+      const details = document.querySelector(detailsSelector);
+      const trigger = details.querySelector(':scope > summary');
+      const overlay = details.querySelector(overlaySelector);
+      details.open = false;
+      await settle();
+      const scrollBefore = scrollSnapshot();
+      const triggerBefore = rect(trigger);
+      details.open = true;
+      details.open = false;
+      details.open = true;
+      await settle();
+      const triggerOpen = rect(trigger);
+      const overlayRect = rect(overlay);
+      const overlayStyle = getComputedStyle(overlay);
+      const viewportPositioned = overlayStyle.position === 'fixed'
+        && ['above', 'below'].includes(details.dataset.disclosurePlacement);
+      const scrollOpen = scrollSnapshot();
+      details.open = false;
+      await settle();
+      const triggerAfter = rect(trigger);
+      const scrollAfter = scrollSnapshot();
+      return {
+        triggerBefore,
+        triggerOpen,
+        triggerAfter,
+        overlayRect,
+        triggerStable: rectStable(triggerBefore, triggerOpen) && rectStable(triggerBefore, triggerAfter),
+        overlayInsideViewport: rectInside(overlayRect, viewportRect),
+        viewportPositioned,
+        noOuterScrollDrift: scrollStable(scrollBefore, scrollOpen) && scrollStable(scrollBefore, scrollAfter),
+      };
+    };
+    const disclosures = {
+      projectReview: await disclosureEvidence('.project-media-judgment', '.project-media-actions'),
+      findMore: await disclosureEvidence('#find-more-panel', '#find-more-form'),
+    };
+
+    await activate('plan');
+    const icons = [...document.querySelectorAll('button.icon-button .phosphor-icon')]
+      .filter((icon) => {
+        const style = getComputedStyle(icon);
+        return !icon.hidden && style.display !== 'none' && icon.getClientRects().length > 0;
+      })
+      .map((icon) => {
+        const button = icon.closest('button');
+        const buttonRect = rect(button);
+        const iconRect = rect(icon);
+        const centerDelta = {
+          x: Math.abs((iconRect.left + iconRect.width / 2) - (buttonRect.left + buttonRect.width / 2)),
+          y: Math.abs((iconRect.top + iconRect.height / 2) - (buttonRect.top + buttonRect.height / 2)),
+        };
+        const style = getComputedStyle(icon);
+        return {
+          buttonId: button.id,
+          buttonRect,
+          iconRect,
+          centerDelta,
+          phosphorBound: style.fontFamily.includes('Phosphor'),
+          centeredAndUnclipped: rectInside(iconRect, buttonRect)
+            && centerDelta.x <= 1.5
+            && centerDelta.y <= 1.5
+            && style.fontFamily.includes('Phosphor'),
+        };
+      });
+
+    await activate('assemble');
+    const zoomLabel = document.querySelector('#zoom-label');
+    const fitArtboard = document.querySelector('#fit-artboard');
+    const originalZoomLabel = zoomLabel.textContent;
+    zoomLabel.textContent = '95%';
+    await settle();
+    const zoom95 = { labelRect: rect(zoomLabel), fitRect: rect(fitArtboard) };
+    zoomLabel.textContent = '100%';
+    await settle();
+    const zoom100 = { labelRect: rect(zoomLabel), fitRect: rect(fitArtboard) };
+    zoomLabel.textContent = originalZoomLabel;
+    await settle();
+    const zoom = {
+      zoom95,
+      zoom100,
+      stable: rectStable(zoom95.labelRect, zoom100.labelRect)
+        && rectStable(zoom95.fitRect, zoom100.fitRect),
+    };
+
+    await activate('plan');
+    const toolbar = document.querySelector('.toolbar');
+    const phaseWorkspaces = document.querySelector('.phase-workspaces');
+    const status = document.querySelector('#save-state');
+    const originalStatus = status.textContent;
+    const statusBefore = {
+      toolbarRect: rect(toolbar),
+      phaseWorkspacesRect: rect(phaseWorkspaces),
+      statusRect: rect(status),
+    };
+    status.textContent = 'InvalidPreferences: ' + 'A deliberately long native status message. '.repeat(8);
+    await settle();
+    const statusStyle = getComputedStyle(status);
+    const statusLong = {
+      toolbarRect: rect(toolbar),
+      phaseWorkspacesRect: rect(phaseWorkspaces),
+      statusRect: rect(status),
+      whiteSpace: statusStyle.whiteSpace,
+      overflow: statusStyle.overflow,
+      textOverflow: statusStyle.textOverflow,
+    };
+    status.textContent = originalStatus;
+    await settle();
+    const longStatus = {
+      before: statusBefore,
+      long: statusLong,
+      stable: rectStable(statusBefore.toolbarRect, statusLong.toolbarRect)
+        && rectStable(statusBefore.phaseWorkspacesRect, statusLong.phaseWorkspacesRect)
+        && rectInside(statusLong.statusRect, statusLong.toolbarRect)
+        && statusStyle.whiteSpace === 'nowrap'
+        && statusStyle.overflow === 'hidden'
+        && statusStyle.textOverflow === 'ellipsis',
+    };
+
+    const handoffView = await activate('handoff');
+    const exportButton = document.querySelector('#export-pdf');
+    const exportContainer = exportButton.parentElement;
+    const originalExportLabel = exportButton.textContent;
+    const exportBefore = {
+      viewRect: rect(handoffView),
+      containerRect: rect(exportContainer),
+      buttonRect: rect(exportButton),
+    };
+    exportButton.textContent = 'Export “' + 'A deliberately long Slide title '.repeat(8) + '” PDF';
+    await settle();
+    const exportStyle = getComputedStyle(exportButton);
+    const exportLong = {
+      viewRect: rect(handoffView),
+      containerRect: rect(exportContainer),
+      buttonRect: rect(exportButton),
+      whiteSpace: exportStyle.whiteSpace,
+      overflow: exportStyle.overflow,
+      textOverflow: exportStyle.textOverflow,
+    };
+    exportButton.textContent = originalExportLabel;
+    await settle();
+    const longHandoffButton = {
+      before: exportBefore,
+      long: exportLong,
+      stable: rectStable(exportBefore.viewRect, exportLong.viewRect)
+        && rectStable(exportBefore.containerRect, exportLong.containerRect)
+        && rectStable(exportBefore.buttonRect, exportLong.buttonRect)
+        && rectInside(exportLong.buttonRect, exportLong.containerRect)
+        && exportStyle.whiteSpace === 'nowrap'
+        && exportStyle.overflow === 'hidden'
+        && exportStyle.textOverflow === 'ellipsis',
+    };
+
+    const result = {
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      scale: interfaceScale,
+      disclosures,
+      icons: {
+        items: icons,
+        centeredAndUnclipped: icons.length >= 2 && icons.every((entry) => entry.centeredAndUnclipped),
+      },
+      zoom,
+      longStatus,
+      longHandoffButton,
+    };
+    result.ok = Object.values(disclosures).every((entry) => entry.triggerStable
+        && entry.overlayInsideViewport
+        && entry.viewportPositioned
+        && entry.noOuterScrollDrift)
+      && result.icons.centeredAndUnclipped
+      && zoom.stable
+      && longStatus.stable
+      && longHandoffButton.stable;
+    return result;
+  })()`, true)
+}
+
 async function presentRuntimePhaseForScreenshot(phase) {
   await mainWindow.webContents.executeJavaScript(`(async () => {
     await enterPhaseForSlide(${JSON.stringify(phase)});
@@ -1067,6 +1297,32 @@ async function captureRuntimeUIScreenshot(outputDirectory, name) {
     bytes: png.byteLength,
     sha256: createHash('sha256').update(png).digest('hex'),
   }
+}
+
+async function captureRepresentativeRuntimeUIScreenshots(outputDirectory) {
+  const screenshots = []
+  const previousArtboardZoom = await mainWindow.webContents.executeJavaScript('artboardZoom', true)
+  for (const phase of ['plan', 'curate', 'assemble', 'handoff']) {
+    await presentRuntimePhaseForScreenshot(phase)
+    if (phase === 'assemble') {
+      await mainWindow.webContents.executeJavaScript(`(() => {
+        artboardZoom = 0.65;
+        elements.artboardZoom.value = String(artboardZoom);
+        applyScales();
+      })()`, true)
+      await new Promise((resolveFrame) => setTimeout(resolveFrame, 50))
+    }
+    screenshots.push(await captureRuntimeUIScreenshot(
+      outputDirectory,
+      `ui-${phase}-1440x900-100.png`,
+    ))
+  }
+  await mainWindow.webContents.executeJavaScript(`(() => {
+    artboardZoom = ${JSON.stringify(previousArtboardZoom)};
+    elements.artboardZoom.value = String(artboardZoom);
+    applyScales();
+  })()`, true)
+  return screenshots
 }
 
 function runtimeUIScrollOwnerPassed(owner) {
@@ -1168,9 +1424,12 @@ async function inspectPackagedDocumentRuntimeUI(outputDirectory) {
       }
     }
   }
-  await configureRuntimeUI({ label: 'default', width: 1440, height: 900 }, 1.25)
+  await configureRuntimeUI(representativeRuntimeUIViewport, 1)
+  const polish = await inspectRuntimeUIPolishStability()
+  screenshots.push(...await captureRepresentativeRuntimeUIScreenshots(outputDirectory))
+  await configureRuntimeUI(representativeRuntimeUIViewport, 1.25)
   await presentRuntimePhaseForScreenshot('plan')
-  return { cases, screenshots, ok: cases.every((entry) => entry.ok) }
+  return { cases, screenshots, polish, ok: cases.every((entry) => entry.ok) && polish.ok }
 }
 
 async function runPackagedTracerCreate(outputDirectory) {
@@ -1324,6 +1583,7 @@ async function runPackagedTracerCreate(outputDirectory) {
     scales: runtimeUIScales,
     cold: runtimeUICold.cases,
     document: runtimeUIDocument.cases,
+    polish: runtimeUIDocument.polish,
     screenshots: [...runtimeUICold.screenshots, ...runtimeUIDocument.screenshots],
     ok: runtimeUICold.ok && runtimeUIDocument.ok,
   }

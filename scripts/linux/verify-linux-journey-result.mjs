@@ -76,6 +76,9 @@ const expectedRuntimeUICases = new Set(expectedRuntimeUIViewports.flatMap((viewp
 
 const numberCloseTo = (actual, expected, tolerance = 1) => Number.isFinite(actual)
   && Math.abs(actual - expected) <= tolerance
+const rectStable = (before, after, tolerance = 1) => before && after
+  && ['left', 'top', 'right', 'bottom', 'width', 'height']
+    .every((field) => numberCloseTo(before[field], after[field], tolerance))
 const rectInside = (rect, width, height) => rect
   && rect.width > 0
   && rect.height > 0
@@ -83,6 +86,13 @@ const rectInside = (rect, width, height) => rect
   && rect.top >= -1
   && rect.right <= width + 1
   && rect.bottom <= height + 1
+const rectNested = (inner, outer) => inner && outer
+  && inner.width > 0
+  && inner.height > 0
+  && inner.left >= outer.left - 1
+  && inner.top >= outer.top - 1
+  && inner.right <= outer.right + 1
+  && inner.bottom <= outer.bottom + 1
 const toolbarFits = (toolbar, width) => toolbar?.present !== false
   && toolbar?.fits !== false
   && Number.isFinite(toolbar?.clientWidth)
@@ -231,19 +241,79 @@ function verifyRuntimeUICases(cases, kind) {
 verifyRuntimeUICases(runtimeUI.cold, 'cold')
 verifyRuntimeUICases(runtimeUI.document, 'document')
 
-const expectedScreenshots = new Set([
-  'ui-cold-1180x605-175.png',
-  'ui-assemble-1180x605-175.png',
-  'ui-handoff-1180x605-175.png',
-  'ui-curate-1180x605-175.png',
+const polish = runtimeUI.polish ?? {}
+const disclosureEntries = Object.values(polish.disclosures ?? {})
+const polishViewport = { width: 1440, height: 900 }
+const disclosuresPass = disclosureEntries.length === 2 && disclosureEntries.every((entry) => (
+  entry.triggerStable === true
+    && entry.overlayInsideViewport === true
+    && entry.viewportPositioned === true
+    && entry.noOuterScrollDrift === true
+    && rectStable(entry.triggerBefore, entry.triggerOpen)
+    && rectStable(entry.triggerBefore, entry.triggerAfter)
+    && rectInside(entry.triggerBefore, polishViewport.width, polishViewport.height)
+    && rectInside(entry.overlayRect, polishViewport.width, polishViewport.height)
+))
+const iconItems = polish.icons?.items ?? []
+const iconsPass = polish.icons?.centeredAndUnclipped === true
+  && iconItems.length >= 2
+  && iconItems.every((entry) => entry.centeredAndUnclipped === true
+    && entry.phosphorBound === true
+    && Number.isFinite(entry.centerDelta?.x)
+    && Number.isFinite(entry.centerDelta?.y)
+    && entry.centerDelta.x <= 1.5
+    && entry.centerDelta.y <= 1.5
+    && rectNested(entry.iconRect, entry.buttonRect))
+const zoomPass = polish.zoom?.stable === true
+  && rectStable(polish.zoom.zoom95?.labelRect, polish.zoom.zoom100?.labelRect)
+  && rectStable(polish.zoom.zoom95?.fitRect, polish.zoom.zoom100?.fitRect)
+const statusPass = polish.longStatus?.stable === true
+  && rectStable(polish.longStatus.before?.toolbarRect, polish.longStatus.long?.toolbarRect)
+  && rectStable(polish.longStatus.before?.phaseWorkspacesRect, polish.longStatus.long?.phaseWorkspacesRect)
+  && rectNested(polish.longStatus.long?.statusRect, polish.longStatus.long?.toolbarRect)
+  && polish.longStatus.long?.whiteSpace === 'nowrap'
+  && polish.longStatus.long?.overflow === 'hidden'
+  && polish.longStatus.long?.textOverflow === 'ellipsis'
+const handoffPass = polish.longHandoffButton?.stable === true
+  && rectStable(polish.longHandoffButton.before?.viewRect, polish.longHandoffButton.long?.viewRect)
+  && rectStable(polish.longHandoffButton.before?.containerRect, polish.longHandoffButton.long?.containerRect)
+  && rectStable(polish.longHandoffButton.before?.buttonRect, polish.longHandoffButton.long?.buttonRect)
+  && rectNested(polish.longHandoffButton.long?.buttonRect, polish.longHandoffButton.long?.containerRect)
+  && polish.longHandoffButton.long?.whiteSpace === 'nowrap'
+  && polish.longHandoffButton.long?.overflow === 'hidden'
+  && polish.longHandoffButton.long?.textOverflow === 'ellipsis'
+if (polish.ok !== true
+  || polish.viewport?.width !== polishViewport.width
+  || polish.viewport?.height !== polishViewport.height
+  || polish.scale !== 1
+  || !disclosuresPass
+  || !iconsPass
+  || !zoomPass
+  || !statusPass
+  || !handoffPass) {
+  throw new Error(`${label}: runtime UI polish stability evidence failed`)
+}
+
+const expectedScreenshots = new Map([
+  ['ui-cold-1180x605-175.png', { width: 1180, height: 605 }],
+  ['ui-assemble-1180x605-175.png', { width: 1180, height: 605 }],
+  ['ui-handoff-1180x605-175.png', { width: 1180, height: 605 }],
+  ['ui-curate-1180x605-175.png', { width: 1180, height: 605 }],
+  ['ui-plan-1440x900-100.png', { width: 1440, height: 900 }],
+  ['ui-curate-1440x900-100.png', { width: 1440, height: 900 }],
+  ['ui-assemble-1440x900-100.png', { width: 1440, height: 900 }],
+  ['ui-handoff-1440x900-100.png', { width: 1440, height: 900 }],
 ])
 if (!Array.isArray(runtimeUI.screenshots)
   || runtimeUI.screenshots.length !== expectedScreenshots.size
-  || runtimeUI.screenshots.some((screenshot) => !expectedScreenshots.has(screenshot.file)
-    || screenshot.width !== 1180
-    || screenshot.height !== 605
-    || screenshot.bytes < 100
-    || !/^[a-f0-9]{64}$/.test(screenshot.sha256 ?? ''))
+  || runtimeUI.screenshots.some((screenshot) => {
+    const expected = expectedScreenshots.get(screenshot.file)
+    return !expected
+      || screenshot.width !== expected.width
+      || screenshot.height !== expected.height
+      || screenshot.bytes < 100
+      || !/^[a-f0-9]{64}$/.test(screenshot.sha256 ?? '')
+  })
   || new Set(runtimeUI.screenshots.map((screenshot) => screenshot.sha256)).size !== expectedScreenshots.size) {
   throw new Error(`${label}: runtime UI screenshots are incomplete or invalid`)
 }

@@ -85,13 +85,13 @@ test('pitch.dog v13 faces and public UI roles own deliberate typography metrics'
   assert.equal(faces.length, 8)
   const byPath = new Map(faces)
   const expectedFaces = new Map([
-    ['fonts/v13/pd-head.woff2', { family: '"PD Head"', weight: '265 900', style: 'normal', display: 'swap' }],
-    ['fonts/v13/pd-head-alt.woff2', { family: '"PD Head Alt"', weight: '265 900', style: 'normal', display: 'swap' }],
-    ['fonts/v13/pd-body-roman.woff2', { family: '"PD Body"', weight: '100 900', style: 'normal', display: 'swap' }],
-    ['fonts/v13/pd-body-italic.woff2', { family: '"PD Body"', weight: '100 900', style: 'italic', display: 'swap' }],
-    ['fonts/v13/pd-body-alt-roman.woff2', { family: '"PD Body Alt"', weight: '100 900', style: 'normal', display: 'swap' }],
-    ['fonts/v13/pd-body-alt-italic.woff2', { family: '"PD Body Alt"', weight: '100 900', style: 'italic', display: 'swap' }],
-    ['fonts/v13/pd-eyebrow-site.woff2', { family: '"PD Eyebrow"', weight: '100 900', style: 'normal', display: 'swap' }],
+    ['fonts/v13/pd-head.woff2', { family: '"PD Head"', weight: '265 900', style: 'normal', display: 'block' }],
+    ['fonts/v13/pd-head-alt.woff2', { family: '"PD Head Alt"', weight: '265 900', style: 'normal', display: 'block' }],
+    ['fonts/v13/pd-body-roman.woff2', { family: '"PD Body"', weight: '100 900', style: 'normal', display: 'block' }],
+    ['fonts/v13/pd-body-italic.woff2', { family: '"PD Body"', weight: '100 900', style: 'italic', display: 'block' }],
+    ['fonts/v13/pd-body-alt-roman.woff2', { family: '"PD Body Alt"', weight: '100 900', style: 'normal', display: 'block' }],
+    ['fonts/v13/pd-body-alt-italic.woff2', { family: '"PD Body Alt"', weight: '100 900', style: 'italic', display: 'block' }],
+    ['fonts/v13/pd-eyebrow-site.woff2', { family: '"PD Eyebrow"', weight: '100 900', style: 'normal', display: 'block' }],
     ['icons/phosphor/Phosphor.woff2', { family: '"Phosphor"', weight: '400', style: 'normal', display: 'block' }],
   ])
   assert.deepEqual(new Set(byPath.keys()), new Set(expectedFaces.keys()))
@@ -103,6 +103,8 @@ test('pitch.dog v13 faces and public UI roles own deliberate typography metrics'
     assert.equal(face['font-display'], expected.display, `${path} loading policy`)
   }
   assert.equal(byPath.get('fonts/v13/pd-eyebrow-site.woff2')['font-stretch'], '87.5%')
+  assert.match(styles, /html:not\(\[data-fonts-ready="true"\]\) \.workbench \{ visibility: hidden; \}/)
+  assert.match(workspace, /await loadWorkbenchFonts\(\)[\s\S]+?document\.documentElement\.dataset\.fontsReady = 'true'/)
 
   const root = styleFor(':root')
   assert.equal(root['font-family'], 'var(--font-body)')
@@ -579,7 +581,7 @@ test('composition overflow is a visible Handoff state and a real PDF barrier', a
   assert.equal(status.attributes.get('aria-live'), 'polite')
 
   const handoffElements = {
-    exportPDF: { textContent: '', disabled: false, title: '', dataset: {}, addEventListener() {} },
+    exportPDF: { textContent: '', disabled: false, title: '', dataset: {}, addEventListener() {}, setAttribute() {} },
     handoffExportState: { hidden: true, textContent: '' },
     handoffSummary: { innerHTML: '' },
     handoffList: { innerHTML: '', addEventListener() {} },

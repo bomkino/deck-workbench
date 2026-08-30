@@ -16,6 +16,7 @@ const runtimeUIViewports = [
   { label: 'compact-desktop', width: 1280, height: 720 },
 ]
 const runtimeUIScales = [1, 1.25, 1.5, 1.75]
+const representativeRuntimeUIViewport = { width: 1440, height: 900 }
 
 function runtimeUIRect(left, top, width, height) {
   return { left, top, right: left + width, bottom: top + height, width, height }
@@ -142,6 +143,85 @@ function runtimeUICase(viewport, scale, kind) {
   return { viewport, scale, configuration, geometry, ok: true }
 }
 
+function runtimeUIPolishEvidence() {
+  const trigger = runtimeUIRect(48, 120, 180, 44)
+  const toolbar = runtimeUIRect(0, 0, 1440, 96)
+  const phaseWorkspaces = runtimeUIRect(0, 96, 1440, 804)
+  const status = runtimeUIRect(1180, 24, 220, 44)
+  const handoffView = runtimeUIRect(0, 96, 1440, 804)
+  const handoffContainer = runtimeUIRect(980, 620, 360, 180)
+  const handoffButton = runtimeUIRect(1020, 700, 280, 44)
+  const disclosure = (overlayRect) => ({
+    triggerBefore: trigger,
+    triggerOpen: trigger,
+    triggerAfter: trigger,
+    overlayRect,
+    triggerStable: true,
+    overlayInsideViewport: true,
+    viewportPositioned: true,
+    noOuterScrollDrift: true,
+  })
+  return {
+    viewport: representativeRuntimeUIViewport,
+    scale: 1,
+    disclosures: {
+      projectReview: disclosure(runtimeUIRect(48, 170, 360, 240)),
+      findMore: disclosure(runtimeUIRect(980, 420, 360, 260)),
+    },
+    icons: {
+      items: ['undo', 'redo'].map((buttonId, index) => ({
+        buttonId,
+        buttonRect: runtimeUIRect(1100 + index * 52, 24, 44, 44),
+        iconRect: runtimeUIRect(1111 + index * 52, 35, 22, 22),
+        centerDelta: { x: 0, y: 0 },
+        phosphorBound: true,
+        centeredAndUnclipped: true,
+      })),
+      centeredAndUnclipped: true,
+    },
+    zoom: {
+      zoom95: {
+        labelRect: runtimeUIRect(1100, 120, 48, 24),
+        fitRect: runtimeUIRect(1160, 110, 80, 44),
+      },
+      zoom100: {
+        labelRect: runtimeUIRect(1100, 120, 48, 24),
+        fitRect: runtimeUIRect(1160, 110, 80, 44),
+      },
+      stable: true,
+    },
+    longStatus: {
+      before: { toolbarRect: toolbar, phaseWorkspacesRect: phaseWorkspaces, statusRect: status },
+      long: {
+        toolbarRect: toolbar,
+        phaseWorkspacesRect: phaseWorkspaces,
+        statusRect: status,
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+      },
+      stable: true,
+    },
+    longHandoffButton: {
+      before: {
+        viewRect: handoffView,
+        containerRect: handoffContainer,
+        buttonRect: handoffButton,
+      },
+      long: {
+        viewRect: handoffView,
+        containerRect: handoffContainer,
+        buttonRect: handoffButton,
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+      },
+      stable: true,
+    },
+    ok: true,
+  }
+}
+
 function runtimeUIEvidence() {
   return {
     schemaVersion: 1,
@@ -151,17 +231,22 @@ function runtimeUIEvidence() {
       .map((scale) => runtimeUICase(viewport, scale, 'cold'))),
     document: runtimeUIViewports.flatMap((viewport) => runtimeUIScales
       .map((scale) => runtimeUICase(viewport, scale, 'document'))),
+    polish: runtimeUIPolishEvidence(),
     screenshots: [
       'ui-cold-1180x605-175.png',
       'ui-assemble-1180x605-175.png',
       'ui-handoff-1180x605-175.png',
       'ui-curate-1180x605-175.png',
+      'ui-plan-1440x900-100.png',
+      'ui-curate-1440x900-100.png',
+      'ui-assemble-1440x900-100.png',
+      'ui-handoff-1440x900-100.png',
     ].map((file, index) => {
       const bytes = runtimeUIScreenshotBytes(index)
       return {
         file,
-        width: 1180,
-        height: 605,
+        width: file.includes('1440x900') ? 1440 : 1180,
+        height: file.includes('1440x900') ? 900 : 605,
         bytes: bytes.byteLength,
         sha256: createHash('sha256').update(bytes).digest('hex'),
       }
@@ -187,6 +272,7 @@ const [
   appImageRuntimeLicense,
   verifyScript,
   journeyVerifier,
+  linuxMain,
   workflow,
 ] = await Promise.all([
   readFile(new URL('../package.json', import.meta.url), 'utf8').then(JSON.parse),
@@ -199,6 +285,7 @@ const [
   readFile(new URL('../scripts/linux/legal/appimage-type2-runtime-LICENSE', import.meta.url), 'utf8'),
   readFile(new URL('../scripts/linux/verify-packaged-linux.sh', import.meta.url), 'utf8'),
   readFile(new URL('../scripts/linux/verify-linux-journey-result.mjs', import.meta.url), 'utf8'),
+  readFile(new URL('../apps/linux/main.mjs', import.meta.url), 'utf8'),
   readFile(new URL('../.github/workflows/dw-g01-linux.yml', import.meta.url), 'utf8'),
 ])
 
@@ -270,6 +357,12 @@ test('Ubuntu package gate verifies an extracted x86-64 artifact without disablin
   assert.match(journeyVerifier, /full application process relaunch was not proved/)
   assert.match(journeyVerifier, /createInstanceId/)
   assert.match(journeyVerifier, /reopenInstanceId/)
+  assert.match(linuxMain, /inspectRuntimeUIPolishStability/)
+  assert.match(linuxMain, /captureRepresentativeRuntimeUIScreenshots/)
+  assert.match(linuxMain, /`ui-\$\{phase\}-1440x900-100\.png`/)
+  assert.match(workflow, /deck-workbench-dw-g01-ui-evidence-/)
+  assert.match(workflow, /artifacts\/evidence\/linux\/journey\/journey-result\.json/)
+  assert.match(workflow, /artifacts\/evidence\/linux\/journey\/ui-\*-1440x900-100\.png/)
   assert.match(verifyScript, /Pages:\[\[:space:\]\]\+1/)
 })
 
@@ -368,6 +461,14 @@ test('journey evidence accepts distinct process instances and rejects a reused i
     await assert.rejects(
       execFileAsync(process.execPath, [fileURLToPath(journeyVerifierPath), resultPath, 'test AppImage']),
       /runtime UI document scroll ownership drifted/,
+    )
+
+    result.checks.runtimeUI.document[0].geometry.scrollOwners.workbench.scrollWidth -= 2
+    result.checks.runtimeUI.polish.disclosures.findMore.overlayInsideViewport = false
+    await writeFile(resultPath, `${JSON.stringify(result)}\n`)
+    await assert.rejects(
+      execFileAsync(process.execPath, [fileURLToPath(journeyVerifierPath), resultPath, 'test AppImage']),
+      /runtime UI polish stability evidence failed/,
     )
   } finally {
     await rm(directory, { recursive: true, force: true })

@@ -4,7 +4,7 @@ import { open, readFile, rename } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
 export const interfaceScaleSteps = Object.freeze([0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75])
-export const defaultPreferences = Object.freeze({ interfaceScale: 1, artboardZoom: 0.35 })
+export const defaultPreferences = Object.freeze({ interfaceScale: 1, artboardZoom: 0.65 })
 
 function defaults() {
   return { ...defaultPreferences }

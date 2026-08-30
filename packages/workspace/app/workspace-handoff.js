@@ -38,8 +38,9 @@ function renderHandoff() {
   const included = records.filter((record) => record.metadata.lifecycle === 'included')
   const counts = { ready: 0, review: 0, blocked: 0 }
   for (const record of included) counts[planReadiness(record).state] += 1
-  elements.exportPDF.textContent = projection
-    ? `Export ${projection.slide?.internalTitle ?? projection.headline?.plainText ?? 'active Slide'} PDF`
+  elements.exportPDF.textContent = 'Export active Slide PDF'
+  const exportLabel = projection
+    ? `Export ${projection.slide?.internalTitle ?? projection.headline?.plainText ?? 'active Slide'} as a PDF`
     : 'Export active Slide PDF'
   const overflowCount = compositionOverflowCountForProjection(projection)
   elements.handoffExportState.hidden = overflowCount === 0
@@ -47,7 +48,8 @@ function renderHandoff() {
     ? `${overflowCount} active-Slide element${overflowCount === 1 ? '' : 's'} exceed the authored frame. Shorten the copy or choose another Pattern before export.`
     : ''
   elements.exportPDF.disabled = !projection || overflowCount > 0 || elements.exportPDF.dataset.exporting === 'true'
-  elements.exportPDF.title = overflowCount ? 'Fix active-Slide composition overflow before export' : ''
+  elements.exportPDF.title = overflowCount ? 'Fix active-Slide composition overflow before export' : exportLabel
+  elements.exportPDF.setAttribute('aria-label', elements.exportPDF.title)
   elements.handoffSummary.innerHTML = [
     summaryChip(included.length, 'Included'),
     summaryChip(counts.ready, 'Ready'),

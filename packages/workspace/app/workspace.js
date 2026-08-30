@@ -294,9 +294,11 @@ async function presentDocumentAction(method, busyLabel) {
 async function boot() {
   bindWorkspaceEvents()
   try {
+    await loadWorkbenchFonts()
     const preferences = await window.deckBridge.getPreferences()
     interfaceScale = preferences.interfaceScale
     artboardZoom = preferences.artboardZoom
+    markArtboardZoomPersisted(artboardZoom)
     applyScales()
     const next = await window.deckBridge.query({ name: 'slide.activeProjection', params: {} })
     projection = next
@@ -311,6 +313,31 @@ async function boot() {
       ? 'No document session'
       : `${error?.name ?? 'Error'}: ${error?.message ?? 'Workbench could not load'}`
     setStatus(message)
+  }
+}
+
+async function loadWorkbenchFonts() {
+  const fontSet = document.fonts
+  if (!fontSet) {
+    document.documentElement.dataset.fontsReady = 'true'
+    return
+  }
+  const requiredFaces = [
+    ['500 1rem "PD Head"', 'Workbench'],
+    ['500 1rem "PD Head Alt"', 'Workbench'],
+    ['400 1rem "PD Body"', 'Workbench'],
+    ['italic 400 1rem "PD Body"', 'Workbench'],
+    ['400 1rem "PD Body Alt"', 'Workbench'],
+    ['italic 400 1rem "PD Body Alt"', 'Workbench'],
+    ['500 1rem "PD Eyebrow"', 'WORKBENCH'],
+    ['400 1rem "Phosphor"', '\uE136'],
+  ]
+  try {
+    const loaded = await Promise.all(requiredFaces.map(([font, sample]) => fontSet.load(font, sample)))
+    await fontSet.ready
+    if (loaded.some((faces) => faces.length === 0)) throw new Error('A required bundled UI font did not load')
+  } finally {
+    document.documentElement.dataset.fontsReady = 'true'
   }
 }
 

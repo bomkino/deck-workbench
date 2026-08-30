@@ -54,11 +54,13 @@ select {
   outline: 3px solid #2865d8;
   outline-offset: 2px;
 }
-.sequence-list .slide-row:hover,
-.sequence-list .section-row:hover {
-  border-color: var(--rule);
-  background: var(--paper);
-  color: var(--ink);
+@media (hover: hover) and (pointer: fine) {
+  .sequence-list .slide-row:hover,
+  .sequence-list .section-row:hover {
+    border-color: var(--rule);
+    background: var(--paper);
+    color: var(--ink);
+  }
 }
 .sequence-list .slide-row[aria-current="page"] {
   background: var(--ink);

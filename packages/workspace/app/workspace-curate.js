@@ -757,10 +757,17 @@ function renderCurateActions() {
   const decision = asset ? curateDecisionForAsset(asset.id) : null
   const slots = curateSlideProjection?.slots ?? []
   const hasAssignableSlot = slots.length > 0
-  elements.focusedAssetSummary.textContent = asset ? asset.label : 'No Asset selected'
+  const targetSlot = slots.find((slot) => slot.key === curateTargetSlotKey)
+    ?? slots.find((slot) => !slot.selected)
+    ?? slots[0]
+  const targetLabel = targetSlot ? slotDisplayName(targetSlot) : 'No open slot'
+  elements.focusedAssetSummary.textContent = asset ? `${asset.label} · Target: ${targetLabel}` : 'No Asset selected'
+  elements.focusedAssetSummary.title = elements.focusedAssetSummary.textContent
   elements.toggleProjectPick.disabled = !enabled
   elements.toggleProjectPick.setAttribute('aria-pressed', String(Boolean(judgment.projectPick)))
-  elements.toggleProjectPick.textContent = judgment.projectPick ? 'Project Picked' : 'Project Pick'
+  elements.toggleProjectPick.textContent = 'Project Pick'
+  elements.toggleProjectPick.title = judgment.projectPick ? 'Remove Project Pick' : 'Mark as Project Pick'
+  elements.toggleProjectPick.setAttribute('aria-label', elements.toggleProjectPick.title)
   elements.projectRating.disabled = !enabled
   elements.projectRating.value = String(judgment.rating)
   elements.projectReview.disabled = !enabled
@@ -768,13 +775,11 @@ function renderCurateActions() {
   elements.previewMedia.disabled = !enabled
   elements.shortlistMedia.disabled = !enabled
   elements.assignPrimaryMedia.disabled = !enabled || !hasAssignableSlot
-  const targetSlot = slots.find((slot) => slot.key === curateTargetSlotKey)
-    ?? slots.find((slot) => !slot.selected)
-    ?? slots[0]
-  elements.assignPrimaryMedia.textContent = targetSlot
+  elements.assignPrimaryMedia.textContent = 'Assign to slot'
+  elements.assignPrimaryMedia.title = targetSlot
     ? `${targetSlot.selected ? 'Replace' : 'Assign to'} ${slotDisplayName(targetSlot)}`
-    : 'Assign primary'
-  elements.assignPrimaryMedia.title = hasAssignableSlot ? 'Assign to the named slot shown on this button' : 'This Slide has no media slots'
+    : 'This Slide has no media slots'
+  elements.assignPrimaryMedia.setAttribute('aria-label', elements.assignPrimaryMedia.title)
   elements.alternateMedia.disabled = !enabled
   elements.rejectSlideMedia.disabled = !enabled
   elements.clearSlideMedia.disabled = !enabled || !decision || decision.state === 'considered'
@@ -784,7 +789,9 @@ function renderCurateActions() {
   const compared = asset ? curateCompareIds.includes(asset.id) : false
   elements.toggleCompareMedia.disabled = !enabled || (!compared && curateCompareIds.length >= CURATE_COMPARE_LIMIT)
   elements.toggleCompareMedia.setAttribute('aria-pressed', String(compared))
-  elements.toggleCompareMedia.textContent = compared ? 'Remove from Compare' : 'Add to Compare'
+  elements.toggleCompareMedia.textContent = 'Compare choice'
+  elements.toggleCompareMedia.title = compared ? 'Remove from Compare' : 'Add to Compare'
+  elements.toggleCompareMedia.setAttribute('aria-label', elements.toggleCompareMedia.title)
   elements.compareCount.textContent = String(curateCompareIds.length)
   elements.openMediaCompare.disabled = curateCompareIds.length < 2
 }
@@ -1315,6 +1322,8 @@ function closeCurateOverlays() {
   if (elements?.mediaPreview?.open) elements.mediaPreview.close()
   if (elements?.mediaCompare?.open) elements.mediaCompare.close()
   if (elements?.mediaContextMenu) elements.mediaContextMenu.hidden = true
+  if (elements?.projectMediaJudgment?.open) elements.projectMediaJudgment.open = false
+  if (elements?.findMorePanel?.open) elements.findMorePanel.open = false
 }
 
 function restoreCurateMediaFocus() {
@@ -1390,6 +1399,7 @@ async function saveAllCurateFindMoreDrafts() {
     if (!result) {
       await enterPhaseForSlide('curate', slideId)
       elements.findMorePanel.open = true
+      positionCurateDisclosure(elements.findMorePanel)
       elements.findMoreBrief.focus({ preventScroll: true })
       return { saved: false, count: savedCount }
     }
@@ -1520,7 +1530,96 @@ function handleCurateContextMenuKeydown(event) {
   buttons[nextIndex].focus()
 }
 
+function curateDisclosurePanel(details) {
+  return details === elements.projectMediaJudgment
+    ? details.querySelector('.project-media-actions')
+    : details.querySelector('.find-more-form')
+}
+
+function positionCurateDisclosure(details) {
+  if (!details?.open) {
+    if (details) delete details.dataset.disclosurePositioned
+    return false
+  }
+  const trigger = details.querySelector(':scope > summary')
+  const panel = curateDisclosurePanel(details)
+  if (!trigger || !panel) return false
+  const margin = 8
+  const rootSize = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
+  const gap = Math.max(6, rootSize * 0.35)
+  const triggerRect = trigger.getBoundingClientRect()
+  const above = Math.max(0, triggerRect.top - margin - gap)
+  const below = Math.max(0, window.innerHeight - triggerRect.bottom - margin - gap)
+  const naturalHeight = Math.min(panel.scrollHeight, window.innerHeight - (margin * 2))
+  const opensAbove = above >= naturalHeight || above >= below
+  const availableHeight = Math.max(1, opensAbove ? above : below)
+  panel.style.maxHeight = `${availableHeight}px`
+  const panelRect = panel.getBoundingClientRect()
+  const alignEnd = details === elements.findMorePanel
+  const preferredLeft = alignEnd ? triggerRect.right - panelRect.width : triggerRect.left
+  const left = Math.min(
+    window.innerWidth - panelRect.width - margin,
+    Math.max(margin, preferredLeft),
+  )
+  const preferredTop = opensAbove
+    ? triggerRect.top - gap - panelRect.height
+    : triggerRect.bottom + gap
+  const top = Math.min(
+    window.innerHeight - panelRect.height - margin,
+    Math.max(margin, preferredTop),
+  )
+  panel.style.left = `${left}px`
+  panel.style.top = `${top}px`
+  panel.style.setProperty('--disclosure-origin', opensAbove
+    ? `bottom ${alignEnd ? 'right' : 'left'}`
+    : `top ${alignEnd ? 'right' : 'left'}`)
+  panel.style.setProperty('--disclosure-enter-y', opensAbove ? '0.35rem' : '-0.35rem')
+  details.dataset.disclosurePlacement = opensAbove ? 'above' : 'below'
+  details.dataset.disclosurePositioned = 'true'
+  return true
+}
+
+function positionOpenCurateDisclosures() {
+  positionCurateDisclosure(elements.projectMediaJudgment)
+  positionCurateDisclosure(elements.findMorePanel)
+}
+
+function handleCurateViewportScroll(event) {
+  const projectPanel = curateDisclosurePanel(elements.projectMediaJudgment)
+  const findMorePanel = curateDisclosurePanel(elements.findMorePanel)
+  if (projectPanel?.contains(event.target) || findMorePanel?.contains(event.target)) return
+  positionOpenCurateDisclosures()
+}
+
+function bindCurateDisclosure(details, otherDetails) {
+  const trigger = details.querySelector(':scope > summary')
+  const panel = curateDisclosurePanel(details)
+  trigger.addEventListener('click', (event) => {
+    if (event.detail > 0 && matchMedia('(hover: hover) and (pointer: fine)').matches) {
+      details.dataset.pointerToggle = 'true'
+    }
+  })
+  details.addEventListener('toggle', () => {
+    const pointerOpening = details.dataset.pointerToggle === 'true'
+    delete details.dataset.pointerToggle
+    details.classList.remove('is-pointer-opening')
+    if (!details.open) {
+      delete details.dataset.disclosurePositioned
+      delete details.dataset.disclosurePlacement
+      return
+    }
+    otherDetails.open = false
+    positionCurateDisclosure(details)
+    if (pointerOpening && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      details.classList.add('is-pointer-opening')
+      panel.addEventListener('animationend', () => details.classList.remove('is-pointer-opening'), { once: true })
+    }
+  })
+}
+
 function bindCurateEvents() {
+  bindCurateDisclosure(elements.projectMediaJudgment, elements.findMorePanel)
+  bindCurateDisclosure(elements.findMorePanel, elements.projectMediaJudgment)
   elements.curateQueueFilters.forEach((button) => button.addEventListener('click', () => {
     curateQueueFilter = button.dataset.curateQueueFilter
     renderCurateQueue()
@@ -1671,7 +1770,25 @@ function bindCurateEvents() {
     if (!elements.mediaContextMenu.hidden && !elements.mediaContextMenu.contains(event.target)) {
       elements.mediaContextMenu.hidden = true
     }
+    if (elements.projectMediaJudgment.open && !elements.projectMediaJudgment.contains(event.target)) {
+      elements.projectMediaJudgment.open = false
+    }
+    if (elements.findMorePanel.open && !elements.findMorePanel.contains(event.target)) {
+      elements.findMorePanel.open = false
+    }
   }, true)
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return
+    if (elements.projectMediaJudgment.open) {
+      elements.projectMediaJudgment.open = false
+      elements.projectMediaSummary.focus({ preventScroll: true })
+    } else if (elements.findMorePanel.open) {
+      elements.findMorePanel.open = false
+      elements.findMoreSummaryTrigger.focus({ preventScroll: true })
+    }
+  })
+  document.addEventListener('scroll', handleCurateViewportScroll, true)
+  window.addEventListener('resize', positionOpenCurateDisclosures)
   window.addEventListener('blur', () => { elements.mediaContextMenu.hidden = true })
 
   if ('ResizeObserver' in window) {

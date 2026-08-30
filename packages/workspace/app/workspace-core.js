@@ -437,6 +437,8 @@ const elements = {
   scanMediaRoot: document.querySelector('#scan-media-root'),
   revealMediaSource: document.querySelector('#reveal-media-source'),
   focusedAssetSummary: document.querySelector('#focused-asset-summary'),
+  projectMediaJudgment: document.querySelector('#project-media-judgment'),
+  projectMediaSummary: document.querySelector('#project-media-summary'),
   toggleProjectPick: document.querySelector('#toggle-project-pick'),
   projectRating: document.querySelector('#project-rating'),
   projectReview: document.querySelector('#project-review'),
@@ -456,6 +458,7 @@ const elements = {
   curateBriefHeading: document.querySelector('#curate-brief-heading'),
   curateBriefContent: document.querySelector('#curate-brief-content'),
   findMorePanel: document.querySelector('#find-more-panel'),
+  findMoreSummaryTrigger: document.querySelector('#find-more-summary-trigger'),
   findMoreForm: document.querySelector('#find-more-form'),
   findMoreState: document.querySelector('#find-more-state'),
   findMoreSummary: document.querySelector('#find-more-summary'),
@@ -507,7 +510,7 @@ let projection = null
 let storyDocument = null
 let selectedSlideId = null
 let interfaceScale = 1
-let artboardZoom = 0.35
+let artboardZoom = 0.65
 let activePhase = 'plan'
 let planSearch = ''
 let planFilter = 'all'
@@ -517,6 +520,7 @@ let pendingWorkspaceSlideId = null
 
 function setStatus(message) {
   if (elements.saveState.textContent !== message) elements.saveState.textContent = message
+  elements.saveState.title = message
 }
 
 function setBusy(message) {

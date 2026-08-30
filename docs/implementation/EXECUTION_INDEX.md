@@ -12,6 +12,10 @@
   authentic packaged Root/reopen and visual journeys remain.
 - `DW-W09`: bounded local CLI source-ready.
 - `DW-W10`: privacy-safe support-report seam source-ready.
+- `v0.0.1` UI/UX candidate: source-ready font-stable first paint, owned
+  disclosures, fixed action/status geometry, a 65% clean-install Artboard Zoom,
+  and packaged geometry/screenshot probes; exact-head CI still controls
+  promotion and release.
 - Repository hardening: strict journal record boundaries, durable/live-state fencing, dead utility-process rejection, recoverable Linux preferences, atomic Linux PDF publication and one canonical repository verification gate.
 
 Target-machine Garuda and interactive macOS accessibility checks are waived for
