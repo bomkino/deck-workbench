@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
+import { settleRuntimeViewport } from '../apps/linux/runtime-viewport.mjs'
 
 const [styles, workspace, tracer, app, controller, linuxHost] = await Promise.all([
   readFile(new URL('../packages/workspace/app/styles.css', import.meta.url), 'utf8'),
@@ -58,10 +59,16 @@ test('packaged WebKit journey still measures 175 percent reachability and indepe
   assert.match(tracer, /documentWidth <= viewportWidth \+ 1/)
 })
 
-test('packaged Electron journey measures real compact viewports after fonts settle', () => {
+test('packaged Electron journey settles real compact viewports before inspecting fonts and geometry', async () => {
   assert.match(linuxHost, /label: 'mac-post-toolbar-proxy', width: 1180, height: 605/)
   assert.match(linuxHost, /label: 'compact-desktop', width: 1280, height: 720/)
   assert.match(linuxHost, /runtimeUIScales = Object\.freeze\(\[1, 1\.25, 1\.5, 1\.75\]\)/)
+  assert.match(linuxHost, /settleRuntimeViewport\(\{/)
+  assert.ok(
+    linuxHost.indexOf('await settleRuntimeViewport({')
+      < linuxHost.indexOf('await globalThis.deckBridge.setInterfaceScale'),
+    'runtime viewport must settle before scale geometry is inspected',
+  )
   assert.match(linuxHost, /await document\.fonts\.ready/)
   assert.match(linuxHost, /createDeckFullyVisible/)
   assert.match(linuxHost, /mediaScrollFitsVirtualCard/)
@@ -69,6 +76,39 @@ test('packaged Electron journey measures real compact viewports after fonts sett
   assert.match(linuxHost, /introFullyVisible/)
   assert.match(linuxHost, /artboardMajorityInitiallyVisible/)
   assert.match(linuxHost, /captureRuntimeUIScreenshot/)
+  assert.match(linuxHost, /Runtime UI assertion evidence:/)
+
+  const observations = [
+    { width: 1179, height: 605 },
+    { width: 1180, height: 604 },
+    { width: 1180, height: 605 },
+  ]
+  const delays = []
+  const settled = await settleRuntimeViewport({
+    requestedViewport: { width: 1180, height: 605 },
+    readViewport: async () => observations.shift(),
+    delay: async (milliseconds) => delays.push(milliseconds),
+  })
+  assert.deepEqual(settled, {
+    attempts: 3,
+    viewport: { width: 1180, height: 605 },
+  })
+  assert.deepEqual(delays, [25, 25])
+
+  let timeoutReads = 0
+  await assert.rejects(
+    settleRuntimeViewport({
+      requestedViewport: { width: 1180, height: 605 },
+      readViewport: async () => {
+        timeoutReads += 1
+        return { width: 1179, height: 604 }
+      },
+      delay: async () => {},
+      maxAttempts: 2,
+    }),
+    { name: 'RuntimeUISetupFailed', message: /observed 1179x604/ },
+  )
+  assert.equal(timeoutReads, 2)
 })
 
 test('native shell scales its controls without feeding scale into artboard geometry', () => {

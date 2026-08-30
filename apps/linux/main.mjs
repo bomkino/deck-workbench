@@ -21,6 +21,7 @@ import { UtilityKernelClient } from './utility-client.mjs'
 import { defaultPreferences, interfaceScaleSteps, loadPreferencesFile } from './preferences.mjs'
 import { MediaGrantStore } from './media-grants.mjs'
 import { LinuxMediaSession } from './media-session.mjs'
+import { settleRuntimeViewport } from './runtime-viewport.mjs'
 
 const repositoryRoot = resolve(import.meta.dirname, '../..')
 const sharedWorkspaceRoot = resolve(repositoryRoot, 'apps/macos/Resources/Workspace')
@@ -712,6 +713,13 @@ const runtimeUIScales = Object.freeze([1, 1.25, 1.5, 1.75])
 
 async function configureRuntimeUI(viewport, scale) {
   mainWindow.setContentSize(viewport.width, viewport.height)
+  const viewportSettle = await settleRuntimeViewport({
+    requestedViewport: viewport,
+    readViewport: () => mainWindow.webContents.executeJavaScript(`({
+      width: window.innerWidth,
+      height: window.innerHeight,
+    })`, true),
+  })
   return mainWindow.webContents.executeJavaScript(`(async () => {
     const requested = ${JSON.stringify({ viewport: null, scale: null })};
     requested.viewport = ${JSON.stringify(viewport)};
@@ -750,6 +758,7 @@ async function configureRuntimeUI(viewport, scale) {
       && computedFamilies.icon.includes('Phosphor');
     return {
       requestedViewport: requested.viewport,
+      viewportSettle: ${JSON.stringify(viewportSettle)},
       viewport: { width: window.innerWidth, height: window.innerHeight },
       scale: interfaceScale,
       layout: document.documentElement.dataset.workspaceLayout,
@@ -1311,7 +1320,16 @@ async function runPackagedTracerCreate(outputDirectory) {
     resolve(outputDirectory, 'journey-create-result.json'),
     `${JSON.stringify(result, null, 2)}\n`,
   )
-  if (!result.ok) throw namedError('TracerFailed', 'Linux packaged create journey assertions failed')
+  if (!result.ok) {
+    const failedRuntimeUICases = ['cold', 'document'].flatMap((kind) => result.checks.runtimeUI[kind]
+      .filter((entry) => entry.ok !== true)
+      .map((entry) => ({ kind, ...entry })))
+    if (failedRuntimeUICases.length) {
+      console.error('Runtime UI assertion evidence:')
+      console.error(JSON.stringify(failedRuntimeUICases, null, 2))
+    }
+    throw namedError('TracerFailed', 'Linux packaged create journey assertions failed')
+  }
   return result
 }
 
