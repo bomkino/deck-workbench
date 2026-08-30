@@ -35,4 +35,8 @@ test('invalid scale values reject explicitly', () => {
     () => workspaceTransforms({ interfaceScale: 1, artboardZoom: 5, canvas }),
     /between 10% and 400%/,
   )
+  assert.throws(
+    () => workspaceTransforms({ interfaceScale: 1, artboardZoom: 1, canvas: { width: 0, height: 1080 } }),
+    /Canvas geometry is required/,
+  )
 })

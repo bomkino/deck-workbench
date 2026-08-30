@@ -159,9 +159,9 @@ test('Interface Scale cannot leak rem-based chrome geometry into the authored ar
 test('native and Linux export modes preserve one authored artboard with uniform geometry', async () => {
   const artboard = styleFor('.artboard')
   const width = Number.parseFloat(artboard.width)
-  const height = Number.parseFloat(artboard.height)
+  const height = width * 1080 / 2576
   assert.equal(width, 1088)
-  assert.ok(Math.abs((width / height) - (2576 / 1080)) < 1e-8)
+  assert.equal(artboard.height, 'var(--artboard-base-height, 456.149068px)')
 
   const nativeExport = styleFor('html[data-workspace-export="native"] #artboard')
   const linuxExport = styleFor('html[data-workspace-export="linux"] #artboard')
@@ -171,21 +171,37 @@ test('native and Linux export modes preserve one authored artboard with uniform 
   assert.equal(value(nativeExport.transform), 'none')
   assert.equal(value(linuxExport.width), artboard.width)
   assert.equal(value(linuxExport.height), artboard.height)
-  const linuxScale = Number(value(linuxExport.transform).match(/^scale\(([\d.]+)\)$/)?.[1])
-  assert.ok(Number.isFinite(linuxScale) && linuxScale > 0 && linuxScale < 1)
-
-  const page = linuxHost.match(/@page \{ size: ([\d.]+)mm ([\d.]+)mm; margin: 0; \}/)
-  assert.ok(page, 'Linux PDF page has no explicit physical canvas')
-  const millimetresToCSSPixels = (millimetres) => millimetres * 96 / 25.4
-  assert.ok(Math.abs(width * linuxScale - millimetresToCSSPixels(Number(page[1]))) < 0.02)
-  assert.ok(Math.abs(height * linuxScale - millimetresToCSSPixels(Number(page[2]))) < 0.02)
+  assert.equal(value(linuxExport.transform), 'scale(var(--linux-export-scale, 0.89485873))')
+  assert.match(linuxHost, /@page \{ size: \$\{pageWidthCSS\} \$\{pageHeightCSS\}; margin: 0; \}/)
+  assert.match(linuxHost, /pageSize: \{ width: Math\.round\(pageWidthMm \* 1000\), height: Math\.round\(pageHeightMm \* 1000\) \}/)
 
   const exportStart = workspace.indexOf('  async exportFrame(')
   const exportEnd = workspace.indexOf('  async tracerEditHeadline', exportStart)
   assert.ok(exportStart >= 0 && exportEnd > exportStart)
   const exportSource = workspace.slice(exportStart, exportEnd)
   const exportState = { overflow: 0 }
-  const initialExportProjection = { composition: { elements: [] } }
+  const initialExportProjection = {
+    composition: { elements: [] },
+    canvas: {
+      id: 'cinemascope-2576x1080',
+      width: 2576,
+      height: 1080,
+      pageWidthMm: 257.6,
+      pageHeightMm: 108,
+    },
+  }
+  const expectedExportFrame = (token) => ({
+    token,
+    x: 8,
+    y: 12,
+    width,
+    height,
+    canvasPresetId: 'cinemascope-2576x1080',
+    canvasWidth: 2576,
+    canvasHeight: 1080,
+    pageWidthMm: 257.6,
+    pageHeightMm: 108,
+  })
   let exportLayoutReads = 0
   const documentState = {
     documentElement: {
@@ -242,7 +258,7 @@ test('native and Linux export modes preserve one authored artboard with uniform 
   assert.equal(harness.state().workspaceExportPreparing, true)
   assert.deepEqual(await harness.api.exportFrame('linux'), { error: 'ExportBusy' })
   resolvePendingFonts()
-  assert.deepEqual(await pendingExport, { token: '1', x: 8, y: 12, width, height })
+  assert.deepEqual(await pendingExport, expectedExportFrame('1'))
   assert.equal(harness.state().workspaceExportPreparing, false)
   assert.equal(harness.state().workspaceExportSession.token, '1')
   assert.deepEqual(harness.api.finishExport('1'), { finished: true })
@@ -285,7 +301,7 @@ test('native and Linux export modes preserve one authored artboard with uniform 
   assert.equal(harness.state().activePhase, 'handoff')
 
   exportState.overflow = 0
-  assert.deepEqual(await harness.api.exportFrame(), { token: '4', x: 8, y: 12, width, height })
+  assert.deepEqual(await harness.api.exportFrame(), expectedExportFrame('4'))
   assert.equal(documentState.documentElement.dataset.workspaceExport, 'native')
   assert.equal(harness.state().workspaceExportSession.token, '4')
   assert.equal(harness.state().activePhase, 'assemble')
@@ -295,7 +311,7 @@ test('native and Linux export modes preserve one authored artboard with uniform 
   assert.deepEqual(harness.api.finishExport('4'), { finished: true })
   assert.deepEqual(documentState.documentElement.dataset, {})
   assert.equal(harness.state().activePhase, 'handoff')
-  assert.deepEqual(await harness.api.exportFrame('linux'), { token: '5', x: 8, y: 12, width, height })
+  assert.deepEqual(await harness.api.exportFrame('linux'), expectedExportFrame('5'))
   assert.equal(documentState.documentElement.dataset.workspaceExport, 'linux')
   assert.deepEqual(harness.api.finishExport('5'), { finished: true })
   assert.equal(harness.state().renderCount, 10)
@@ -555,10 +571,10 @@ test('composition rendering preserves authored text roles and announces actual f
     assemblyOverflowState: { hidden: true, textContent: '' },
   }
   const scheduleOverflow = Function(
-    'requestAnimationFrame', 'document', 'elements', 'compositionOverflowNodes',
+    'requestAnimationFrame', 'document', 'elements', 'compositionOverflowNodes', 'canvasReviewMessage',
     `"use strict"; ${functionSource(visual, 'scheduleCompositionOverflowCheck', 'syncVisualControls')}; return scheduleCompositionOverflowCheck;`,
-  )((callback) => frames.push(callback), { fonts: { ready } }, overflowElements, preflight.compositionOverflowNodes)
-  scheduleOverflow()
+  )((callback) => frames.push(callback), { fonts: { ready } }, overflowElements, preflight.compositionOverflowNodes, () => '')
+  scheduleOverflow(projectionFixture)
   assert.equal(overflowElements.assemblyOverflowState.hidden, true, 'measurement waits for layout')
   frames.splice(0).forEach((frameCallback) => frameCallback())
   assert.equal(overflowElements.assemblyOverflowState.hidden, false)
@@ -665,4 +681,10 @@ test('source, generated workspace, and both packaged hosts share one verified fo
   assert.deepEqual(generatedAssets.fontAssetPaths, sourceAssets.fontAssetPaths)
   const hosts = verifyWorkspaceFontHostRoutes({ styles, linuxSource: linuxHost, macSource: macHost })
   assert.deepEqual(hosts.routes, sourceAssets.fontAssetPaths.map((path) => `/${path}`).sort())
+})
+
+test('compact Assembly removes the redundant heading before it can collide with canvas controls', () => {
+  assert.match(html, /class="stage-heading"/)
+  assert.match(styles, /html\[data-workspace-layout="single-column"\] \.stage-heading \{ display: none; \}/)
+  assert.match(styles, /html\[data-workspace-layout="single-column"\] \.stage-toolbar \{[^}]*grid-template-columns: minmax\(0, 1fr\);/)
 })

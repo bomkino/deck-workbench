@@ -136,6 +136,7 @@ test('each W02 Pattern creates a stable active Composition that references canon
         : item.patternId === 'full-bleed-statement'
           ? 'Full-bleed Statement'
           : 'Editorial Body',
+      canvasPresetId: 'cinemascope-2576x1080',
     })
     assert.equal(projection.composition.id, `${item.optionId}:composition`)
     assert.equal(projection.composition.elements.length, item.count)

@@ -20,7 +20,13 @@ export function normalizeArtboardZoom(value) {
 export function workspaceTransforms({ interfaceScale, artboardZoom, canvas }) {
   const ui = normalizeInterfaceScale(interfaceScale)
   const zoom = normalizeArtboardZoom(artboardZoom)
-  if (!canvas || !Number.isFinite(canvas.width) || !Number.isFinite(canvas.height)) {
+  if (
+    !canvas
+    || !Number.isFinite(canvas.width)
+    || !Number.isFinite(canvas.height)
+    || canvas.width <= 0
+    || canvas.height <= 0
+  ) {
     throw new TypeError('Canvas geometry is required')
   }
   return Object.freeze({

@@ -9,6 +9,7 @@ import { DurableDeckSession, WorkbenchFailure } from '../../packages/document-st
 
 const QUERY_NAMES = Object.freeze(new Set([
   'deck.summary',
+  'canvas.preset.catalog',
   'history.summary',
   'story.document',
   'slide.activeProjection',
@@ -16,6 +17,7 @@ const QUERY_NAMES = Object.freeze(new Set([
 
 const COMMAND_NAMES = Object.freeze(new Set([
   'deck.rename',
+  'canvas.preset.set',
   'content.add',
   'content.update',
   'content.remove',

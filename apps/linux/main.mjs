@@ -293,14 +293,26 @@ async function exportOnePagePDF(destination) {
   if (typeof frame?.token !== 'string' || !frame.token) {
     throw namedError('WorkspaceUnavailable', 'Slide export frame is invalid')
   }
+  const pageWidthMm = Number(frame.pageWidthMm)
+  const pageHeightMm = Number(frame.pageHeightMm)
+  if (
+    !Number.isFinite(pageWidthMm)
+    || !Number.isFinite(pageHeightMm)
+    || pageWidthMm <= 0
+    || pageHeightMm <= 0
+    || pageWidthMm > 1000
+    || pageHeightMm > 1000
+  ) throw namedError('WorkspaceUnavailable', 'Slide export page geometry is invalid')
+  const pageWidthCSS = `${pageWidthMm.toFixed(3)}mm`
+  const pageHeightCSS = `${pageHeightMm.toFixed(3)}mm`
   let cssKey = null
   let result = null
   let operationFailure = null
   try {
     cssKey = await mainWindow.webContents.insertCSS(`
       @media print {
-        @page { size: 257.6mm 108mm; margin: 0; }
-        html, body { width: 257.6mm !important; height: 108mm !important; margin: 0 !important; overflow: hidden !important; }
+        @page { size: ${pageWidthCSS} ${pageHeightCSS}; margin: 0; }
+        html, body { width: ${pageWidthCSS} !important; height: ${pageHeightCSS} !important; margin: 0 !important; overflow: hidden !important; }
         body > * { display: none !important; }
         .workbench, .editorial-spine, .stage, .stage-scroll, #artboard { display: block !important; }
         .workbench > :not(.editorial-spine), .editorial-spine > :not(.stage), .stage > :not(.stage-scroll) { display: none !important; }
@@ -309,7 +321,7 @@ async function exportOnePagePDF(destination) {
     `)
     const pdf = await mainWindow.webContents.printToPDF({
       printBackground: true,
-      pageSize: { width: 257600, height: 108000 },
+      pageSize: { width: Math.round(pageWidthMm * 1000), height: Math.round(pageHeightMm * 1000) },
       margins: { top: 0, bottom: 0, left: 0, right: 0 },
       preferCSSPageSize: true,
     })
@@ -1294,6 +1306,42 @@ async function presentRuntimePhaseForScreenshot(phase) {
     }
     await new Promise((resolveFrame) => requestAnimationFrame(() => requestAnimationFrame(resolveFrame)));
   })()`, true)
+  await waitForRuntimeVisualState({ phase })
+}
+
+async function presentRuntimeThemeForScreenshot(theme) {
+  await mainWindow.webContents.executeJavaScript(`(async () => {
+    const result = await globalThis.deckBridge.setTheme({ value: ${JSON.stringify(theme)} });
+    applyThemePreference(result.theme);
+    await new Promise((resolveFrame) => requestAnimationFrame(() => requestAnimationFrame(resolveFrame)));
+  })()`, true)
+  await waitForRuntimeVisualState({ theme })
+}
+
+async function waitForRuntimeVisualState({ phase = null, theme = null }) {
+  const deadline = Date.now() + 2_000
+  let observed = null
+  do {
+    observed = await mainWindow.webContents.executeJavaScript(`(() => {
+      const phase = typeof activePhase === 'string' ? activePhase : null;
+      const view = phase ? document.querySelector('[data-phase-view="' + phase + '"]') : null;
+      return {
+        phase,
+        phaseVisible: view?.getAttribute('aria-hidden') === 'false',
+        theme: document.documentElement.dataset.themeEffective ?? null,
+      };
+    })()`, true)
+    if ((!phase || (observed.phase === phase && observed.phaseVisible))
+      && (!theme || observed.theme === theme)) {
+      await new Promise((resolveFrame) => setTimeout(resolveFrame, 75))
+      return observed
+    }
+    await new Promise((resolveFrame) => setTimeout(resolveFrame, 25))
+  } while (Date.now() < deadline)
+  throw namedError(
+    'RuntimeUIStateTimeout',
+    `Screenshot state did not settle (${JSON.stringify({ expected: { phase, theme }, observed })})`,
+  )
 }
 
 async function captureRuntimeUIScreenshot(outputDirectory, name) {
@@ -1315,11 +1363,7 @@ async function captureRepresentativeRuntimeUIScreenshots(outputDirectory) {
   const previousArtboardZoom = await mainWindow.webContents.executeJavaScript('artboardZoom', true)
   const previousTheme = preferences.theme
   for (const theme of ['light', 'dark']) {
-    await mainWindow.webContents.executeJavaScript(`(async () => {
-      const result = await globalThis.deckBridge.setTheme({ value: ${JSON.stringify(theme)} });
-      applyThemePreference(result.theme);
-      await new Promise((resolveFrame) => requestAnimationFrame(() => requestAnimationFrame(resolveFrame)));
-    })()`, true)
+    await presentRuntimeThemeForScreenshot(theme)
     for (const phase of ['plan', 'curate', 'assemble', 'handoff']) {
       await presentRuntimePhaseForScreenshot(phase)
       if (phase === 'assemble') {
@@ -1346,6 +1390,114 @@ async function captureRepresentativeRuntimeUIScreenshots(outputDirectory) {
     applyThemePreference(result.theme);
   })()`, true)
   return screenshots
+}
+
+async function inspectPackagedCanvasPresets(outputDirectory) {
+  const previousPreferences = { ...preferences }
+  const packagePath = resolve(outputDirectory, 'canvas-presets.pitchdeck')
+  const seed = {
+    deckId: '00000000-0000-4000-8000-000000000301',
+    sectionId: '00000000-0000-4000-8000-000000000302',
+    slideId: '00000000-0000-4000-8000-000000000303',
+    blockId: '00000000-0000-4000-8000-000000000304',
+    title: 'Canvas Preset Proof',
+    initialHeadline: 'One Story. Every Frame.',
+  }
+  activePackagePath = packagePath
+  const initial = await utility.request('document.create', { packagePath, seed })
+  await renderProjection(initial)
+
+  const execute = async (commandId, type, payload, issuedAt) => {
+    const story = await invokeInWorkspace('query', { name: 'story.document', params: {} })
+    const result = await invokeInWorkspace('execute', {
+      command: {
+        commandId,
+        expectedRevision: story.revision,
+        type,
+        payload,
+        source: { kind: 'ui', label: 'Packaged canvas preset proof' },
+        issuedAt,
+      },
+    })
+    await renderProjection(result.projection)
+    return result.projection
+  }
+
+  await execute(
+    '00000000-0000-4000-8000-000000000305',
+    'content.add',
+    {
+      slideId: seed.slideId,
+      blockId: '00000000-0000-4000-8000-000000000306',
+      semanticKey: 'story.body',
+      role: 'body',
+      value: {
+        type: 'doc',
+        content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Landscape, square and portrait stay deliberate.' }] }],
+      },
+      afterBlockId: seed.blockId,
+    },
+    '2026-08-30T15:00:00.000Z',
+  )
+
+  const cases = [
+    { id: 'widescreen-1920x1080', slug: 'landscape' },
+    { id: 'square-2160x2160', slug: 'square' },
+    { id: 'a4-portrait', slug: 'portrait' },
+  ]
+  const evidence = []
+  const screenshots = []
+  for (const [index, item] of cases.entries()) {
+    await execute(
+      `00000000-0000-4000-8000-00000000031${index}`,
+      'canvas.preset.set',
+      { canvasPresetId: item.id },
+      `2026-08-30T15:00:1${index}.000Z`,
+    )
+    const projection = await execute(
+      `00000000-0000-4000-8000-00000000032${index}`,
+      'designOption.applyPattern',
+      {
+        slideId: seed.slideId,
+        designOptionId: `00000000-0000-4000-8000-00000000033${index}`,
+        patternId: 'editorial-body',
+        patternVersion: 1,
+        contentBindings: {
+          headline: seed.blockId,
+          body: '00000000-0000-4000-8000-000000000306',
+        },
+      },
+      `2026-08-30T15:00:2${index}.000Z`,
+    )
+    await configureRuntimeUI(representativeRuntimeUIViewport, 1)
+    await presentRuntimePhaseForScreenshot('assemble')
+    await mainWindow.webContents.executeJavaScript(`(() => {
+      artboardZoom = fittedArtboardZoom();
+      elements.artboardZoom.value = String(artboardZoom);
+      applyScales();
+    })()`, true)
+    for (const theme of ['light', 'dark']) {
+      await presentRuntimeThemeForScreenshot(theme)
+      screenshots.push(await captureRuntimeUIScreenshot(
+        outputDirectory,
+        `canvas-${item.slug}-${theme}-1440x900.png`,
+      ))
+    }
+    const pdfFile = `canvas-${item.slug}.pdf`
+    const pdf = await exportOnePagePDF(resolve(outputDirectory, pdfFile))
+    evidence.push({
+      canvas: projection.canvas,
+      designOption: projection.designOption,
+      pdf: { file: pdfFile, ...pdf },
+    })
+  }
+  await utility.request('document.save')
+  await invokeInWorkspace('setTheme', { value: previousPreferences.theme })
+  await invokeInWorkspace('setInterfaceScale', { value: previousPreferences.interfaceScale })
+  await invokeInWorkspace('setArtboardZoom', { value: previousPreferences.artboardZoom })
+  await utility.request('document.close')
+  activePackagePath = null
+  return { cases: evidence, screenshots, ok: evidence.length === cases.length }
 }
 
 function runtimeUIScrollOwnerPassed(owner) {
@@ -1615,6 +1767,10 @@ async function runPackagedTracerCreate(outputDirectory) {
   const saved = await utility.request('document.save')
   await utility.request('document.close')
   activePackagePath = null
+  const canvasPresets = await inspectPackagedCanvasPresets(outputDirectory)
+  runtimeUI.canvasPresets = canvasPresets
+  runtimeUI.screenshots.push(...canvasPresets.screenshots)
+  runtimeUI.ok = runtimeUI.ok && canvasPresets.ok
   const persistedPreferences = JSON.parse(await readFile(preferencesPath(), 'utf8'))
 
   const result = {

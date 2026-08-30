@@ -384,13 +384,15 @@ details > summary:focus-visible .disclosure-caret { transition: none; }
 .assemble-phase { display: grid; grid-template-areas: "toolbar toolbar" "stage controls"; grid-template-columns: minmax(0, 1fr) minmax(18rem, 0.32fr); grid-template-rows: auto minmax(0, 1fr); background: var(--stage); color: var(--stage-text); }
 .stage-toolbar { grid-area: toolbar; min-height: 4.5rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.75rem 1rem; border-bottom: 1px solid var(--stage-rule); background: var(--stage-raised); }
 .stage-toolbar h2 { margin-top: 0.1rem; }
-.stage-controls { display: flex; align-items: end; gap: 0.55rem; }
+.stage-controls { min-width: 0; display: flex; flex-wrap: wrap; align-items: end; justify-content: flex-end; gap: 0.55rem; }
 .stage-controls label { min-width: 11rem; color: var(--stage-text); }
+.stage-controls .canvas-control { min-width: 15rem; }
+.stage-controls #apply-canvas { min-width: 7.75rem; }
 .stage-controls input { border-color: var(--stage-rule); background: #202426; color: var(--stage-text); }
 #zoom-label { inline-size: 4ch; min-inline-size: 4ch; align-self: center; text-align: end; font-variant-numeric: tabular-nums lining-nums; }
 .stage-scroll { grid-area: stage; min-width: 0; min-height: 0; overflow: auto; display: grid; place-items: center; padding: 3rem; background: radial-gradient(circle at 50% 40%, rgb(255 255 255 / 0.05), transparent 32%), var(--stage); }
 .artboard-shell { position: relative; flex: 0 0 auto; }
-.artboard { position: absolute; left: 0; top: 0; width: 1088px; height: 456.149068px; overflow: hidden; transform: scale(var(--artboard-zoom)); transform-origin: 0 0; background: #111; color: #fff; box-shadow: 0 32px 96px rgb(0 0 0 / 0.7); font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 16px; }
+.artboard { position: absolute; left: 0; top: 0; width: 1088px; height: var(--artboard-base-height, 456.149068px); overflow: hidden; transform: scale(var(--artboard-zoom)); transform-origin: 0 0; background: #111; color: #fff; box-shadow: 0 32px 96px rgb(0 0 0 / 0.7); font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 16px; }
 #semantic-fallback { position: absolute; inset: 0; display: grid; align-content: center; gap: 16px; padding: 80px; background: linear-gradient(110deg, #080a0b, #34464d); }
 .artboard-kicker { font-size: 16px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; }
 #artboard-headline { max-width: 16ch; font-size: 72px; line-height: 0.95; white-space: pre-wrap; }
@@ -426,11 +428,13 @@ details > summary:focus-visible .disclosure-caret { transition: none; }
 #export-pdf { width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 html[data-workspace-export="native"] .stage-scroll,
-html[data-workspace-export="linux"] .stage-scroll { position: fixed !important; inset: 0 !important; z-index: 1000 !important; display: block !important; width: 1088px !important; height: 456.149068px !important; padding: 0 !important; overflow: visible !important; background: transparent !important; }
-html[data-workspace-export="native"] .artboard-shell,
-html[data-workspace-export="linux"] .artboard-shell { width: 1088px !important; height: 456.149068px !important; }
-html[data-workspace-export="native"] #artboard { position: absolute !important; inset: 0 !important; width: 1088px !important; height: 456.149068px !important; transform: none !important; transform-origin: 0 0 !important; }
-html[data-workspace-export="linux"] #artboard { position: absolute !important; inset: 0 !important; width: 1088px !important; height: 456.149068px !important; transform: scale(0.89485873) !important; transform-origin: 0 0 !important; }
+html[data-workspace-export="linux"] .stage-scroll { position: fixed !important; inset: 0 !important; z-index: 1000 !important; display: block !important; padding: 0 !important; overflow: visible !important; background: transparent !important; }
+html[data-workspace-export="native"] .stage-scroll,
+html[data-workspace-export="native"] .artboard-shell { width: 1088px !important; height: var(--artboard-base-height, 456.149068px) !important; }
+html[data-workspace-export="linux"] .stage-scroll,
+html[data-workspace-export="linux"] .artboard-shell { width: var(--linux-export-width, 973.606299px) !important; height: var(--linux-export-height, 408.188976px) !important; }
+html[data-workspace-export="native"] #artboard { position: absolute !important; inset: 0 !important; width: 1088px !important; height: var(--artboard-base-height, 456.149068px) !important; transform: none !important; transform-origin: 0 0 !important; }
+html[data-workspace-export="linux"] #artboard { position: absolute !important; inset: 0 !important; width: 1088px !important; height: var(--artboard-base-height, 456.149068px) !important; transform: scale(var(--linux-export-scale, 0.89485873)) !important; transform-origin: 0 0 !important; }
 
 html[data-workspace-layout="two-column"] .toolbar { grid-template-columns: minmax(12rem, 0.72fr) minmax(24rem, 1.5fr) minmax(18rem, 0.92fr); }
 html[data-workspace-layout="two-column"] .plan-phase { grid-template-areas: "sequence map" "editor editor"; grid-template-columns: minmax(18rem, 0.72fr) minmax(26rem, 1.28fr); grid-template-rows: minmax(18rem, 0.72fr) minmax(26rem, 1.28fr); overflow: auto; }
@@ -482,7 +486,8 @@ html[data-workspace-layout="single-column"] .media-scroll { overscroll-behavior-
 html[data-workspace-layout="single-column"] .curate-tray { min-height: 32rem; grid-template-columns: minmax(0, 1fr); grid-template-rows: repeat(4, minmax(7rem, auto)); }
 html[data-workspace-layout="single-column"] .curate-tray > section { min-height: 7rem; border-right: 0; border-bottom: 1px solid var(--rule); }
 html[data-workspace-layout="single-column"] .assemble-phase { grid-template-areas: "toolbar" "stage" "controls"; grid-template-rows: auto minmax(min(32rem, 65vh), auto) auto; }
-html[data-workspace-layout="single-column"] .stage-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; padding: min(0.75rem, 12px) min(1rem, 16px); }
+html[data-workspace-layout="single-column"] .stage-toolbar { display: grid; grid-template-columns: minmax(0, 1fr); padding: min(0.75rem, 12px) min(1rem, 16px); }
+html[data-workspace-layout="single-column"] .stage-heading { display: none; }
 html[data-workspace-layout="single-column"] .stage-controls label { min-width: min(11rem, 32vw); }
 html[data-workspace-layout="single-column"] .stage-controls label > span { display: none; }
 html[data-workspace-layout="single-column"] .stage-scroll { min-height: min(32rem, 65vh); overflow: visible; place-items: start center; padding: min(1rem, 16px); }

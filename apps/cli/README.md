@@ -20,4 +20,4 @@ node apps/cli/deck-workbench.mjs undo --document /path/to/Deck.pitchdeck
 node apps/cli/deck-workbench.mjs redo --document /path/to/Deck.pitchdeck
 ```
 
-Success is one JSON object on stdout. A typed failure is one JSON object on stderr with a nonzero exit status. Queries are limited to `deck.summary`, `history.summary`, `story.document`, and `slide.activeProjection`. Commands are limited to the semantic command names implemented by the shared kernel.
+Success is one JSON object on stdout. A typed failure is one JSON object on stderr with a nonzero exit status. Queries are limited to `deck.summary`, `canvas.preset.catalog`, `history.summary`, `story.document`, and `slide.activeProjection`. Commands are limited to the semantic command names implemented by the shared kernel, including durable `canvas.preset.set` changes.

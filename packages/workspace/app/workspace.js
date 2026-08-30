@@ -396,7 +396,19 @@ window.deckWorkbench = Object.freeze({
       throw error
     }
     workspaceExportSession = { token, returnPhase }
-    return { token, x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+    const exportCanvas = exportProjection.canvas
+    return {
+      token,
+      x: rect.x,
+      y: rect.y,
+      width: rect.width,
+      height: rect.height,
+      canvasPresetId: exportCanvas.id ?? 'cinemascope-2576x1080',
+      canvasWidth: exportCanvas.width,
+      canvasHeight: exportCanvas.height,
+      pageWidthMm: Number.isFinite(exportCanvas.pageWidthMm) ? exportCanvas.pageWidthMm : exportCanvas.width / 10,
+      pageHeightMm: Number.isFinite(exportCanvas.pageHeightMm) ? exportCanvas.pageHeightMm : exportCanvas.height / 10,
+    }
   },
   finishExport(token) {
     if (!workspaceExportSession || token !== workspaceExportSession.token) return { finished: false }
