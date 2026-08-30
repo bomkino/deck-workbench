@@ -403,6 +403,7 @@ test('Ubuntu package gate verifies an extracted x86-64 artifact without disablin
   assert.match(workflow, /deck-workbench-dw-g01-ui-evidence-/)
   assert.match(workflow, /artifacts\/evidence\/linux\/journey\/journey-result\.json/)
   assert.match(workflow, /artifacts\/evidence\/linux\/journey\/ui-\*-1440x900-100\.png/)
+  assert.match(workflow, /artifacts\/evidence\/linux\/journey\/canvas-\*-1440x900\.png/)
   assert.match(verifyScript, /Pages:\[\[:space:\]\]\+1/)
 })
 

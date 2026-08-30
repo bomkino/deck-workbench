@@ -82,5 +82,6 @@ jobs:
             artifacts/evidence/linux/journey/journey-result.json
             artifacts/evidence/linux/journey/ui-*-1180x605-175.png
             artifacts/evidence/linux/journey/ui-*-1440x900-100.png
+            artifacts/evidence/linux/journey/canvas-*-1440x900.png
           if-no-files-found: error
           retention-days: 14

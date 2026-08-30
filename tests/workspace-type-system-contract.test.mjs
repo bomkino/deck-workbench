@@ -682,3 +682,9 @@ test('source, generated workspace, and both packaged hosts share one verified fo
   const hosts = verifyWorkspaceFontHostRoutes({ styles, linuxSource: linuxHost, macSource: macHost })
   assert.deepEqual(hosts.routes, sourceAssets.fontAssetPaths.map((path) => `/${path}`).sort())
 })
+
+test('compact Assembly removes the redundant heading before it can collide with canvas controls', () => {
+  assert.match(html, /class="stage-heading"/)
+  assert.match(styles, /html\[data-workspace-layout="single-column"\] \.stage-heading \{ display: none; \}/)
+  assert.match(styles, /html\[data-workspace-layout="single-column"\] \.stage-toolbar \{[^}]*grid-template-columns: minmax\(0, 1fr\);/)
+})
