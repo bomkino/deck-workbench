@@ -183,6 +183,7 @@ test('native and Linux export modes preserve one authored artboard with uniform 
   assert.ok(exportStart >= 0 && exportEnd > exportStart)
   const exportSource = workspace.slice(exportStart, exportEnd)
   const exportState = { overflow: 0 }
+  const initialExportProjection = { composition: { elements: [] } }
   let exportLayoutReads = 0
   const documentState = {
     documentElement: {
@@ -199,41 +200,70 @@ test('native and Linux export modes preserve one authored artboard with uniform 
     `"use strict";
       let projection = initialProjection;
       let workspaceExportSession = null;
+      let workspaceExportPreparing = false;
       let workspaceExportSequence = 0;
       let activePhase = 'handoff';
       let renderCount = 0;
       function renderAll() { renderCount += 1; }
       const api = Object.freeze({${workspace.slice(exportStart, exportEnd)}});
-      return { api, state: () => ({ activePhase, workspaceExportSession, renderCount }), setProjection: (next) => { projection = next; } };
+      return { api, state: () => ({ activePhase, workspaceExportSession, workspaceExportPreparing, renderCount }), setProjection: (next) => { projection = next; } };
     `,
   )(
     () => exportState.overflow,
-    { composition: { elements: [] } },
+    initialExportProjection,
     documentState,
     { workbench: { inert: false }, artboard: { getBoundingClientRect: () => ({ x: 8, y: 12, width, height }) } },
   )
   await assert.rejects(harness.api.exportFrame('screen'), RangeError)
+
+  let resolvePendingFonts
+  documentState.fonts.ready = new Promise((resolveReady) => { resolvePendingFonts = resolveReady })
+  const pendingExport = harness.api.exportFrame()
+  assert.equal(harness.state().workspaceExportPreparing, true)
+  assert.deepEqual(await harness.api.exportFrame('linux'), { error: 'ExportBusy' })
+  resolvePendingFonts()
+  assert.deepEqual(await pendingExport, { token: '1', x: 8, y: 12, width, height })
+  assert.equal(harness.state().workspaceExportPreparing, false)
+  assert.equal(harness.state().workspaceExportSession.token, '1')
+  assert.deepEqual(harness.api.finishExport('1'), { finished: true })
+
+  let resolveStaleFonts
+  documentState.fonts.ready = new Promise((resolveReady) => { resolveStaleFonts = resolveReady })
+  const staleExport = harness.api.exportFrame()
+  harness.setProjection({ composition: { elements: [] }, revision: 2 })
+  resolveStaleFonts()
+  assert.deepEqual(await staleExport, { error: 'ExportStale' })
+  assert.equal(harness.state().workspaceExportPreparing, false)
+  assert.equal(harness.state().workspaceExportSession, null)
+  harness.setProjection(initialExportProjection)
+
+  documentState.fonts.ready = Promise.reject(new Error('font load failed'))
+  await assert.rejects(harness.api.exportFrame(), /font load failed/)
+  assert.equal(harness.state().workspaceExportPreparing, false)
+  documentState.fonts.ready = Promise.resolve()
+
   exportState.overflow = 2
   assert.deepEqual(await harness.api.exportFrame(), { error: 'CompositionOverflow', overflowCount: 2 })
+  assert.equal(harness.state().workspaceExportPreparing, false)
   assert.deepEqual(documentState.documentElement.dataset, {})
   assert.equal(harness.state().activePhase, 'handoff')
 
   exportState.overflow = 0
-  assert.deepEqual(await harness.api.exportFrame(), { token: '1', x: 8, y: 12, width, height })
+  assert.deepEqual(await harness.api.exportFrame(), { token: '2', x: 8, y: 12, width, height })
   assert.equal(documentState.documentElement.dataset.workspaceExport, 'native')
-  assert.equal(harness.state().workspaceExportSession.token, '1')
+  assert.equal(harness.state().workspaceExportSession.token, '2')
   assert.equal(harness.state().activePhase, 'assemble')
   assert.deepEqual(await harness.api.exportFrame('linux'), { error: 'ExportBusy' })
   assert.deepEqual(harness.api.finishExport('wrong-token'), { finished: false })
   assert.equal(harness.state().activePhase, 'assemble')
-  assert.deepEqual(harness.api.finishExport('1'), { finished: true })
+  assert.deepEqual(harness.api.finishExport('2'), { finished: true })
   assert.deepEqual(documentState.documentElement.dataset, {})
   assert.equal(harness.state().activePhase, 'handoff')
-  assert.deepEqual(await harness.api.exportFrame('linux'), { token: '2', x: 8, y: 12, width, height })
+  assert.deepEqual(await harness.api.exportFrame('linux'), { token: '3', x: 8, y: 12, width, height })
   assert.equal(documentState.documentElement.dataset.workspaceExport, 'linux')
-  assert.deepEqual(harness.api.finishExport('2'), { finished: true })
-  assert.equal(harness.state().renderCount, 4)
-  assert.equal(exportLayoutReads, 3)
+  assert.deepEqual(harness.api.finishExport('3'), { finished: true })
+  assert.equal(harness.state().renderCount, 6)
+  assert.equal(exportLayoutReads, 5)
   assert.match(exportSource, /await \(document\.fonts\?\.ready/)
   assert.match(exportSource, /document\.documentElement\.getBoundingClientRect\(\)/)
   assert.match(exportSource, /projection !== exportProjection/)

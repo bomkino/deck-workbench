@@ -315,6 +315,7 @@ async function boot() {
 }
 
 let workspaceExportSession = null
+let workspaceExportPreparing = false
 let workspaceExportSequence = 0
 
 window.deckWorkbench = Object.freeze({
@@ -323,13 +324,18 @@ window.deckWorkbench = Object.freeze({
   selectSlide,
   async exportFrame(mode = 'native') {
     if (!['native', 'linux'].includes(mode)) throw new RangeError('Unknown workspace export mode')
-    if (workspaceExportSession) return { error: 'ExportBusy' }
+    if (workspaceExportSession || workspaceExportPreparing) return { error: 'ExportBusy' }
+    workspaceExportPreparing = true
     const exportProjection = projection
-    await (document.fonts?.ready ?? Promise.resolve())
-    document.documentElement.getBoundingClientRect()
-    if (projection !== exportProjection) return { error: 'ExportStale' }
-    const overflowCount = compositionOverflowCountForProjection(exportProjection)
-    if (overflowCount > 0) return { error: 'CompositionOverflow', overflowCount }
+    try {
+      await (document.fonts?.ready ?? Promise.resolve())
+      document.documentElement.getBoundingClientRect()
+      if (projection !== exportProjection) return { error: 'ExportStale' }
+      const overflowCount = compositionOverflowCountForProjection(exportProjection)
+      if (overflowCount > 0) return { error: 'CompositionOverflow', overflowCount }
+    } finally {
+      workspaceExportPreparing = false
+    }
     const token = String(++workspaceExportSequence)
     workspaceExportSession = { token, returnPhase: activePhase }
     activePhase = 'assemble'
