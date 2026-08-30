@@ -106,7 +106,7 @@ function bindPlanEvents() {
     const action = event.target.closest('[data-map-action]')?.dataset.mapAction
     if (action === 'edit') {
       void selectSlide(slideId).then((next) => {
-        if (next?.slide?.id === slideId) elements.internalTitle.focus({ preventScroll: true })
+        if (next?.slide?.id === slideId) focusPlanControl(elements.internalTitle)
       })
       return
     }
@@ -380,7 +380,7 @@ function renderSupportingItems() {
         <strong>${String(index + 1).padStart(2, '0')}</strong>
         <label><span>Title</span><input data-item-field="title" value="${escapeAttribute(item.title)}" /></label>
         <label><span>Caption</span><textarea data-item-field="caption" rows="3">${escapeHTML(item.caption)}</textarea></label>
-        <button type="button" data-remove-item="${escapeAttribute(item.id)}" aria-label="Remove ${escapeAttribute(item.title || `item ${index + 1}`)}">×</button>
+        <button class="icon-button" type="button" data-remove-item="${escapeAttribute(item.id)}" aria-label="Remove ${escapeAttribute(item.title || `item ${index + 1}`)}" title="Remove ${escapeAttribute(item.title || `item ${index + 1}`)}">${phosphorIconMarkup('trashSimple')}</button>
         <span></span><label><span>Link</span><input data-item-field="link" value="${escapeAttribute(item.link)}" /></label>
       </div>`).join('')
     : '<div class="empty-workspace"><strong>No Supporting Items.</strong><p>Add stable items for comps, cast, team, episodes or locations.</p></div>'
@@ -500,7 +500,29 @@ async function focusPlanDraftError(slideId, role) {
     : role === 'part'
       ? elements.partSelect
       : elements.additionalContent.querySelector(`[data-copy-role="${CSS.escape(role)}"] [data-copy-input]`)
-  target?.focus({ preventScroll: true })
+  focusPlanControl(target)
+}
+
+function focusPlanControl(target) {
+  if (!target) return false
+  try {
+    target.focus({ preventScroll: true })
+  } catch {
+    target.focus()
+  }
+  requestAnimationFrame(() => {
+    const phase = target.closest('[data-phase-view]')
+    if (!phase || phase.getAttribute('aria-hidden') === 'true') return
+    const targetRect = target.getBoundingClientRect()
+    const phaseRect = phase.getBoundingClientRect()
+    const margin = 16 * interfaceScale
+    const outside = targetRect.top < phaseRect.top + margin
+      || targetRect.bottom > phaseRect.bottom - margin
+      || targetRect.left < phaseRect.left + margin
+      || targetRect.right > phaseRect.right - margin
+    if (outside) target.scrollIntoView({ block: 'center', inline: 'nearest' })
+  })
+  return document.activeElement === target
 }
 
 async function savePlanDraftById(slideId, { announce = false } = {}) {
@@ -761,16 +783,14 @@ function renderSequence(next) {
       move.type = 'button'
       move.className = 'move-sequence'
       move.dataset.direction = direction
-      move.textContent = direction === 'up' ? '↑' : '↓'
-      move.setAttribute('aria-label', `Move ${section.title} ${direction}`)
+      setPhosphorIconButton(move, direction === 'up' ? 'arrowUp' : 'arrowDown', `Move ${section.title} ${direction}`)
       move.addEventListener('click', () => moveSection(section.id, direction))
       tools.append(move)
     }
     if (section.slides.length === 0 && next.sections.length > 1) {
       const remove = document.createElement('button')
       remove.type = 'button'
-      remove.textContent = '×'
-      remove.setAttribute('aria-label', `Remove empty Section ${section.title}`)
+      setPhosphorIconButton(remove, 'trashSimple', `Remove empty Section ${section.title}`)
       remove.addEventListener('click', () => removeSection(section.id))
       tools.append(remove)
     }
@@ -811,14 +831,13 @@ function renderSequence(next) {
         move.type = 'button'
         move.className = 'move-sequence'
         move.dataset.direction = direction
-        move.textContent = direction === 'up' ? '↑' : '↓'
         const lifecycleLabel = record.metadata.lifecycle === 'included'
           ? `Slide ${pageNumber}`
           : record.metadata.lifecycle === 'skipped'
             ? 'Skipped Slide'
             : 'Cut Bin Slide'
         const displayLabel = record.metadata.internalTitle || slide.headline?.plainText || slide.intent
-        move.setAttribute('aria-label', `Move ${lifecycleLabel}: ${displayLabel} ${direction}`)
+        setPhosphorIconButton(move, direction === 'up' ? 'arrowUp' : 'arrowDown', `Move ${lifecycleLabel}: ${displayLabel} ${direction}`)
         move.addEventListener('click', () => moveSlide(section.id, slide.id, direction))
         slideTools.append(move)
       }

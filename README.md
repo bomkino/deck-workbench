@@ -7,13 +7,23 @@ A local-first, story-first application for prototyping, reviewing and handing of
 
 ## Status
 
-Pre-alpha. `main` is the canonical source branch. The shared Workbench now centres four task workspaces: Plan, Curate, Assemble and Handoff. Production Plan uses the durable Deck command seam and protects unsaved work per Slide. The bounded Production Curate source slice adds an authorised, progressively loaded media workflow while keeping project judgment separate from per-Slide decisions. Assemble remains an authored preview surface; Handoff reviews readiness and exports the active Slide PDF only.
+Pre-alpha. `main` is the canonical source branch. The shared Workbench now centres four task workspaces: Plan, Curate, Assemble and Handoff. Production Plan uses the durable Deck command seam and protects unsaved work per Slide. The bounded Production Curate source slice adds an authorised, progressively loaded media workflow while keeping project judgment separate from per-Slide decisions. Assemble remains an authored preview surface; Handoff reviews readiness and exports the active Slide PDF only. The application chrome uses the pinned pitch.dog v13 Head, Body and Eyebrow families by default, with Phosphor for authored action icons; artboard/export typography remains an independent Deck concern.
 
-`DW-T00` proves the first integrated Apple-Silicon Story Document tracer. `DW-W01` adds durable Deck/Section/Slide structure, ordering, intent and semantic Content Blocks. `DW-G01` adds a sandboxed Electron/utility-process Linux shell and exact x86-64 tarball, Arch-package and AppImage gates on Ubuntu/X11. Production Curate's authentic packaged Root/reopen journey remains explicitly unverified, so this release is not a production-readiness claim.
+`DW-T00` proves the first integrated Apple-Silicon Story Document tracer. `DW-W01` adds durable Deck/Section/Slide structure, ordering, intent and semantic Content Blocks. `DW-G01` adds a sandboxed Electron/utility-process Linux shell and exact x86-64 tarball, Arch-package and AppImage gates on Ubuntu/X11. Production Curate's authentic packaged Root/reopen journey remains explicitly unverified, so this source state is not a production-readiness claim.
 
 The automated macOS and Ubuntu package journeys are binding repository gates. Target-machine Garuda/KDE/Wayland and interactive macOS accessibility checks are explicitly waived for source promotion to `main`; they remain unverified and are not release claims. See [`docs/03-build/RELEASE_DEFINITION.md`](docs/03-build/RELEASE_DEFINITION.md).
 
 The tracer creates a native `.pitchdeck`, edits one canonical Story headline through the typed bridge and host-owned durable command seam, reopens with undo history, and exports one PDF page. Its macOS 26 arm64 workflow builds, ad-hoc signs, extracts, verifies, and runs the exact packaged journey at the checked-out SHA.
+
+## Download and run
+
+Use the CI-built assets on the [`v0.0.1` pre-release](https://github.com/bomkino/deck-workbench/releases/tag/v0.0.1). Verify the adjacent `.sha256` file before opening an asset.
+
+- **Apple-Silicon macOS 26+:** download the `.app.zip`, extract it, then open `Deck Workbench.app`. The build is ad-hoc signed, not notarized, so macOS may require Control-click → Open on first launch.
+- **Garuda/Arch x86-64:** download the `.pkg.tar.zst` and install it with `sudo pacman -U ./deck-workbench-*.pkg.tar.zst`.
+- **Other x86-64 Linux:** download the AppImage, run `chmod +x Deck-Workbench-*.AppImage`, then launch it; or extract the `.tar.gz` and run `Deck-Workbench-linux-x64/deck-workbench`.
+
+The packaged Ubuntu/X11 journey is automated. Garuda/KDE/Wayland installation and desktop integration remain unverified target-machine checks, as described below.
 
 ## Verify
 
@@ -48,8 +58,8 @@ npm run verify:linux
 
 This builds and directly verifies a tarball, `.pkg.tar.zst`, and reproducible
 AppImage through distinct create and reopen application processes. Actual Garuda
-installation, KDE portals, Wayland/KWin behavior, drag/drop/reveal, target fonts,
-codecs and GPU paths remain target-machine gates.
+installation, KDE portals, Wayland/KWin behavior, drag/drop/reveal, target-machine
+font rendering, codecs and GPU paths remain target-machine gates.
 
 The bounded local CLI and privacy-safe support report adapters are documented in
 `apps/cli/README.md` and `docs/implementation/DW-W10-SUPPORT-REPORT.md`.
@@ -59,7 +69,7 @@ The bounded local CLI and privacy-safe support report adapters are documented in
 - Story remains canonical while visual alternatives change.
 - Everything works locally and offline.
 - No bundled AI, account, cloud service, telemetry or analytics.
-- Mac is primary; Garuda Linux has required semantic parity.
+- Mac is primary; Garuda Linux targets and requires the same semantic parity.
 - PDF is the visual-fidelity reference.
 - PPTX fallbacks are explicit.
 - Interface Scale never changes the Deck itself.
@@ -88,4 +98,4 @@ Deck Workbench is designed to work offline and collect nothing. Private decks, c
 
 ## Interface character
 
-Workbench uses an editorial desk rather than a generic dashboard: a 44 px physical control floor, compact scale-aware working chrome, hard rules, a light paper workspace, and a dark focused stage. Interface Scale changes the complete chrome geometry while Artboard Zoom remains independent. The project mark follows the pitch.dog illustration law: one imperfect frame, one impossible coral cord, and enough negative space to stay legible at favicon size.
+Workbench uses an editorial desk rather than a generic dashboard: a 44 px physical control floor, pitch.dog v13 role-based typography, Phosphor action icons, scale-aware spacing, hard rules, a light paper workspace, and a dark focused stage. Interface Scale changes the complete chrome geometry while Artboard Zoom remains independent. The project mark follows the pitch.dog illustration law: one imperfect frame, one impossible coral cord, and enough negative space to stay legible at favicon size.

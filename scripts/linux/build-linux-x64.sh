@@ -58,6 +58,8 @@ cp -R packages "$BUNDLE/resources/app/packages"
 cp -R build/generated "$BUNDLE/resources/app/build/generated"
 cp scripts/linux/runtime-package.json "$BUNDLE/resources/app/package.json"
 cp LICENSE NOTICE THIRD_PARTY.md "$BUNDLE/resources/app/legal/"
+cp -R legal/fontblind-v13 "$BUNDLE/resources/app/legal/fontblind-v13"
+cp -R legal/phosphor-icons "$BUNDLE/resources/app/legal/phosphor-icons"
 
 node --input-type=module - "$BUNDLE/resources/app/deck-workbench-build.json" "$COMMIT_SHA" "$(node -p "require('./package.json').version")" <<'NODE'
 import { writeFileSync } from 'node:fs'

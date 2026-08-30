@@ -5,19 +5,30 @@ function bindHandoffEvents() {
     selectedSlideId = row.dataset.handoffSlideId
     activePhase = 'plan'
     void refreshWorkspace(selectedSlideId).then((next) => {
-      if (next?.slide?.id === selectedSlideId) elements.internalTitle.focus({ preventScroll: true })
+      if (next?.slide?.id === selectedSlideId) focusPlanControl(elements.internalTitle)
     })
   })
   elements.exportPDF.addEventListener('click', async () => {
-    if (!projection) return
+    if (!projection || elements.exportPDF.dataset.exporting === 'true') return
+    const overflowCount = compositionOverflowCountForProjection(projection)
+    if (overflowCount > 0) {
+      renderHandoff()
+      setStatus('CompositionOverflow: Fix the active Slide before PDF export')
+      return
+    }
+    elements.exportPDF.dataset.exporting = 'true'
+    elements.exportPDF.disabled = true
     setBusy('Preparing PDF export…')
+    let finalStatus = ''
     try {
       await window.deckBridge.exportPDF()
-      renderAll()
-      setStatus('PDF exported')
+      finalStatus = 'PDF exported'
     } catch (error) {
+      finalStatus = `${error.name ?? 'Error'}: ${error.message}`
+    } finally {
+      delete elements.exportPDF.dataset.exporting
       renderAll()
-      setStatus(`${error.name ?? 'Error'}: ${error.message}`)
+      setStatus(finalStatus)
     }
   })
 }
@@ -30,6 +41,13 @@ function renderHandoff() {
   elements.exportPDF.textContent = projection
     ? `Export ${projection.slide?.internalTitle ?? projection.headline?.plainText ?? 'active Slide'} PDF`
     : 'Export active Slide PDF'
+  const overflowCount = compositionOverflowCountForProjection(projection)
+  elements.handoffExportState.hidden = overflowCount === 0
+  elements.handoffExportState.textContent = overflowCount
+    ? `${overflowCount} active-Slide element${overflowCount === 1 ? '' : 's'} exceed the authored frame. Shorten the copy or choose another Pattern before export.`
+    : ''
+  elements.exportPDF.disabled = !projection || overflowCount > 0 || elements.exportPDF.dataset.exporting === 'true'
+  elements.exportPDF.title = overflowCount ? 'Fix active-Slide composition overflow before export' : ''
   elements.handoffSummary.innerHTML = [
     summaryChip(included.length, 'Included'),
     summaryChip(counts.ready, 'Ready'),

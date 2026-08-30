@@ -109,8 +109,10 @@ Result: pass. Create revision ${createResult.revision}; reopen revision ${reopen
 | actions/setup-node | v7.0.0 / \`820762786026740c76f36085b0efc47a31fe5020\` | MIT | CI Node 24 only | Yes |
 | actions/upload-artifact | v7.0.1 / \`043fb46d1a93c77aae656e7c1c64a875d1fc6a0a\` | MIT | Retain package/evidence only | Yes |
 | Electron | 44.0.0 | MIT | Linux application runtime only; not embedded in the macOS app | Yes |
+| FontBlind font binaries | v13.0.0 / \`786b4a2b671182319320f922b8de8f927ea3a002\` | CC0-1.0 | Shipped application typography | Yes |
+| Phosphor Icons Web | 2.1.2 / \`70854726d7bd82ae21f0dc81b5b5c35240a77066\` | MIT | Shipped web and native action icons | Yes |
 
-Electron 44.0.0 is the Linux production runtime. The verified macOS app artifact continues to contain only Deck Workbench code and Apple operating-system frameworks.
+Electron 44.0.0 is the Linux production runtime. The verified macOS app embeds Deck Workbench code, pinned pitch.dog font assets and Phosphor icon assets, and uses Apple operating-system frameworks.
 
 ## Honest status
 

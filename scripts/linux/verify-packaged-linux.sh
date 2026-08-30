@@ -73,6 +73,9 @@ test -f "$APP/LICENSE"
 test -f "$APP/LICENSES.chromium.html"
 test -f "$APP/resources/app/legal/LICENSE"
 test -f "$APP/resources/app/legal/THIRD_PARTY.md"
+node "$REPOSITORY_ROOT/scripts/verify-workspace-type-assets.mjs" \
+  "$APP/resources/app/build/generated/workspace" \
+  "$APP/resources/app/legal"
 
 tar --zstd -tf "$ARCH_PACKAGE" > "$EVIDENCE_ROOT/arch-package-files.txt"
 if awk 'BEGIN { bad = 0 } /^\// { bad = 1 } /(^|\/)\.\.($|\/)/ { bad = 1 } END { exit bad ? 0 : 1 }' "$EVIDENCE_ROOT/arch-package-files.txt"; then
@@ -92,6 +95,9 @@ test -x "$ARCH_EXTRACT_ROOT/opt/deck-workbench/deck-workbench"
 test -L "$ARCH_EXTRACT_ROOT/usr/bin/deck-workbench"
 test "$(readlink "$ARCH_EXTRACT_ROOT/usr/bin/deck-workbench")" = '../../opt/deck-workbench/deck-workbench'
 file "$ARCH_EXTRACT_ROOT/opt/deck-workbench/deck-workbench" | grep -Eq 'ELF 64-bit.*x86-64'
+node "$REPOSITORY_ROOT/scripts/verify-workspace-type-assets.mjs" \
+  "$ARCH_EXTRACT_ROOT/opt/deck-workbench/resources/app/build/generated/workspace" \
+  "$ARCH_EXTRACT_ROOT/opt/deck-workbench/resources/app/legal"
 
 file "$APP/deck-workbench" | tee "$EVIDENCE_ROOT/executable.txt"
 grep -Eq 'ELF 64-bit.*x86-64' "$EVIDENCE_ROOT/executable.txt"
@@ -161,6 +167,9 @@ mkdir -p "$APPIMAGE_EXTRACT_ROOT"
 test -x "$APPIMAGE_APP/AppRun"
 test -x "$APPIMAGE_APP/usr/lib/deck-workbench/deck-workbench"
 test -f "$APPIMAGE_APP/usr/lib/deck-workbench/resources/app/legal/AppImage-type2-runtime-LICENSE"
+node "$REPOSITORY_ROOT/scripts/verify-workspace-type-assets.mjs" \
+  "$APPIMAGE_APP/usr/lib/deck-workbench/resources/app/build/generated/workspace" \
+  "$APPIMAGE_APP/usr/lib/deck-workbench/resources/app/legal"
 file "$APPIMAGE_APP/usr/lib/deck-workbench/deck-workbench" | tee "$EVIDENCE_ROOT/appimage-inner-executable.txt"
 grep -Eq 'ELF 64-bit.*x86-64' "$EVIDENCE_ROOT/appimage-inner-executable.txt"
 node --input-type=module - \

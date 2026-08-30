@@ -48,7 +48,7 @@ const receipt = `# DW-G01 Ubuntu Linux package evidence receipt
 | Executable architecture | verified | Extracted executable is ELF 64-bit x86-64 |
 | Exact source identity | verified | Tarball and AppImage extraction manifests name commit \`${endingSHA}\` and Electron 44.0.0 |
 | Extracted tarball process journey | verified | Two distinct extracted Electron application processes completed headline edit/history plus structured Section/Slide add, move, rename, intent and paragraph-preserving Content edit, save/quit/reopen/undo/redo, independent scale controls, and PDF; result SHA-256 \`${sha256(journeyPath)}\` |
-| Exact AppImage process journey | verified | The exact hashed AppImage ran the same structured Story journey twice through its embedded runtime without FUSE, retained document/preferences/history across distinct processes, preserved the sandbox boundary, and exported PDF; result SHA-256 \`${sha256(appImageJourneyPath)}\` |
+| Exact AppImage process journey | verified | The exact hashed AppImage ran the same structured Story journey twice through its runtime extract-and-run path without FUSE, retained document/preferences/history across distinct processes, preserved the sandbox boundary, and exported PDF; result SHA-256 \`${sha256(appImageJourneyPath)}\` |
 | PDF projection | verified | Both package lanes produced one page parsed by \`pdfinfo\`; tarball PDF SHA-256 \`${sha256(pdfPath)}\`; AppImage PDF SHA-256 \`${sha256(appImagePDFPath)}\` |
 
 ## Commands and results
@@ -67,6 +67,8 @@ const receipt = `# DW-G01 Ubuntu Linux package evidence receipt
 | Electron | \`44.0.0\` | shipped sandboxed Linux runtime |
 | appimagetool | \`1.9.1\`, commit \`8c8c91f762b412a19f4e8d2c4b35afb98f2d7c81\`, asset SHA-256 \`ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0\` | pinned CI packaging tool |
 | AppImage type-2 runtime | \`20251108\`, commit \`dd6cebedcbddde9c82f89b011e8e1d40b6e43868\`, asset SHA-256 \`2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d\` | shipped AppImage runtime |
+| FontBlind font binaries | \`v13.0.0\`, commit \`786b4a2b671182319320f922b8de8f927ea3a002\` | shipped application typography |
+| Phosphor Icons Web | \`2.1.2\`, commit \`70854726d7bd82ae21f0dc81b5b5c35240a77066\` | shipped workspace action icons |
 
 ## Journey result
 
@@ -87,7 +89,7 @@ ${JSON.stringify(appImageJourney, null, 2)}
 - Linux native Save/Close/Interface Scale menu commands: **source-ready, interactive acceptance unverified**. The non-interactive tracer does not exercise KDE menu interaction.
 - Garuda/KDE Plasma/Wayland integration: **unverified external gate**. Ubuntu/Xvfb does not prove KWin/Wayland, KDE portals and native pickers, DBus integration, drag/drop/reveal, target fonts/codecs/GPU paths, or installation on Jenai's machine.
 - Arch \`.pkg.tar.zst\`: **package structure verified, installation unverified**. Ubuntu archive inspection does not prove a successful \`pacman\` transaction or launch on Garuda.
-- AppImage install/desktop integration outside CI: **unverified**. CI proves the exact AppImage's architecture, deterministic construction, clean extraction, direct launch and semantic journey; it does not prove KDE launcher or portal integration.
+- AppImage install/desktop integration outside CI: **unverified**. CI proves the exact AppImage's architecture, deterministic construction, clean extraction and runtime extract-and-run journey without FUSE; it does not prove normal FUSE-mounted launch, KDE launcher or portal integration.
 - Release/tag/merge/install: **not applicable to this CI evidence receipt**.
 - Unsupported claims: production suitability, Garuda parity, KDE/Wayland integration, notarization, release distribution, broad editor behavior, full Pattern family, final PDF typography, PPTX and target-machine accessibility acceptance.
 

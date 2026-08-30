@@ -1,5 +1,7 @@
 # WB-R00 — Phased Workbench rebuild
 
+Historical scope note: this document records the disposable tracer tranche before the phased workspace migrated into production. Current implementation and release evidence live in `EXECUTION_INDEX.md` and `../evidence/WORKBENCH-UI-UX-RELEASE-PASS-2026-08-29.md`.
+
 ## Goal
 
 Replace the current simultaneous Editorial Spine as the primary workflow with four dedicated phases while preserving the durable Deck kernel, native shells, recovery, undo/redo and cross-platform meaning.

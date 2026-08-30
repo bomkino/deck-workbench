@@ -314,15 +314,59 @@ async function boot() {
   }
 }
 
+let workspaceExportSession = null
+let workspaceExportPreparing = false
+let workspaceExportSequence = 0
+
 window.deckWorkbench = Object.freeze({
   renderProjection,
   clearProjection,
   selectSlide,
-  exportFrame() {
-    activePhase = 'assemble'
+  async exportFrame(mode = 'native') {
+    if (!['native', 'linux'].includes(mode)) throw new RangeError('Unknown workspace export mode')
+    if (workspaceExportSession || workspaceExportPreparing) return { error: 'ExportBusy' }
+    workspaceExportPreparing = true
+    const exportProjection = projection
+    try {
+      await (document.fonts?.ready ?? Promise.resolve())
+      document.documentElement.getBoundingClientRect()
+      if (projection !== exportProjection) return { error: 'ExportStale' }
+      const overflowCount = compositionOverflowCountForProjection(exportProjection)
+      if (overflowCount > 0) return { error: 'CompositionOverflow', overflowCount }
+    } finally {
+      workspaceExportPreparing = false
+    }
+    const token = String(++workspaceExportSequence)
+    const returnPhase = activePhase
+    let rect
+    try {
+      activePhase = 'assemble'
+      renderAll()
+      elements.workbench.inert = true
+      document.documentElement.dataset.workspaceExport = mode
+      rect = elements.artboard.getBoundingClientRect()
+      if (![rect.x, rect.y, rect.width, rect.height].every(Number.isFinite) || rect.width <= 0 || rect.height <= 0) {
+        throw new RangeError('Slide export frame is invalid')
+      }
+    } catch (error) {
+      delete document.documentElement.dataset.workspaceExport
+      elements.workbench.inert = false
+      activePhase = returnPhase
+      try { renderAll() } catch {}
+      throw error
+    }
+    workspaceExportSession = { token, returnPhase }
+    return { token, x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+  },
+  finishExport(token) {
+    if (!workspaceExportSession || token !== workspaceExportSession.token) return { finished: false }
+    const returnPhase = workspaceExportSession.returnPhase
+    workspaceExportSession = null
+    delete document.documentElement.dataset.workspaceExport
+    elements.workbench.inert = false
+    if (returnPhase) activePhase = returnPhase
     renderAll()
-    const rect = elements.artboard.getBoundingClientRect()
-    return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+    return { finished: true }
   },
   async tracerEditHeadline(text) {
     elements.headline.value = text

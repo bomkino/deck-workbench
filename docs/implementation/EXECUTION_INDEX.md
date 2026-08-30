@@ -8,8 +8,8 @@
 - `DW-G01`: Ubuntu/X11 package/runtime surface verified for tarball and AppImage;
   Arch package structure verified. Garuda/KDE/Wayland acceptance is unverified.
 - `DW-W02`: semantic Pattern, Design Option, frame, Asset assignment and crop seams
-  are source-ready; a real authorized Asset-byte resolver and packaged visual
-  journey remain.
+  plus bounded host-authorized Asset-byte resolution are source-ready; the
+  authentic packaged Root/reopen and visual journeys remain.
 - `DW-W09`: bounded local CLI source-ready.
 - `DW-W10`: privacy-safe support-report seam source-ready.
 - Repository hardening: strict journal record boundaries, durable/live-state fencing, dead utility-process rejection, recoverable Linux preferences, atomic Linux PDF publication and one canonical repository verification gate.

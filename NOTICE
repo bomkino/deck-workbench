@@ -4,4 +4,10 @@ Copyright contributors.
 
 Licensed under the GNU Affero General Public License, version 3. See LICENSE.
 
-Third-party notices will be added here as dependencies and borrowed source are introduced. No promotional credit, logo placement, backlink or praise to pitch.dog is requested beyond legally required notices.
+Redistributed third-party materials include FontBlind v13 font binaries
+(CC0-1.0) and Phosphor Icons Web 2.1.2 (MIT). Exact provenance and licence
+declarations/notices are retained under `legal/` and summarized in
+`THIRD_PARTY.md`.
+
+No promotional credit, logo placement, backlink or praise to pitch.dog is
+requested beyond legally required notices.

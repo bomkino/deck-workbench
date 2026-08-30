@@ -87,12 +87,28 @@ final class BridgeCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDel
     func writeOnePagePDF(to destination: URL) async throws {
         guard let webView else { throw WorkbenchFailure(name: "WorkspaceUnavailable", message: "WebView is unavailable") }
         let rawFrame = try await webView.callAsyncJavaScript(
-            "return deckWorkbench.exportFrame()",
+            "return await deckWorkbench.exportFrame()",
             arguments: [:],
             in: nil,
             contentWorld: .page
         )
+        if let frame = rawFrame as? [String: Any],
+           let errorName = frame["error"] as? String
+        {
+            if errorName == "CompositionOverflow" {
+                let count = frame["overflowCount"] as? Int ?? 1
+                throw WorkbenchFailure(name: errorName, message: "\(count) authored element(s) exceed the composition frame")
+            }
+            if errorName == "ExportBusy" {
+                throw WorkbenchFailure(name: errorName, message: "Another PDF export is already in progress")
+            }
+            if errorName == "ExportStale" {
+                throw WorkbenchFailure(name: errorName, message: "The active Slide changed while preparing export")
+            }
+        }
         guard let frame = rawFrame as? [String: Any],
+              let token = frame["token"] as? String,
+              !token.isEmpty,
               let x = frame["x"] as? Double,
               let y = frame["y"] as? Double,
               let width = frame["width"] as? Double,
@@ -102,25 +118,52 @@ final class BridgeCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDel
         else {
             throw WorkbenchFailure(name: "WorkspaceUnavailable", message: "Slide export frame is invalid")
         }
-        let expectedRatio = 2576.0 / 1080.0
-        guard abs((width / height) - expectedRatio) < 0.02 else {
-            throw WorkbenchFailure(name: "UnsupportedExportEffect", message: "Slide projection does not match selected canvas ratio")
-        }
-        let configuration = WKPDFConfiguration()
-        configuration.rect = CGRect(x: x, y: y, width: width, height: height)
-        let data: Data = try await withCheckedThrowingContinuation { continuation in
-            webView.createPDF(configuration: configuration) { result in
-                continuation.resume(with: result)
+        let finishExport = {
+            let rawCleanup = try await webView.callAsyncJavaScript(
+                "return deckWorkbench.finishExport(token)",
+                arguments: ["token": token],
+                in: nil,
+                contentWorld: .page
+            )
+            guard let cleanup = rawCleanup as? [String: Any], cleanup["finished"] as? Bool == true else {
+                throw WorkbenchFailure(name: "ExportCleanupFailed", message: "Workspace export session did not close")
             }
         }
-        guard let document = PDFDocument(data: data), document.pageCount == 1 else {
-            throw WorkbenchFailure(name: "UnsupportedExportEffect", message: "PDF output is not a parseable one-page document")
-        }
         do {
-            try data.write(to: destination, options: [.atomic])
+            let expectedRatio = 2576.0 / 1080.0
+            guard abs((width / height) - expectedRatio) < 0.02 else {
+                throw WorkbenchFailure(name: "UnsupportedExportEffect", message: "Slide projection does not match selected canvas ratio")
+            }
+            let configuration = WKPDFConfiguration()
+            configuration.rect = CGRect(x: x, y: y, width: width, height: height)
+            let data: Data = try await withCheckedThrowingContinuation { continuation in
+                webView.createPDF(configuration: configuration) { result in
+                    continuation.resume(with: result)
+                }
+            }
+            guard let document = PDFDocument(data: data), document.pageCount == 1 else {
+                throw WorkbenchFailure(name: "UnsupportedExportEffect", message: "PDF output is not a parseable one-page document")
+            }
+            do {
+                try data.write(to: destination, options: [.atomic])
+            } catch {
+                throw WorkbenchFailure(name: "ExportDestinationDenied", message: error.localizedDescription)
+            }
         } catch {
-            throw WorkbenchFailure(name: "ExportDestinationDenied", message: error.localizedDescription)
+            let operationFailure = error
+            do {
+                try await finishExport()
+            } catch {
+                let cleanupFailure = WorkbenchFailure.unexpected(error)
+                let primaryFailure = WorkbenchFailure.unexpected(operationFailure)
+                throw WorkbenchFailure(
+                    name: "ExportCleanupFailed",
+                    message: "\(primaryFailure.name) failed and workspace cleanup also failed as \(cleanupFailure.name)"
+                )
+            }
+            throw operationFailure
         }
+        try await finishExport()
     }
 
     func invokeForTracer(_ body: String, arguments: [String: Any] = [:]) async throws -> Any? {

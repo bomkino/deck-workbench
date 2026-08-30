@@ -21,7 +21,7 @@ test('native history commands expose the projected undo and redo availability', 
 test('native toolbar keeps command names equal to their menu equivalents', () => {
   for (const label of ['Open Deck…', 'Close Deck', 'Export Review PDF…']) {
     assert.equal(app.match(new RegExp(`^\\s*Button\\("${label}"`, 'gm'))?.length, 1)
-    assert.equal(app.match(new RegExp(`^\\s*Label\\("${label}"`, 'gm'))?.length, 1)
+    assert.equal(app.match(new RegExp(`Label \\{\\s+Text\\("${label}"\\)`, 'g'))?.length, 1)
   }
 })
 

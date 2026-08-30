@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile, readlink } from 'node:fs/promises'
+import { resolve } from 'node:path'
+import { verifyWorkspaceFontHostRoutes, verifyWorkspaceTypeAssets } from './verify-workspace-type-assets.mjs'
 
 const required = [
   'apps/macos/Info.plist',
@@ -7,6 +9,8 @@ const required = [
   'apps/macos/Sources/DeckKernelHost.swift',
   'apps/macos/Sources/PitchDeckDocumentStore.swift',
   'apps/macos/Sources/BridgeCoordinator.swift',
+  'apps/macos/Sources/WorkspaceSchemeHandler.swift',
+  'apps/linux/main.mjs',
   'packages/workspace/app/index.html',
   'packages/workspace/app/styles.css',
   'packages/workspace/app/workspace-core.js',
@@ -22,6 +26,7 @@ const required = [
   'scripts/build-macos-icon.sh',
   'scripts/verify-packaged-macos.sh',
   'scripts/verify-story-tracer-output.mjs',
+  'scripts/verify-workspace-type-assets.mjs',
   'scripts/linux/runtime-package.json',
   '.github/workflows/dw-g01-linux.yml',
   '.github/workflows/dw-t00-macos.yml',
@@ -37,6 +42,7 @@ const nativeSource = [...contents.entries()]
   .map(([, value]) => value)
   .join('\n')
 const workspaceHTML = contents.get('packages/workspace/app/index.html')
+const workspaceStyles = contents.get('packages/workspace/app/styles.css')
 const workspaceCore = contents.get('packages/workspace/app/workspace-core.js')
 const workspacePlan = contents.get('packages/workspace/app/workspace-plan.js')
 const workspaceCurate = contents.get('packages/workspace/app/workspace-curate.js')
@@ -44,6 +50,17 @@ const workspaceVisual = contents.get('packages/workspace/app/workspace-visual.js
 const workspaceBoot = contents.get('packages/workspace/app/workspace.js')
 const workspaceAll = [workspaceCore, workspacePlan, workspaceCurate, workspaceVisual, contents.get('packages/workspace/app/workspace-handoff.js'), workspaceBoot].join('\n')
 const kernel = contents.get('packages/deck-kernel/src/deck-kernel.ts')
+
+await verifyWorkspaceTypeAssets({
+  workspaceRoot: resolve('packages/workspace/app'),
+  legalRoot: resolve('legal'),
+  nativePhosphorPath: resolve('apps/macos/Resources/Fonts/Phosphor.ttf'),
+})
+verifyWorkspaceFontHostRoutes({
+  styles: workspaceStyles,
+  linuxSource: contents.get('apps/linux/main.mjs'),
+  macSource: contents.get('apps/macos/Sources/WorkspaceSchemeHandler.swift'),
+})
 
 assert.deepEqual(packageJSON.dependencies, { electron: '44.0.0' })
 assert.equal(packageJSON.version, '0.0.1')
@@ -93,7 +110,8 @@ assert.match(workspaceCurate, /executeCurateCommand\('curate\.findMore\.set'/)
 assert.match(workspaceCurate, /calculateCurateVirtualWindow/)
 assert.doesNotMatch(workspaceAll, /createObjectURL|readAsDataURL|webkit\.messageHandlers/)
 assert.match(workspaceBoot, /window\.deckWorkbench = Object\.freeze/)
-assert.match(workspaceBoot, /exportFrame\(\)/)
+assert.match(workspaceBoot, /exportFrame\(mode = 'native'\)/)
+assert.match(workspaceBoot, /finishExport\(token\)/)
 assert.match(contents.get('scripts/build-workspace.mjs'), /packages\/workspace\/app/)
 assert.match(contents.get('scripts/build-workspace.mjs'), /build\/generated\/workspace/)
 assert.match(contents.get('scripts/build-macos.sh'), /build\/generated\/workspace\/index\.html/)

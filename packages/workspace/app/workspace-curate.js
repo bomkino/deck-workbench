@@ -829,9 +829,11 @@ function renderCurate() {
 function curateVirtualMetrics(assetCount = filteredCurateAssets().length) {
   const viewportWidth = Math.max(1, elements.mediaScroll.clientWidth)
   const density = Math.max(150, Math.min(340, Number(elements.thumbnailDensity.value) || 220))
-  const columns = Math.max(1, Math.floor((viewportWidth - CURATE_MEDIA_GAP) / (density + CURATE_MEDIA_GAP)))
+  const scaledCardFloor = Math.max(density, Math.round(120 * interfaceScale))
+  const columns = Math.max(1, Math.floor((viewportWidth - CURATE_MEDIA_GAP) / (scaledCardFloor + CURATE_MEDIA_GAP)))
   const cardWidth = Math.max(120, Math.floor((viewportWidth - CURATE_MEDIA_GAP * (columns + 1)) / columns))
-  const cardHeight = Math.round(density * 0.7) + 68
+  const cardChromeHeight = Math.max(112, Math.round(128 * interfaceScale))
+  const cardHeight = Math.round(density * 0.7) + cardChromeHeight
   const rowHeight = cardHeight + CURATE_MEDIA_GAP
   const window = calculateCurateVirtualWindow({
     total: assetCount,

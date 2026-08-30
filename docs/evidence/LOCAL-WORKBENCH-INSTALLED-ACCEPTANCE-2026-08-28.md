@@ -60,7 +60,7 @@ revision 13 with its structure, story, asset, design and crop intact.
   `4d8981588b4381e510411f5ff570c4aac410b2d07f140466e0a31db952cbe46e`
 - Writer lock: released after an explicit crash-stale-lock recovery and a clean
   reopen/close cycle. The stale lock named a dead test process; its temporary
-  recovery copy was moved recoverably to Trash after final-main acceptance.
+  recovery copy was moved recoverably to Trash after then-main acceptance.
 
 The same installed journey exported
 `/Users/kay/Documents/Deck Workbench Final Acceptance.pdf`.
@@ -91,9 +91,9 @@ The user explicitly deprioritized Linux and asked that the shared UTM state be
 handled carefully. Actual Garuda KDE/Wayland package launch and Mac–Garuda–Mac
 round-trip therefore remain open target-machine evidence, not failures.
 
-## Final-main manual accessibility follow-up
+## Then-main manual accessibility follow-up
 
-The installed final-main app at
+The installed then-main app at
 `dd9b2cef1a116330452116674712cb0e60da3d67` passed a bounded keyboard-only
 open/traversal/scale/export-cancel journey while preserving revision 13. A
 VoiceOver core-control pass exposed concrete native and WebKit labels and kept

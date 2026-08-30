@@ -2,12 +2,13 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
-const [focus, targets, verifier, build, hardening] = await Promise.all([
+const [focus, targets, verifier, build, hardening, styles] = await Promise.all([
   readFile(new URL('../packages/workspace/app/workspace-focus.js', import.meta.url), 'utf8'),
   readFile(new URL('../packages/workspace/app/workspace-sequence-targets.js', import.meta.url), 'utf8'),
   readFile(new URL('../scripts/verify-packaged-macos.sh', import.meta.url), 'utf8'),
   readFile(new URL('../scripts/build-workspace.mjs', import.meta.url), 'utf8'),
   readFile(new URL('../packages/workspace/app/packaged-hardening.css', import.meta.url), 'utf8'),
+  readFile(new URL('../packages/workspace/app/styles.css', import.meta.url), 'utf8'),
 ])
 
 test('Sequence uses one stable visible textarea focus owner and semantic active-descendant identity', () => {
@@ -46,7 +47,13 @@ test('focus restoration preserves semantic Sequence identity across query and re
 
 test('packaged styling exposes the genuine owner and active semantic item', () => {
   assert.match(hardening, /\.sequence-focus-owner \{/)
-  assert.match(hardening, /min-height: 44px/)
+  assert.match(hardening, /min-height: var\(--control-size\)/)
+  assert.match(hardening, /height: var\(--control-size\)/)
+  const control = styles.match(/--control-size:\s*max\(([\d.]+)rem,\s*([\d.]+)px\)/)
+  assert.ok(control)
+  for (const scale of [0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75]) {
+    assert.ok(Math.max(Number(control[1]) * 16 * scale, Number(control[2])) >= 44)
+  }
   assert.match(hardening, /background: var\(--paper\)/)
   assert.match(hardening, /color: var\(--ink\)/)
   assert.match(hardening, /data-sequence-active="true"/)
