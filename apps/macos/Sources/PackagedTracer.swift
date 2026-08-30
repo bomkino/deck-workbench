@@ -117,16 +117,19 @@ enum PackagedTracer {
         }
 
         let scales = try await controller.invokeWorkspaceForTracer(
-            "const ui = await deckBridge.setInterfaceScale({ value: 1.25 }); const artboard = await deckBridge.setArtboardZoom({ value: 0.5 }); return { ui, artboard, projection: deckWorkbench.projection() }"
+            "const theme = await deckBridge.setTheme({ value: 'dark' }); applyThemePreference(theme.theme); const ui = await deckBridge.setInterfaceScale({ value: 1.25 }); const artboard = await deckBridge.setArtboardZoom({ value: 0.5 }); return { theme, ui, artboard, projection: deckWorkbench.projection() }"
         )
         guard let scaleResult = scales as? [String: Any],
+              let theme = scaleResult["theme"] as? [String: Any],
               let ui = scaleResult["ui"] as? [String: Any],
               let artboard = scaleResult["artboard"] as? [String: Any],
+              theme["theme"] as? String == "dark",
               ui["interfaceScale"] as? Double == 1.25,
               artboard["artboardZoom"] as? Double == 0.5,
+              controller.theme == "dark",
               controller.interfaceScale == 1.25
         else {
-            throw WorkbenchFailure(name: "InvalidCommand", message: "Interface Scale and artboard zoom did not remain independent")
+            throw WorkbenchFailure(name: "InvalidCommand", message: "Theme, Interface Scale and artboard zoom preferences did not remain independent")
         }
 
         guard let durableDocumentURL = controller.documentURL else {
@@ -170,6 +173,7 @@ enum PackagedTracer {
             "phase": "create",
             "revision": 3,
             "headline": "A hill that refuses to be scenery",
+            "theme": controller.theme,
             "interfaceScale": 1.25,
             "nativeInterfaceScale": controller.interfaceScale,
             "artboardZoom": 0.5,

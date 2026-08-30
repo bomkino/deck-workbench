@@ -237,10 +237,14 @@ function runtimeUIEvidence() {
       'ui-assemble-1180x605-175.png',
       'ui-handoff-1180x605-175.png',
       'ui-curate-1180x605-175.png',
-      'ui-plan-1440x900-100.png',
-      'ui-curate-1440x900-100.png',
-      'ui-assemble-1440x900-100.png',
-      'ui-handoff-1440x900-100.png',
+      'ui-plan-light-1440x900-100.png',
+      'ui-curate-light-1440x900-100.png',
+      'ui-assemble-light-1440x900-100.png',
+      'ui-handoff-light-1440x900-100.png',
+      'ui-plan-dark-1440x900-100.png',
+      'ui-curate-dark-1440x900-100.png',
+      'ui-assemble-dark-1440x900-100.png',
+      'ui-handoff-dark-1440x900-100.png',
     ].map((file, index) => {
       const bytes = runtimeUIScreenshotBytes(index)
       return {
@@ -291,7 +295,7 @@ const [
 
 test('Linux package pins and notices the exact Electron production runtime', () => {
   assert.equal(packageJSON.dependencies.electron, '44.0.0')
-  assert.equal(packageJSON.version, '0.0.1')
+  assert.equal(packageJSON.version, '0.0.2')
   assert.equal(lockJSON.version, packageJSON.version)
   assert.equal(runtimePackage.version, packageJSON.version)
   assert.equal(lockJSON.packages['node_modules/electron'].version, '44.0.0')
@@ -353,13 +357,13 @@ test('Ubuntu package gate verifies an extracted x86-64 artifact without disablin
   assert.match(verifyScript, /--run-packaged-tracer-create/)
   assert.match(verifyScript, /--run-packaged-tracer-reopen/)
   assert.match(journeyVerifier, /kernel did not run in the utility process/)
-  assert.match(journeyVerifier, /Interface Scale\/artboard zoom persistence or independence failed/)
+  assert.match(journeyVerifier, /appearance, Interface Scale, or artboard zoom persistence failed/)
   assert.match(journeyVerifier, /full application process relaunch was not proved/)
   assert.match(journeyVerifier, /createInstanceId/)
   assert.match(journeyVerifier, /reopenInstanceId/)
   assert.match(linuxMain, /inspectRuntimeUIPolishStability/)
   assert.match(linuxMain, /captureRepresentativeRuntimeUIScreenshots/)
-  assert.match(linuxMain, /`ui-\$\{phase\}-1440x900-100\.png`/)
+  assert.match(linuxMain, /`ui-\$\{phase\}-\$\{theme\}-1440x900-100\.png`/)
   assert.match(workflow, /deck-workbench-dw-g01-ui-evidence-/)
   assert.match(workflow, /artifacts\/evidence\/linux\/journey\/journey-result\.json/)
   assert.match(workflow, /artifacts\/evidence\/linux\/journey\/ui-\*-1440x900-100\.png/)
@@ -403,8 +407,10 @@ test('journey evidence accepts distinct process instances and rejects a reused i
       reopenedBodyText: 'A body block.\n\nThat survives design.',
       reopenedUndoBodyText: 'A body block that survives design.',
       reopenedRedoBodyText: 'A body block.\n\nThat survives design.',
+      theme: 'dark',
       interfaceScale: 1.25,
       artboardZoom: 0.5,
+      persistedTheme: 'dark',
       persistedInterfaceScale: 1.25,
       persistedArtboardZoom: 0.5,
       runtimeUI: runtimeUIEvidence(),

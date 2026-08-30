@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="system" data-theme-effective="light">
   <head>
     <meta charset="utf-8" />
     <meta
@@ -46,6 +46,14 @@
             <button id="undo" class="icon-button" type="button" disabled aria-label="Undo" title="Undo"><span class="phosphor-icon" aria-hidden="true">&#xE038;</span></button>
             <button id="redo" class="icon-button" type="button" disabled aria-label="Redo" title="Redo"><span class="phosphor-icon" aria-hidden="true">&#xE036;</span></button>
           </div>
+          <label class="theme-control">
+            <span>Theme</span>
+            <select id="theme" aria-label="Theme">
+              <option value="system">System</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
+          </label>
           <label class="interface-control">
             <span>Interface</span>
             <select id="interface-scale" aria-label="Interface Scale">

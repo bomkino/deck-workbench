@@ -25,6 +25,7 @@ final class DeckSessionController: ObservableObject {
     @Published private(set) var canRedo = false
     @Published var presentedFailure: PresentedWorkbenchFailure?
 
+    @Published private(set) var theme: String
     @Published private(set) var interfaceScale: Double
     private(set) var artboardZoom: Double = 0.65
     private let requiresWorkspaceDraftFlush: Bool
@@ -42,8 +43,11 @@ final class DeckSessionController: ObservableObject {
         }
         self.kernelURL = kernelURL
         kernel = try DeckKernelHost(kernelURL: kernelURL)
+        let storedTheme = UserDefaults.standard.string(forKey: "theme") ?? "system"
+        theme = Self.themeValues.contains(storedTheme) ? storedTheme : "system"
         let storedScale = UserDefaults.standard.double(forKey: "interfaceScale")
         interfaceScale = Self.allowedInterfaceScales.contains(storedScale) ? storedScale : 1
+        applyThemeAppearance()
     }
 
     func attachWorkspace(_ sink: WorkspaceProjectionSink) {
@@ -311,6 +315,24 @@ final class DeckSessionController: ObservableObject {
         return preferences()
     }
 
+    func setTheme(_ value: String) throws -> [String: Any] {
+        guard Self.themeValues.contains(value) else {
+            throw WorkbenchFailure(name: "InvalidCommand", message: "Theme must be System, Light, or Dark")
+        }
+        theme = value
+        UserDefaults.standard.set(value, forKey: "theme")
+        applyThemeAppearance()
+        return preferences()
+    }
+
+    private func applyThemeAppearance() {
+        switch theme {
+        case "light": NSApplication.shared.appearance = NSAppearance(named: .aqua)
+        case "dark": NSApplication.shared.appearance = NSAppearance(named: .darkAqua)
+        default: NSApplication.shared.appearance = nil
+        }
+    }
+
     func stepInterfaceScale(_ offset: Int) throws -> [String: Any] {
         guard let currentIndex = Self.interfaceScaleSteps.firstIndex(of: interfaceScale) else {
             throw WorkbenchFailure(name: "InvalidPreferences", message: "Stored Interface Scale is unsupported")
@@ -328,7 +350,7 @@ final class DeckSessionController: ObservableObject {
     }
 
     func preferences() -> [String: Any] {
-        ["interfaceScale": interfaceScale, "artboardZoom": artboardZoom]
+        ["theme": theme, "interfaceScale": interfaceScale, "artboardZoom": artboardZoom]
     }
 
     func presentNewDocument(tracerDestination: URL? = nil) async throws -> [String: Any] {
@@ -594,5 +616,6 @@ final class DeckSessionController: ObservableObject {
     }
 
     static let interfaceScaleSteps: [Double] = [0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75]
+    static let themeValues = ["system", "light", "dark"]
     private static let allowedInterfaceScales = Set(interfaceScaleSteps)
 }

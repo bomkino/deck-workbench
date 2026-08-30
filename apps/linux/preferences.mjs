@@ -4,7 +4,8 @@ import { open, readFile, rename } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
 export const interfaceScaleSteps = Object.freeze([0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75])
-export const defaultPreferences = Object.freeze({ interfaceScale: 1, artboardZoom: 0.65 })
+export const themeValues = Object.freeze(['system', 'light', 'dark'])
+export const defaultPreferences = Object.freeze({ theme: 'system', interfaceScale: 1, artboardZoom: 0.65 })
 
 function defaults() {
   return { ...defaultPreferences }
@@ -33,17 +34,23 @@ export function parsePreferences(source) {
   const keys = value && typeof value === 'object' && !Array.isArray(value)
     ? Object.keys(value).sort()
     : []
-  if (
-    JSON.stringify(keys) !== JSON.stringify(['artboardZoom', 'interfaceScale', 'schemaVersion'])
-    || value.schemaVersion !== 1
+  const legacy = value?.schemaVersion === 1
+    && JSON.stringify(keys) === JSON.stringify(['artboardZoom', 'interfaceScale', 'schemaVersion'])
+  const current = value?.schemaVersion === 2
+    && JSON.stringify(keys) === JSON.stringify(['artboardZoom', 'interfaceScale', 'schemaVersion', 'theme'])
+  if ((!legacy && !current)
     || !interfaceScaleSteps.includes(value.interfaceScale)
     || !Number.isFinite(value.artboardZoom)
     || value.artboardZoom < 0.1
     || value.artboardZoom > 4
-  ) {
+    || (current && !themeValues.includes(value.theme))) {
     throw invalid('Preferences are invalid or unsupported')
   }
-  return { interfaceScale: value.interfaceScale, artboardZoom: value.artboardZoom }
+  return {
+    theme: current ? value.theme : defaultPreferences.theme,
+    interfaceScale: value.interfaceScale,
+    artboardZoom: value.artboardZoom,
+  }
 }
 
 export async function loadPreferencesFile(path, { quarantineId = randomUUID() } = {}) {

@@ -59,9 +59,10 @@ if (checks.reopenedStoryRevision !== 11
   || checks.reopenedRedoBodyText !== 'A body block.\n\nThat survives design.') {
   throw new Error(`${label}: structured Story replay or history mismatch`)
 }
-if (checks.interfaceScale !== 1.25 || checks.artboardZoom !== 0.5
+if (checks.theme !== 'dark' || checks.persistedTheme !== 'dark'
+  || checks.interfaceScale !== 1.25 || checks.artboardZoom !== 0.5
   || checks.persistedInterfaceScale !== 1.25 || checks.persistedArtboardZoom !== 0.5) {
-  throw new Error(`${label}: Interface Scale/artboard zoom persistence or independence failed`)
+  throw new Error(`${label}: appearance, Interface Scale, or artboard zoom persistence failed`)
 }
 
 const runtimeUI = checks.runtimeUI ?? {}
@@ -299,10 +300,8 @@ const expectedScreenshots = new Map([
   ['ui-assemble-1180x605-175.png', { width: 1180, height: 605 }],
   ['ui-handoff-1180x605-175.png', { width: 1180, height: 605 }],
   ['ui-curate-1180x605-175.png', { width: 1180, height: 605 }],
-  ['ui-plan-1440x900-100.png', { width: 1440, height: 900 }],
-  ['ui-curate-1440x900-100.png', { width: 1440, height: 900 }],
-  ['ui-assemble-1440x900-100.png', { width: 1440, height: 900 }],
-  ['ui-handoff-1440x900-100.png', { width: 1440, height: 900 }],
+  ...['light', 'dark'].flatMap((theme) => ['plan', 'curate', 'assemble', 'handoff']
+    .map((phase) => [`ui-${phase}-${theme}-1440x900-100.png`, { width: 1440, height: 900 }])),
 ])
 if (!Array.isArray(runtimeUI.screenshots)
   || runtimeUI.screenshots.length !== expectedScreenshots.size

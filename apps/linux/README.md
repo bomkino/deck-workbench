@@ -22,7 +22,7 @@ deck-workbench --run-packaged-tracer-reopen /absolute/output/directory
 
 Both are suitable for `xvfb-run`. The create phase writes
 `journey-create-result.json` and `tracer.pitchdeck`. The reopen phase verifies a
-different process ID, persisted Interface Scale and artboard zoom, post-reopen
+different process ID, persisted appearance, Interface Scale and artboard zoom, post-reopen
 undo/redo, then writes `journey-result.json` and `tracer.pdf`. Any failed
 assertion or runtime error exits nonzero. `--run-packaged-tracer` remains a
 single-process compatibility seam and labels that limitation in its result.
@@ -31,6 +31,7 @@ Garuda KDE/Wayland.
 
 The create phase also captures Plan, Curate, Assemble and Handoff at
 `1440×900 @ 100%`, plus the existing `1180×605 @ 175%` stress views. CI uploads
-those eight PNGs with `journey-result.json` as a small, short-lived UI-evidence
+the four compact stress PNGs and eight Light/Dark layout PNGs with
+`journey-result.json` as a small, short-lived UI-evidence
 artifact; installable packages and checksums remain in the separate release
 artifact. This keeps visual review independent of the large package download.

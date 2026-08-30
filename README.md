@@ -17,7 +17,7 @@ The tracer creates a native `.pitchdeck`, edits one canonical Story headline thr
 
 ## Download and run
 
-Use the CI-built assets on the [`v0.0.1` pre-release](https://github.com/bomkino/deck-workbench/releases/tag/v0.0.1). Verify the adjacent `.sha256` file before opening an asset.
+Use the CI-built assets on the [`v0.0.2` pre-release](https://github.com/bomkino/deck-workbench/releases/tag/v0.0.2). Verify the adjacent `.sha256` file before opening an asset.
 
 - **Apple-Silicon macOS 26+:** download the `.app.zip`, extract it, then open `Deck Workbench.app`. The build is ad-hoc signed, not notarized, so macOS may require Control-click → Open on first launch.
 - **Garuda/Arch x86-64:** download the `.pkg.tar.zst` and install it with `sudo pacman -U ./deck-workbench-*.pkg.tar.zst`.
@@ -98,4 +98,4 @@ Deck Workbench is designed to work offline and collect nothing. Private decks, c
 
 ## Interface character
 
-Workbench uses an editorial desk rather than a generic dashboard: a 44 px physical control floor, pitch.dog v13 role-based typography, Phosphor action icons, scale-aware spacing, hard rules, a light paper workspace, and a dark focused stage. Interface Scale changes the complete chrome geometry while Artboard Zoom remains independent. The project mark follows the pitch.dog illustration law: one imperfect frame, one impossible coral cord, and enough negative space to stay legible at favicon size.
+Workbench uses an editorial desk rather than a generic dashboard: a 44 px physical control floor, pitch.dog v13 role-based typography, Phosphor action icons, scale-aware spacing, hard rules, persistent Light/Dark/System appearance, and a dark focused stage. Interface Scale changes the complete chrome geometry while Artboard Zoom remains independent. The project mark follows the pitch.dog illustration law: one imperfect frame, one impossible coral cord, and enough negative space to stay legible at favicon size.
