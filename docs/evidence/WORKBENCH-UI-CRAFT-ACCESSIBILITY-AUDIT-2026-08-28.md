@@ -71,7 +71,7 @@ Deck.
   and scale controls remained present and usable. Both preferences were restored
   to their original disabled values after a clean close/quit.
 - The canonical mark was visually confirmed in the live right-side Dock on the
-  running exact-main app. The local evidence crop is
+  running then-main app. The historical local-only evidence crop (not tracked) is
   `artifacts/evidence/dock-workbench-icon-main-dd9b2cef.png`, SHA-256
   `c92c7d0a39a3887cffee375aabe6c39ff8e483debe79f274c6cd6cd5fc6e7210`.
 - Final environment readback: `AppleKeyboardUIMode=2`, `reduceMotion=0`,

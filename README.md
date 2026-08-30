@@ -69,7 +69,7 @@ The bounded local CLI and privacy-safe support report adapters are documented in
 - Story remains canonical while visual alternatives change.
 - Everything works locally and offline.
 - No bundled AI, account, cloud service, telemetry or analytics.
-- Mac is primary; Garuda Linux has required semantic parity.
+- Mac is primary; Garuda Linux targets and requires the same semantic parity.
 - PDF is the visual-fidelity reference.
 - PPTX fallbacks are explicit.
 - Interface Scale never changes the Deck itself.
