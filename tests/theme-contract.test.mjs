@@ -23,6 +23,8 @@ test('workbench offers Light, Dark, and System without changing layout geometry'
   assert.match(styles, /--paper: #171a1c/)
   assert.doesNotMatch(styles, /data-theme-effective="dark"[^}]*--(?:interface-scale|artboard-zoom|space-|control-size)/)
   assert.match(styles, /data-workspace-layout="single-column"[^}]*\.theme-control > span[^}]*display: none/)
+  assert.match(styles, /data-workspace-layout="single-column"[^}]*\.toolbar-actions[^}]*flex-wrap: nowrap/)
+  assert.match(styles, /data-workspace-layout="single-column"[^}]*#save-state[^}]*clip: rect\(0,0,0,0\)/)
   assert.match(core, /function applyThemePreference\(preference\)/)
   assert.match(workspace, /themeMediaQuery\?\.addEventListener\('change'/)
 })
