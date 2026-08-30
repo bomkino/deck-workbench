@@ -125,6 +125,13 @@ function workspaceTransforms({ interfaceScale: requestedInterfaceScale, artboard
   if (!Number.isFinite(zoom) || zoom < 0.1 || zoom > 4) {
     throw new RangeError('Artboard zoom must be between 10% and 400%')
   }
+  if (
+    !canvas
+    || !Number.isFinite(canvas.width)
+    || !Number.isFinite(canvas.height)
+    || canvas.width <= 0
+    || canvas.height <= 0
+  ) throw new TypeError('Canvas geometry is required')
   return Object.freeze({
     interfaceScale: ui,
     chromeRemPixels: 16 * ui,
@@ -487,6 +494,8 @@ const elements = {
   semanticFallback: document.querySelector('#semantic-fallback'),
   compositionLayer: document.querySelector('#composition-layer'),
   assemblyOverflowState: document.querySelector('#assembly-overflow-state'),
+  canvasPreset: document.querySelector('#canvas-preset'),
+  applyCanvas: document.querySelector('#apply-canvas'),
   artboardZoom: document.querySelector('#artboard-zoom'),
   zoomLabel: document.querySelector('#zoom-label'),
   fitArtboard: document.querySelector('#fit-artboard'),

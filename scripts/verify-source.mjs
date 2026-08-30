@@ -63,7 +63,7 @@ verifyWorkspaceFontHostRoutes({
 })
 
 assert.deepEqual(packageJSON.dependencies, { electron: '44.0.0' })
-assert.equal(packageJSON.version, '0.0.2')
+assert.equal(packageJSON.version, '0.0.3')
 assert.equal(JSON.parse(contents.get('scripts/linux/runtime-package.json')).version, packageJSON.version)
 assert.equal(packageJSON.devDependencies, undefined)
 assert.equal(
@@ -73,7 +73,7 @@ assert.equal(
 assert.match(contents.get('LICENSE'), /GNU AFFERO GENERAL PUBLIC LICENSE/)
 assert.match(contents.get('apps/macos/Info.plist'), /<string>26\.0<\/string>/)
 assert.match(contents.get('apps/macos/Info.plist'), /dog\.pitch\.deck/)
-assert.match(contents.get('apps/macos/Info.plist'), /<key>CFBundleShortVersionString<\/key>\s*<string>0\.0\.2<\/string>/)
+assert.match(contents.get('apps/macos/Info.plist'), /<key>CFBundleShortVersionString<\/key>\s*<string>0\.0\.3<\/string>/)
 assert.match(contents.get('apps/macos/Info.plist'), /<key>CFBundleIconFile<\/key>\s*<string>DeckWorkbench\.icns<\/string>/)
 assert.match(contents.get('scripts/build-macos-icon.sh'), /iconutil -c icns/)
 assert.match(workspaceHTML, /connect-src 'none'/)

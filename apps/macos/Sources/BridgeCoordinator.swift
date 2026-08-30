@@ -113,8 +113,12 @@ final class BridgeCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDel
               let y = frame["y"] as? Double,
               let width = frame["width"] as? Double,
               let height = frame["height"] as? Double,
+              let canvasWidth = frame["canvasWidth"] as? Double,
+              let canvasHeight = frame["canvasHeight"] as? Double,
               width > 0,
-              height > 0
+              height > 0,
+              canvasWidth > 0,
+              canvasHeight > 0
         else {
             throw WorkbenchFailure(name: "WorkspaceUnavailable", message: "Slide export frame is invalid")
         }
@@ -130,7 +134,7 @@ final class BridgeCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDel
             }
         }
         do {
-            let expectedRatio = 2576.0 / 1080.0
+            let expectedRatio = canvasWidth / canvasHeight
             guard abs((width / height) - expectedRatio) < 0.02 else {
                 throw WorkbenchFailure(name: "UnsupportedExportEffect", message: "Slide projection does not match selected canvas ratio")
             }

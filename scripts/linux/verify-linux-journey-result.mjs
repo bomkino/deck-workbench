@@ -122,6 +122,41 @@ if (runtimeUI.schemaVersion !== 1
   throw new Error(`${label}: runtime UI evidence matrix is missing or malformed`)
 }
 
+const expectedCanvasPresets = new Map([
+  ['widescreen-1920x1080', { width: 1920, height: 1080, pageWidthMm: 192, pageHeightMm: 108, file: 'canvas-landscape.pdf' }],
+  ['square-2160x2160', { width: 2160, height: 2160, pageWidthMm: 216, pageHeightMm: 216, file: 'canvas-square.pdf' }],
+  ['a4-portrait', { width: 2480, height: 3508, pageWidthMm: 210, pageHeightMm: 297, file: 'canvas-portrait.pdf' }],
+])
+const canvasPresets = runtimeUI.canvasPresets ?? {}
+if (canvasPresets.ok !== true
+  || !Array.isArray(canvasPresets.cases)
+  || canvasPresets.cases.length !== expectedCanvasPresets.size) {
+  throw new Error(`${label}: packaged canvas preset evidence is incomplete`)
+}
+for (const entry of canvasPresets.cases) {
+  const expected = expectedCanvasPresets.get(entry?.canvas?.id)
+  const pdf = entry?.pdf ?? {}
+  if (!expected
+    || entry.canvas.width !== expected.width
+    || entry.canvas.height !== expected.height
+    || entry.canvas.pageWidthMm !== expected.pageWidthMm
+    || entry.canvas.pageHeightMm !== expected.pageHeightMm
+    || entry.designOption?.pattern?.canvasPresetId !== entry.canvas.id
+    || entry.designOption?.canvasReviewRequired !== false
+    || pdf.file !== expected.file
+    || !Number.isInteger(pdf.bytes)
+    || pdf.bytes < 100
+    || !/^[a-f0-9]{64}$/.test(pdf.sha256 ?? '')) {
+    throw new Error(`${label}: packaged canvas preset evidence is invalid`)
+  }
+  const bytes = readFileSync(resolve(dirname(resultPath), pdf.file))
+  if (bytes.byteLength !== pdf.bytes
+    || bytes.subarray(0, 5).toString('ascii') !== '%PDF-'
+    || createHash('sha256').update(bytes).digest('hex') !== pdf.sha256) {
+    throw new Error(`${label}: packaged canvas preset PDF is invalid (${pdf.file})`)
+  }
+}
+
 function verifyRuntimeUICases(cases, kind) {
   if (!Array.isArray(cases) || cases.length !== expectedRuntimeUICases.size) {
     throw new Error(`${label}: runtime UI ${kind} matrix is incomplete`)
@@ -302,6 +337,8 @@ const expectedScreenshots = new Map([
   ['ui-curate-1180x605-175.png', { width: 1180, height: 605 }],
   ...['light', 'dark'].flatMap((theme) => ['plan', 'curate', 'assemble', 'handoff']
     .map((phase) => [`ui-${phase}-${theme}-1440x900-100.png`, { width: 1440, height: 900 }])),
+  ...['landscape', 'square', 'portrait'].flatMap((canvas) => ['light', 'dark']
+    .map((theme) => [`canvas-${canvas}-${theme}-1440x900.png`, { width: 1440, height: 900 }])),
 ])
 if (!Array.isArray(runtimeUI.screenshots)
   || runtimeUI.screenshots.length !== expectedScreenshots.size

@@ -4,6 +4,10 @@ let persistedArtboardZoom = artboardZoom
 let artboardZoomGeneration = 0
 
 function bindVisualEvents() {
+  elements.canvasPreset.addEventListener('change', () => {
+    elements.applyCanvas.disabled = !projection || elements.canvasPreset.value === projection.canvas.id
+  })
+  elements.applyCanvas.addEventListener('click', applySelectedCanvasPreset)
   elements.patternChoice.addEventListener('change', () => {
     if (projection) syncVisualControls(projection)
   })
@@ -51,9 +55,24 @@ function renderComposition(next) {
   elements.semanticFallback.hidden = Boolean(composition)
   elements.assemblyOverflowState.hidden = true
   elements.assemblyOverflowState.textContent = ''
+  const reviewMessage = canvasReviewMessage(next)
+  elements.assemblyOverflowState.hidden = !reviewMessage
+  elements.assemblyOverflowState.textContent = reviewMessage
   if (!composition) return
   appendCompositionElements(elements.compositionLayer, next)
-  scheduleCompositionOverflowCheck()
+  scheduleCompositionOverflowCheck(next)
+}
+
+function canvasPresetLabel(id) {
+  return [...elements.canvasPreset.options].find((option) => option.value === id)?.textContent ?? id
+}
+
+function canvasReviewMessage(next) {
+  const authoredPresetId = next?.designOption?.pattern?.canvasPresetId
+  const reviewRequired = Boolean(next?.designOption?.canvasReviewRequired && authoredPresetId)
+  return reviewRequired
+    ? `Scaled from ${canvasPresetLabel(authoredPresetId)}. Review typography and crop; Undo restores the exact authored geometry.`
+    : ''
 }
 
 function appendCompositionElements(layer, next) {
@@ -108,13 +127,16 @@ function compositionOverflowCountForProjection(next) {
   }
 }
 
-function scheduleCompositionOverflowCheck() {
+function scheduleCompositionOverflowCheck(next) {
   const check = () => {
     const clipped = compositionOverflowNodes(elements.compositionLayer)
-    elements.assemblyOverflowState.hidden = clipped.length === 0
-    elements.assemblyOverflowState.textContent = clipped.length
-      ? `${clipped.length} authored element${clipped.length === 1 ? '' : 's'} exceed the composition frame. Shorten the copy or choose another Pattern before handoff.`
-      : ''
+    const messages = [canvasReviewMessage(next)]
+    if (clipped.length) {
+      messages.push(`${clipped.length} authored element${clipped.length === 1 ? '' : 's'} exceed the composition frame. Shorten the copy or choose another Pattern before handoff.`)
+    }
+    const text = messages.filter(Boolean).join(' ')
+    elements.assemblyOverflowState.hidden = !text
+    elements.assemblyOverflowState.textContent = text
   }
   requestAnimationFrame(check)
   void document.fonts?.ready.then(check)
@@ -122,6 +144,9 @@ function scheduleCompositionOverflowCheck() {
 
 function syncVisualControls(next) {
   const enabled = Boolean(next)
+  elements.canvasPreset.disabled = !enabled
+  if (next?.canvas?.id) elements.canvasPreset.value = next.canvas.id
+  elements.applyCanvas.disabled = !enabled || elements.canvasPreset.value === next?.canvas?.id
   elements.patternChoice.disabled = !enabled
   const previousBodyId = elements.patternBodyBlock.value
   elements.patternBodyBlock.replaceChildren()
@@ -164,6 +189,26 @@ function syncVisualControls(next) {
   elements.cropHeight.value = String(Math.round(crop.height * 100))
 }
 
+async function applySelectedCanvasPreset() {
+  if (!projection) return
+  const canvasPresetId = elements.canvasPreset.value
+  if (!canvasPresetId || canvasPresetId === projection.canvas.id) return
+  if (projection.designOption && !window.confirm(
+    'Change the Deck canvas? Existing Assemblies will scale proportionally and be marked for visual review. Undo restores their exact original geometry.',
+  )) {
+    elements.canvasPreset.value = projection.canvas.id
+    elements.applyCanvas.disabled = true
+    return
+  }
+  const next = await executeStructural(
+    'canvas.preset.set',
+    { canvasPresetId },
+    projection.slide.id,
+    { sourceLabel: `Set Canvas: ${canvasPresetLabel(canvasPresetId)}` },
+  )
+  if (next) setStatus(`Canvas changed to ${canvasPresetLabel(canvasPresetId)} · review scaled Assemblies`)
+}
+
 async function applySelectedPattern() {
   if (!projection) return
   const payload = patternApplyPlan(
@@ -204,8 +249,17 @@ async function applySelectedCrop() {
 function applyScales() {
   const canvas = projection?.canvas ?? { width: 2576, height: 1080 }
   const transforms = workspaceTransforms({ interfaceScale, artboardZoom, canvas })
+  const baseHeight = ARTBOARD_BASE_WIDTH * canvas.height / canvas.width
+  const pageWidthMm = Number.isFinite(canvas.pageWidthMm) ? canvas.pageWidthMm : canvas.width / 10
+  const pageHeightMm = Number.isFinite(canvas.pageHeightMm) ? canvas.pageHeightMm : canvas.height / 10
+  const linuxExportWidth = pageWidthMm * 96 / 25.4
+  const linuxExportHeight = pageHeightMm * 96 / 25.4
   document.documentElement.style.setProperty('--interface-scale', String(transforms.interfaceScale))
   document.documentElement.style.setProperty('--artboard-zoom', String(artboardZoom))
+  document.documentElement.style.setProperty('--artboard-base-height', `${baseHeight}px`)
+  document.documentElement.style.setProperty('--linux-export-width', `${linuxExportWidth}px`)
+  document.documentElement.style.setProperty('--linux-export-height', `${linuxExportHeight}px`)
+  document.documentElement.style.setProperty('--linux-export-scale', String(linuxExportWidth / ARTBOARD_BASE_WIDTH))
   elements.artboardShell.style.width = `${transforms.artboardViewport.width}px`
   elements.artboardShell.style.height = `${transforms.artboardViewport.height}px`
   document.documentElement.dataset.workspaceLayout = workspaceLayoutMode({ viewportWidth: window.innerWidth, interfaceScale })

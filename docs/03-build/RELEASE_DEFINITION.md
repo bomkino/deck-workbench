@@ -48,13 +48,13 @@ manufacture evidence.
 ## Current public status
 
 Deck Workbench is pre-alpha source with bounded integrated tracers. It is not a
-public v1, notarized distribution or production-ready editor. The owner
-authorized the `v0.0.2` public pre-release line. A published build must remain
-marked as a GitHub pre-release, target its exact CI-passed `main` commit, use
-artifacts produced for that same commit, and keep the unverified Curate and
-target-machine boundaries explicit. Source text or a tag alone does not prove
-publication; the GitHub Release and its attached exact-commit artifacts are the
-authority.
+public v1, notarized distribution or production-ready editor. On 2026-08-30 the
+owner explicitly authorized `v0.0.3` as a normal public GitHub Release marked
+Latest. That release must target its exact CI-passed `main` commit, use artifacts
+produced for that same commit, and keep the unverified Curate and target-machine
+boundaries explicit. Normal release status does not manufacture production
+readiness. Source text or a tag alone does not prove publication; the GitHub
+Release and its attached exact-commit artifacts are the authority.
 
 ## First serious release
 

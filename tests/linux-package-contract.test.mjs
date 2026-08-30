@@ -232,6 +232,7 @@ function runtimeUIEvidence() {
     document: runtimeUIViewports.flatMap((viewport) => runtimeUIScales
       .map((scale) => runtimeUICase(viewport, scale, 'document'))),
     polish: runtimeUIPolishEvidence(),
+    canvasPresets: canvasPresetEvidence(),
     screenshots: [
       'ui-cold-1180x605-175.png',
       'ui-assemble-1180x605-175.png',
@@ -245,6 +246,12 @@ function runtimeUIEvidence() {
       'ui-curate-dark-1440x900-100.png',
       'ui-assemble-dark-1440x900-100.png',
       'ui-handoff-dark-1440x900-100.png',
+      'canvas-landscape-light-1440x900.png',
+      'canvas-landscape-dark-1440x900.png',
+      'canvas-square-light-1440x900.png',
+      'canvas-square-dark-1440x900.png',
+      'canvas-portrait-light-1440x900.png',
+      'canvas-portrait-dark-1440x900.png',
     ].map((file, index) => {
       const bytes = runtimeUIScreenshotBytes(index)
       return {
@@ -257,6 +264,35 @@ function runtimeUIEvidence() {
     }),
     ok: true,
   }
+}
+
+function canvasPresetEvidence() {
+  return {
+    cases: [
+      ['widescreen-1920x1080', 1920, 1080, 192, 108, 'canvas-landscape.pdf'],
+      ['square-2160x2160', 2160, 2160, 216, 216, 'canvas-square.pdf'],
+      ['a4-portrait', 2480, 3508, 210, 297, 'canvas-portrait.pdf'],
+    ].map(([id, width, height, pageWidthMm, pageHeightMm, file], index) => {
+      const bytes = canvasPresetPDFBytes(index)
+      return {
+        canvas: { id, width, height, pageWidthMm, pageHeightMm },
+        designOption: { pattern: { canvasPresetId: id }, canvasReviewRequired: false },
+        pdf: {
+          file,
+          bytes: bytes.byteLength,
+          sha256: createHash('sha256').update(bytes).digest('hex'),
+        },
+      }
+    }),
+    screenshots: [],
+    ok: true,
+  }
+}
+
+function canvasPresetPDFBytes(index) {
+  const bytes = Buffer.alloc(128, index + 31)
+  Buffer.from('%PDF-1.7\n').copy(bytes)
+  return bytes
 }
 
 function runtimeUIScreenshotBytes(index) {
@@ -295,7 +331,7 @@ const [
 
 test('Linux package pins and notices the exact Electron production runtime', () => {
   assert.equal(packageJSON.dependencies.electron, '44.0.0')
-  assert.equal(packageJSON.version, '0.0.2')
+  assert.equal(packageJSON.version, '0.0.3')
   assert.equal(lockJSON.version, packageJSON.version)
   assert.equal(runtimePackage.version, packageJSON.version)
   assert.equal(lockJSON.packages['node_modules/electron'].version, '44.0.0')
@@ -424,6 +460,11 @@ test('journey evidence accepts distinct process instances and rejects a reused i
       .map((screenshot, index) => writeFile(
         join(directory, screenshot.file),
         runtimeUIScreenshotBytes(index),
+      )))
+    await Promise.all(result.checks.runtimeUI.canvasPresets.cases
+      .map((entry, index) => writeFile(
+        join(directory, entry.pdf.file),
+        canvasPresetPDFBytes(index),
       )))
     await writeFile(resultPath, `${JSON.stringify(result)}\n`)
     await execFileAsync(process.execPath, [fileURLToPath(journeyVerifierPath), resultPath, 'test AppImage'])

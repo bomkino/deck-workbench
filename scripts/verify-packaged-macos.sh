@@ -58,7 +58,7 @@ fi
 codesign --verify --deep --strict --verbose=2 "$APP"
 test "$(plutil -extract LSMinimumSystemVersion raw "$APP/Contents/Info.plist")" = "26.0"
 test "$(plutil -extract DeckWorkbenchCommit raw "$APP/Contents/Info.plist")" = "$COMMIT_SHA"
-test "$(plutil -extract CFBundleShortVersionString raw "$APP/Contents/Info.plist")" = "0.0.2"
+test "$(plutil -extract CFBundleShortVersionString raw "$APP/Contents/Info.plist")" = "0.0.3"
 test "$(plutil -extract CFBundleIconFile raw "$APP/Contents/Info.plist")" = "DeckWorkbench.icns"
 test "$(plutil -extract ATSApplicationFontsPath raw "$APP/Contents/Info.plist")" = "Fonts"
 test -s "$APP/Contents/Resources/DeckWorkbench.icns"

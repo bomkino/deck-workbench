@@ -125,6 +125,7 @@ type LayoutPatternSnapshot = {
   id: AuthoredPatternId
   version: 1
   name: string
+  canvasPresetId?: CanvasPresetId
   elements: PatternElementSnapshot[]
 }
 
@@ -150,15 +151,31 @@ type Section = {
   slides: Slide[]
 }
 
+type CanvasPresetId =
+  | 'cinemascope-2576x1080'
+  | 'widescreen-1920x1080'
+  | 'square-2160x2160'
+  | 'standard-1920x1440'
+  | 'a4-portrait'
+  | 'letter-portrait'
+
+type CanvasPresetSnapshot = {
+  id: CanvasPresetId
+  width: number
+  height: number
+}
+
+type CanvasPresetDefinition = CanvasPresetSnapshot & {
+  label: string
+  pageWidthMm: number
+  pageHeightMm: number
+}
+
 type DeckSnapshot = {
   schemaVersion: 1
   deckId: string
   title: string
-  canvasPreset: {
-    id: 'cinemascope-2576x1080'
-    width: 2576
-    height: 1080
-  }
+  canvasPreset: CanvasPresetSnapshot
   assetReferences?: AssetReference[]
   workbenchCurate?: CurateEnvelopeV1
   sections: Section[]
@@ -239,6 +256,11 @@ type ElementFrameUpdatePayload = {
   frame: ElementFrame
 }
 
+type CanvasPresetSetPayload = {
+  canvasPreset: CanvasPresetSnapshot
+  frames: ElementFrameUpdatePayload[]
+}
+
 type AssetReferenceInsertPayload = {
   assetReference: AssetReference
 }
@@ -312,7 +334,7 @@ type CurateSlotManifestSetPayload = {
 type CommandEnvelope = {
   commandId: string
   expectedRevision: number
-  type: 'deck.rename' | 'content.add' | 'content.update' | 'content.remove' | 'section.add' | 'section.rename' | 'section.move' | 'section.remove' | 'slide.add' | 'slide.move' | 'slide.intent.set' | 'slide.remove' | 'asset.reference.add' | 'asset.assign' | 'curate.projectJudgment.set' | 'curate.slideDecision.set' | 'curate.findMore.set' | 'curate.reconcile' | 'designOption.applyPattern' | 'designOption.activate' | 'element.frame.update' | 'element.crop.update'
+  type: 'deck.rename' | 'canvas.preset.set' | 'content.add' | 'content.update' | 'content.remove' | 'section.add' | 'section.rename' | 'section.move' | 'section.remove' | 'slide.add' | 'slide.move' | 'slide.intent.set' | 'slide.remove' | 'asset.reference.add' | 'asset.assign' | 'curate.projectJudgment.set' | 'curate.slideDecision.set' | 'curate.findMore.set' | 'curate.reconcile' | 'designOption.applyPattern' | 'designOption.activate' | 'element.frame.update' | 'element.crop.update'
   payload: JsonObject
   source: {
     kind: 'ui' | 'keyboard' | 'cli' | 'mcp' | 'migration'
@@ -324,6 +346,7 @@ type CommandEnvelope = {
 type HistoryOperation =
   | { type: 'compound'; payload: { operations: HistoryOperation[] } }
   | { type: 'deck.rename'; payload: DeckRenamePayload }
+  | { type: 'canvas.preset.set'; payload: CanvasPresetSetPayload }
   | { type: 'content.set'; payload: ContentUpdatePayload }
   | { type: 'content.insert'; payload: { slideId: string; block: ContentBlock; afterBlockId: string | null } }
   | { type: 'content.remove'; payload: ContentRemovePayload }
@@ -406,7 +429,16 @@ type KernelError = {
 
 type PrepareResult = PreparedChange | DuplicateResult | KernelError
 
-const AUTHORED_PATTERNS: LayoutPatternSnapshot[] = [
+const CANVAS_PRESETS: CanvasPresetDefinition[] = [
+  { id: 'cinemascope-2576x1080', label: 'CinemaScope · 2576 × 1080', width: 2576, height: 1080, pageWidthMm: 257.6, pageHeightMm: 108 },
+  { id: 'widescreen-1920x1080', label: 'Widescreen · 1920 × 1080', width: 1920, height: 1080, pageWidthMm: 192, pageHeightMm: 108 },
+  { id: 'square-2160x2160', label: 'Square · 2160 × 2160', width: 2160, height: 2160, pageWidthMm: 216, pageHeightMm: 216 },
+  { id: 'standard-1920x1440', label: 'Standard · 4:3', width: 1920, height: 1440, pageWidthMm: 192, pageHeightMm: 144 },
+  { id: 'a4-portrait', label: 'A4 · Portrait', width: 2480, height: 3508, pageWidthMm: 210, pageHeightMm: 297 },
+  { id: 'letter-portrait', label: 'US Letter · Portrait', width: 2550, height: 3300, pageWidthMm: 215.9, pageHeightMm: 279.4 },
+]
+
+const BASE_AUTHORED_PATTERNS: LayoutPatternSnapshot[] = [
   {
     id: 'cover',
     version: 1,
@@ -587,6 +619,26 @@ function assertElementFrame(value: unknown): ElementFrame {
     width: candidate.width as number,
     height: candidate.height as number,
   }
+}
+
+function canvasPresetDefinition(value: unknown, field = 'canvasPresetId'): CanvasPresetDefinition {
+  const id = assertString(value, field, 128)
+  const preset = CANVAS_PRESETS.find((candidate) => candidate.id === id)
+  if (!preset) throw new Error(`${field} is unsupported`)
+  return clone(preset)
+}
+
+function assertCanvasPresetSnapshot(value: unknown, field = 'canvasPreset'): CanvasPresetSnapshot {
+  const candidate = assertRecord(value, field)
+  const definition = canvasPresetDefinition(candidate.id, `${field}.id`)
+  if (candidate.width !== definition.width || candidate.height !== definition.height) {
+    throw new Error(`${field} geometry does not match its authored preset`)
+  }
+  return { id: definition.id, width: definition.width, height: definition.height }
+}
+
+function projectedCanvas(value: CanvasPresetSnapshot): CanvasPresetDefinition {
+  return canvasPresetDefinition(value.id, 'canvasPreset.id')
 }
 
 function assertMediaKind(value: unknown): AssetReference['mediaKind'] {
@@ -989,6 +1041,7 @@ function assertRecord(value: unknown, field: string): Record<string, unknown> {
 function assertDeckMediaIntegrity(deck: DeckSnapshot): void {
   assertIdentity(deck.deckId, 'deck.deckId', 256)
   assertString(deck.title, 'deck.title')
+  assertCanvasPresetSnapshot(deck.canvasPreset, 'deck.canvasPreset')
   if (!Array.isArray(deck.sections)) throw new Error('Deck sections must be an array')
   if (deck.assetReferences !== undefined && !Array.isArray(deck.assetReferences)) {
     throw new Error('Deck Asset References must be an array')
@@ -1092,6 +1145,22 @@ function assertDeckMediaIntegrity(deck: DeckSnapshot): void {
         designOptionIds.add(optionId)
         slideDesignOptionIds.add(optionId)
         assertString(option.name, `Design Option ${optionId} name`)
+        if (option.patternSnapshot !== undefined) {
+          const pattern = assertRecord(option.patternSnapshot, `Design Option ${optionId} Pattern snapshot`) as unknown as LayoutPatternSnapshot
+          if (!['cover', 'full-bleed-statement', 'editorial-body'].includes(pattern.id)) {
+            throw new Error(`Design Option ${optionId} Pattern identity is unsupported`)
+          }
+          if (pattern.version !== 1) throw new Error(`Design Option ${optionId} Pattern version is unsupported`)
+          assertString(pattern.name, `Design Option ${optionId} Pattern name`)
+          if (pattern.canvasPresetId !== undefined) {
+            canvasPresetDefinition(pattern.canvasPresetId, `Design Option ${optionId} Pattern canvasPresetId`)
+          }
+          if (!Array.isArray(pattern.elements)) throw new Error(`Design Option ${optionId} Pattern Elements must be an array`)
+          for (const patternElement of pattern.elements) {
+            assertIdentity(patternElement.key, `Pattern Element key in Design Option ${optionId}`, 256)
+            assertElementFrame(patternElement.frame)
+          }
+        }
         const composition = assertRecord(option.composition, `Design Option ${optionId} composition`) as unknown as Composition
         assertIdentity(composition.id, `Design Option ${optionId} composition identity`, 512)
         if (!Array.isArray(composition.elements)) throw new Error(`Design Option ${optionId} Elements must be an array`)
@@ -1100,6 +1169,11 @@ function assertDeckMediaIntegrity(deck: DeckSnapshot): void {
           const elementId = assertIdentity(element.id, `Element identity in Design Option ${optionId}`, 512)
           if (elementIds.has(elementId)) throw new Error(`Duplicate Element identity: ${elementId}`)
           elementIds.add(elementId)
+          if (!['text', 'image', 'shape', 'line', 'group'].includes(element.kind)) {
+            throw new Error(`Element ${elementId} kind is unsupported`)
+          }
+          assertElementFrame(element.frame)
+          if (element.crop !== undefined) assertNormalizedCrop(element.crop)
         }
       }
       if (
@@ -1347,8 +1421,105 @@ function operationsWithCurateReconciliation(
   }
 }
 
-function authoredPattern(patternId: string, patternVersion: number): LayoutPatternSnapshot | undefined {
-  return AUTHORED_PATTERNS.find((pattern) => pattern.id === patternId && pattern.version === patternVersion)
+type NormalizedPatternFrame = readonly [x: number, y: number, width: number, height: number]
+
+function frameFromNormalized(canvas: CanvasPresetSnapshot, frame: NormalizedPatternFrame): ElementFrame {
+  return {
+    x: Math.round(frame[0] * canvas.width),
+    y: Math.round(frame[1] * canvas.height),
+    width: Math.max(1, Math.round(frame[2] * canvas.width)),
+    height: Math.max(1, Math.round(frame[3] * canvas.height)),
+  }
+}
+
+function authoredPatternFrames(
+  patternId: AuthoredPatternId,
+  canvas: CanvasPresetSnapshot,
+): Record<string, ElementFrame> {
+  const ratio = canvas.width / canvas.height
+  const family = ratio < 0.9 ? 'portrait' : ratio < 1.15 ? 'square' : ratio < 1.55 ? 'standard' : 'wide'
+  const layouts: Record<string, Record<AuthoredPatternId, Record<string, NormalizedPatternFrame>>> = {
+    wide: {
+      cover: {
+        'primary-image': [0, 0, 1, 1],
+        headline: [0.062, 0.611, 0.66, 0.241],
+      },
+      'full-bleed-statement': {
+        'primary-image': [0, 0, 1, 1],
+        headline: [0.112, 0.278, 0.776, 0.444],
+      },
+      'editorial-body': {
+        headline: [0.062, 0.13, 0.408, 0.222],
+        body: [0.062, 0.389, 0.408, 0.426],
+        'primary-image': [0.534, 0, 0.466, 1],
+      },
+    },
+    standard: {
+      cover: {
+        'primary-image': [0, 0, 1, 1],
+        headline: [0.08, 0.59, 0.82, 0.25],
+      },
+      'full-bleed-statement': {
+        'primary-image': [0, 0, 1, 1],
+        headline: [0.09, 0.25, 0.82, 0.48],
+      },
+      'editorial-body': {
+        headline: [0.07, 0.11, 0.39, 0.2],
+        body: [0.07, 0.35, 0.39, 0.47],
+        'primary-image': [0.53, 0, 0.47, 1],
+      },
+    },
+    square: {
+      cover: {
+        'primary-image': [0, 0, 1, 1],
+        headline: [0.08, 0.62, 0.84, 0.25],
+      },
+      'full-bleed-statement': {
+        'primary-image': [0, 0, 1, 1],
+        headline: [0.08, 0.26, 0.84, 0.48],
+      },
+      'editorial-body': {
+        'primary-image': [0, 0, 1, 0.46],
+        headline: [0.08, 0.52, 0.84, 0.14],
+        body: [0.08, 0.69, 0.84, 0.22],
+      },
+    },
+    portrait: {
+      cover: {
+        'primary-image': [0, 0, 1, 1],
+        headline: [0.08, 0.63, 0.84, 0.22],
+      },
+      'full-bleed-statement': {
+        'primary-image': [0, 0, 1, 1],
+        headline: [0.08, 0.24, 0.84, 0.5],
+      },
+      'editorial-body': {
+        'primary-image': [0, 0, 1, 0.44],
+        headline: [0.08, 0.49, 0.84, 0.11],
+        body: [0.08, 0.63, 0.84, 0.28],
+      },
+    },
+  }
+  return Object.fromEntries(
+    Object.entries(layouts[family][patternId]).map(([key, frame]) => [key, frameFromNormalized(canvas, frame)]),
+  )
+}
+
+function authoredPattern(
+  patternId: string,
+  patternVersion: number,
+  canvas: CanvasPresetSnapshot,
+): LayoutPatternSnapshot | undefined {
+  const base = BASE_AUTHORED_PATTERNS.find(
+    (pattern) => pattern.id === patternId && pattern.version === patternVersion,
+  )
+  if (!base) return undefined
+  const frames = authoredPatternFrames(base.id, canvas)
+  return {
+    ...clone(base),
+    canvasPresetId: canvas.id,
+    elements: base.elements.map((element) => ({ ...clone(element), frame: clone(frames[element.key]) })),
+  }
 }
 
 function instantiatePattern(
@@ -1404,6 +1575,27 @@ function findElement(
   return option?.composition.elements.find((candidate) => candidate.id === elementId)
 }
 
+function canvasFrameSnapshots(
+  deck: DeckSnapshot,
+  target: CanvasPresetSnapshot = deck.canvasPreset,
+): ElementFrameUpdatePayload[] {
+  const scaleX = target.width / deck.canvasPreset.width
+  const scaleY = target.height / deck.canvasPreset.height
+  return deck.sections.flatMap((section) => section.slides.flatMap((slide) =>
+    (slide.designOptions ?? []).flatMap((designOption) => designOption.composition.elements.map((element) => ({
+      slideId: slide.id,
+      designOptionId: designOption.id,
+      elementId: element.id,
+      frame: {
+        x: element.frame.x * scaleX,
+        y: element.frame.y * scaleY,
+        width: element.frame.width * scaleX,
+        height: element.frame.height * scaleY,
+      },
+    }))),
+  ))
+}
+
 function insertAfter<T extends { id: string }>(items: T[], value: T, afterId: string | null): void {
   if (items.some((item) => item.id === value.id)) throw new Error(`Identity already exists: ${value.id}`)
   if (afterId === null) {
@@ -1433,6 +1625,28 @@ function applyHistoryOperation(deck: DeckSnapshot, operation: HistoryOperation, 
   }
   if (operation.type === 'deck.rename') {
     next.title = operation.payload.title
+    return next
+  }
+  if (operation.type === 'canvas.preset.set') {
+    const canvasPreset = assertCanvasPresetSnapshot(operation.payload.canvasPreset)
+    if (!Array.isArray(operation.payload.frames)) throw new Error('Canvas frame snapshots must be an array')
+    const expectedFrameCount = canvasFrameSnapshots(next).length
+    if (operation.payload.frames.length !== expectedFrameCount) {
+      throw new Error('Canvas frame snapshots must cover every authored Element')
+    }
+    const seen = new Set<string>()
+    for (const snapshot of operation.payload.frames) {
+      const slideId = assertIdentity(snapshot.slideId, 'Canvas frame Slide identity', 256)
+      const designOptionId = assertIdentity(snapshot.designOptionId, 'Canvas frame Design Option identity', 256)
+      const elementId = assertIdentity(snapshot.elementId, 'Canvas frame Element identity', 512)
+      const identity = `${slideId}\u0000${designOptionId}\u0000${elementId}`
+      if (seen.has(identity)) throw new Error('Canvas frame snapshots contain a duplicate Element')
+      seen.add(identity)
+      const element = findElement(next, slideId, designOptionId, elementId)
+      if (!element) throw new Error('Canvas frame Element does not exist')
+      element.frame = assertElementFrame(snapshot.frame)
+    }
+    next.canvasPreset = canvasPreset
     return next
   }
   if (operation.type === 'content.set') {
@@ -1725,6 +1939,7 @@ function applyHistoryOperation(deck: DeckSnapshot, operation: HistoryOperation, 
 const HISTORY_OPERATION_TYPES = new Set([
   'compound',
   'deck.rename',
+  'canvas.preset.set',
   'content.set',
   'content.insert',
   'content.remove',
@@ -1878,6 +2093,7 @@ function createInitialCheckpoint(seed: JsonObject): Checkpoint {
   const blockId = assertIdentity(seed.blockId, 'blockId', 256)
   const title = assertString(seed.title, 'title')
   const initialHeadline = assertString(seed.initialHeadline, 'initialHeadline')
+  const initialCanvas = canvasPresetDefinition(seed.canvasPresetId ?? 'cinemascope-2576x1080')
 
   return {
     format: 'pitchdog.deck-checkpoint',
@@ -1887,11 +2103,7 @@ function createInitialCheckpoint(seed: JsonObject): Checkpoint {
       schemaVersion: 1,
       deckId,
       title,
-      canvasPreset: {
-        id: 'cinemascope-2576x1080',
-        width: 2576,
-        height: 1080,
-      },
+      canvasPreset: { id: initialCanvas.id, width: initialCanvas.width, height: initialCanvas.height },
       sections: [
         {
           id: sectionId,
@@ -2087,9 +2299,12 @@ function query(session: KernelSession, name: string, params: JsonObject = {}): J
       assets: clone(checkpoint.deck.assetReferences ?? []),
     }
   }
+  if (name === 'canvas.preset.catalog') {
+    return { presets: clone(CANVAS_PRESETS) }
+  }
   if (name === 'pattern.catalog') {
     return {
-      patterns: AUTHORED_PATTERNS.map((pattern) => ({
+      patterns: BASE_AUTHORED_PATTERNS.map((pattern) => ({
         id: pattern.id,
         version: pattern.version,
         name: pattern.name,
@@ -2101,8 +2316,13 @@ function query(session: KernelSession, name: string, params: JsonObject = {}): J
       deckId: checkpoint.deck.deckId,
       title: checkpoint.deck.title,
       revision: checkpoint.revision,
+      canvas: projectedCanvas(checkpoint.deck.canvasPreset),
       sectionCount: checkpoint.deck.sections.length,
       slideCount: checkpoint.deck.sections.reduce((sum, section) => sum + section.slides.length, 0),
+      designOptionCount: checkpoint.deck.sections.reduce(
+        (sum, section) => sum + section.slides.reduce((slideSum, slide) => slideSum + (slide.designOptions?.length ?? 0), 0),
+        0,
+      ),
     }
   }
   if (name === 'history.summary') {
@@ -2193,7 +2413,7 @@ function query(session: KernelSession, name: string, params: JsonObject = {}): J
               assetReference: assetReference ? clone(assetReference) : null,
             }
           }),
-          canvas: clone(checkpoint.deck.canvasPreset),
+          canvas: projectedCanvas(checkpoint.deck.canvasPreset),
           designOption: designOption
             ? {
                 id: designOption.id,
@@ -2203,8 +2423,13 @@ function query(session: KernelSession, name: string, params: JsonObject = {}): J
                       id: designOption.patternSnapshot.id,
                       version: designOption.patternSnapshot.version,
                       name: designOption.patternSnapshot.name,
+                      canvasPresetId: designOption.patternSnapshot.canvasPresetId ?? 'cinemascope-2576x1080',
                     }
                   : null,
+                canvasReviewRequired: Boolean(
+                  designOption.patternSnapshot
+                  && (designOption.patternSnapshot.canvasPresetId ?? 'cinemascope-2576x1080') !== checkpoint.deck.canvasPreset.id,
+                ),
               }
             : null,
           composition: designOption ? clone(designOption.composition) : null,
@@ -2247,6 +2472,21 @@ function prepare(session: KernelSession, command: CommandEnvelope): PrepareResul
       forward = { type: 'deck.rename', payload: { title } }
       inverse = { type: 'deck.rename', payload: { title: session.checkpoint.deck.title } }
       label = `Rename Deck: ${title}`
+      projectionHints = ['story', 'sequence', 'slide.activeProjection', 'history']
+    } else if (command.type === 'canvas.preset.set') {
+      const target = canvasPresetDefinition(command.payload.canvasPresetId)
+      const current = session.checkpoint.deck.canvasPreset
+      if (target.id === current.id) throw new Error('Canvas preset is already active')
+      const targetSnapshot: CanvasPresetSnapshot = { id: target.id, width: target.width, height: target.height }
+      forward = {
+        type: 'canvas.preset.set',
+        payload: { canvasPreset: targetSnapshot, frames: canvasFrameSnapshots(session.checkpoint.deck, targetSnapshot) },
+      }
+      inverse = {
+        type: 'canvas.preset.set',
+        payload: { canvasPreset: clone(current), frames: canvasFrameSnapshots(session.checkpoint.deck) },
+      }
+      label = `Set Canvas: ${target.label}`
       projectionHints = ['story', 'sequence', 'slide.activeProjection', 'history']
     } else if (command.type === 'content.add') {
       const slideId = assertIdentity(command.payload.slideId, 'slideId', 256)
@@ -2880,7 +3120,11 @@ function prepare(session: KernelSession, command: CommandEnvelope): PrepareResul
       if (!Number.isSafeInteger(command.payload.patternVersion)) {
         throw new Error('patternVersion must be an integer')
       }
-      const pattern = authoredPattern(patternId, command.payload.patternVersion as number)
+      const pattern = authoredPattern(
+        patternId,
+        command.payload.patternVersion as number,
+        session.checkpoint.deck.canvasPreset,
+      )
       if (!pattern) throw new Error('Authored Layout Pattern version does not exist')
       const name = command.payload.name === undefined
         ? pattern.name
