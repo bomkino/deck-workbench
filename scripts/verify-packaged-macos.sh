@@ -62,6 +62,10 @@ test "$(plutil -extract CFBundleShortVersionString raw "$APP/Contents/Info.plist
 test "$(plutil -extract CFBundleIconFile raw "$APP/Contents/Info.plist")" = "DeckWorkbench.icns"
 test "$(plutil -extract ATSApplicationFontsPath raw "$APP/Contents/Info.plist")" = "Fonts"
 test -s "$APP/Contents/Resources/DeckWorkbench.icns"
+for legal_file in LICENSE NOTICE THIRD_PARTY.md; do
+  test -s "$APP/Contents/Resources/Legal/$legal_file"
+  cmp "$REPOSITORY_ROOT/$legal_file" "$APP/Contents/Resources/Legal/$legal_file"
+done
 node "$REPOSITORY_ROOT/scripts/verify-workspace-type-assets.mjs" \
   "$APP/Contents/Resources/Workspace" \
   "$APP/Contents/Resources/Legal" \

@@ -337,12 +337,25 @@ window.deckWorkbench = Object.freeze({
       workspaceExportPreparing = false
     }
     const token = String(++workspaceExportSequence)
-    workspaceExportSession = { token, returnPhase: activePhase }
-    activePhase = 'assemble'
-    renderAll()
-    elements.workbench.inert = true
-    document.documentElement.dataset.workspaceExport = mode
-    const rect = elements.artboard.getBoundingClientRect()
+    const returnPhase = activePhase
+    let rect
+    try {
+      activePhase = 'assemble'
+      renderAll()
+      elements.workbench.inert = true
+      document.documentElement.dataset.workspaceExport = mode
+      rect = elements.artboard.getBoundingClientRect()
+      if (![rect.x, rect.y, rect.width, rect.height].every(Number.isFinite) || rect.width <= 0 || rect.height <= 0) {
+        throw new RangeError('Slide export frame is invalid')
+      }
+    } catch (error) {
+      delete document.documentElement.dataset.workspaceExport
+      elements.workbench.inert = false
+      activePhase = returnPhase
+      try { renderAll() } catch {}
+      throw error
+    }
+    workspaceExportSession = { token, returnPhase }
     return { token, x: rect.x, y: rect.y, width: rect.width, height: rect.height }
   },
   finishExport(token) {

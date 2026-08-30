@@ -195,6 +195,11 @@ test('native and Linux export modes preserve one authored artboard with uniform 
     },
     fonts: { ready: Promise.resolve() },
   }
+  const exportFrameState = { x: 8, y: 12, width, height }
+  const exportElements = {
+    workbench: { inert: false },
+    artboard: { getBoundingClientRect: () => ({ ...exportFrameState }) },
+  }
   const harness = Function(
     'compositionOverflowCountForProjection', 'initialProjection', 'document', 'elements',
     `"use strict";
@@ -204,15 +209,28 @@ test('native and Linux export modes preserve one authored artboard with uniform 
       let workspaceExportSequence = 0;
       let activePhase = 'handoff';
       let renderCount = 0;
-      function renderAll() { renderCount += 1; }
+      let renderFailure = null;
+      function renderAll() {
+        renderCount += 1;
+        if (renderFailure) {
+          const failure = renderFailure;
+          renderFailure = null;
+          throw failure;
+        }
+      }
       const api = Object.freeze({${workspace.slice(exportStart, exportEnd)}});
-      return { api, state: () => ({ activePhase, workspaceExportSession, workspaceExportPreparing, renderCount }), setProjection: (next) => { projection = next; } };
+      return {
+        api,
+        state: () => ({ activePhase, workspaceExportSession, workspaceExportPreparing, renderCount }),
+        setProjection: (next) => { projection = next; },
+        setRenderFailure: (failure) => { renderFailure = failure; },
+      };
     `,
   )(
     () => exportState.overflow,
     initialExportProjection,
     documentState,
-    { workbench: { inert: false }, artboard: { getBoundingClientRect: () => ({ x: 8, y: 12, width, height }) } },
+    exportElements,
   )
   await assert.rejects(harness.api.exportFrame('screen'), RangeError)
 
@@ -242,6 +260,22 @@ test('native and Linux export modes preserve one authored artboard with uniform 
   assert.equal(harness.state().workspaceExportPreparing, false)
   documentState.fonts.ready = Promise.resolve()
 
+  harness.setRenderFailure(new Error('render failed'))
+  await assert.rejects(harness.api.exportFrame(), /render failed/)
+  assert.equal(harness.state().workspaceExportPreparing, false)
+  assert.equal(harness.state().workspaceExportSession, null)
+  assert.equal(harness.state().activePhase, 'handoff')
+  assert.equal(exportElements.workbench.inert, false)
+  assert.deepEqual(documentState.documentElement.dataset, {})
+
+  exportFrameState.width = 0
+  await assert.rejects(harness.api.exportFrame(), /Slide export frame is invalid/)
+  assert.equal(harness.state().workspaceExportSession, null)
+  assert.equal(harness.state().activePhase, 'handoff')
+  assert.equal(exportElements.workbench.inert, false)
+  assert.deepEqual(documentState.documentElement.dataset, {})
+  exportFrameState.width = width
+
   exportState.overflow = 2
   assert.deepEqual(await harness.api.exportFrame(), { error: 'CompositionOverflow', overflowCount: 2 })
   assert.equal(harness.state().workspaceExportPreparing, false)
@@ -249,21 +283,21 @@ test('native and Linux export modes preserve one authored artboard with uniform 
   assert.equal(harness.state().activePhase, 'handoff')
 
   exportState.overflow = 0
-  assert.deepEqual(await harness.api.exportFrame(), { token: '2', x: 8, y: 12, width, height })
+  assert.deepEqual(await harness.api.exportFrame(), { token: '4', x: 8, y: 12, width, height })
   assert.equal(documentState.documentElement.dataset.workspaceExport, 'native')
-  assert.equal(harness.state().workspaceExportSession.token, '2')
+  assert.equal(harness.state().workspaceExportSession.token, '4')
   assert.equal(harness.state().activePhase, 'assemble')
   assert.deepEqual(await harness.api.exportFrame('linux'), { error: 'ExportBusy' })
   assert.deepEqual(harness.api.finishExport('wrong-token'), { finished: false })
   assert.equal(harness.state().activePhase, 'assemble')
-  assert.deepEqual(harness.api.finishExport('2'), { finished: true })
+  assert.deepEqual(harness.api.finishExport('4'), { finished: true })
   assert.deepEqual(documentState.documentElement.dataset, {})
   assert.equal(harness.state().activePhase, 'handoff')
-  assert.deepEqual(await harness.api.exportFrame('linux'), { token: '3', x: 8, y: 12, width, height })
+  assert.deepEqual(await harness.api.exportFrame('linux'), { token: '5', x: 8, y: 12, width, height })
   assert.equal(documentState.documentElement.dataset.workspaceExport, 'linux')
-  assert.deepEqual(harness.api.finishExport('3'), { finished: true })
-  assert.equal(harness.state().renderCount, 6)
-  assert.equal(exportLayoutReads, 5)
+  assert.deepEqual(harness.api.finishExport('5'), { finished: true })
+  assert.equal(harness.state().renderCount, 10)
+  assert.equal(exportLayoutReads, 7)
   assert.match(exportSource, /await \(document\.fonts\?\.ready/)
   assert.match(exportSource, /document\.documentElement\.getBoundingClientRect\(\)/)
   assert.match(exportSource, /projection !== exportProjection/)
@@ -274,11 +308,17 @@ test('native and Linux export modes preserve one authored artboard with uniform 
   assert.match(macExport, /configuration\.rect = CGRect\(x: x, y: y, width: width, height: height\)/)
   assert.match(macExport, /return deckWorkbench\.finishExport\(token\)/)
   assert.match(macExport, /try await finishExport\(\)/)
+  assert.match(macExport, /ExportCleanupFailed/)
+  assert.doesNotMatch(macExport, /try\? await finishExport\(\)/)
   assert.doesNotMatch(macExport, /evaluateJavaScript\("deckWorkbench\.finishExport/)
   const linuxExportHost = linuxHost.slice(linuxHost.indexOf('async function exportOnePagePDF'), linuxHost.indexOf('async function presentPDFExport'))
   assert.match(linuxExportHost, /deckWorkbench\.exportFrame\('linux'\)/)
   assert.match(linuxExportHost, /removeInsertedCSS\(cssKey\)[\s\S]*deckWorkbench\.finishExport/)
   assert.match(linuxExportHost, /cleanupFailures\.push/)
+  assert.ok(
+    linuxExportHost.indexOf('if (cleanupFailures.length)') < linuxExportHost.indexOf('if (operationFailure) throw operationFailure'),
+    'Linux must surface cleanup failure before a primary operation failure can hide it',
+  )
 })
 
 test('static and generated icon controls expose names while Phosphor glyphs stay decorative', () => {

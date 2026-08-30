@@ -151,7 +151,16 @@ final class BridgeCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDel
             }
         } catch {
             let operationFailure = error
-            try? await finishExport()
+            do {
+                try await finishExport()
+            } catch {
+                let cleanupFailure = WorkbenchFailure.unexpected(error)
+                let primaryFailure = WorkbenchFailure.unexpected(operationFailure)
+                throw WorkbenchFailure(
+                    name: "ExportCleanupFailed",
+                    message: "\(primaryFailure.name) failed and workspace cleanup also failed as \(cleanupFailure.name)"
+                )
+            }
             throw operationFailure
         }
         try await finishExport()

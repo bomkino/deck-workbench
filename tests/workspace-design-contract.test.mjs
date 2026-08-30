@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
-const [html, styles, hardening, mark, workspace, linuxHost, schemeHandler, macBuild, workspaceBuild, macIconBuild, macInfo, linuxIcon] = await Promise.all([
+const [html, styles, hardening, mark, workspace, linuxHost, schemeHandler, macBuild, workspaceBuild, macIconBuild, macInfo, linuxIcon, macVerify, notice, macReceipt, linuxReceipt] = await Promise.all([
   readFile(new URL('../packages/workspace/app/index.html', import.meta.url), 'utf8'),
   readFile(new URL('../packages/workspace/app/styles.css', import.meta.url), 'utf8'),
   readFile(new URL('../packages/workspace/app/packaged-hardening.css', import.meta.url), 'utf8'),
@@ -15,6 +15,10 @@ const [html, styles, hardening, mark, workspace, linuxHost, schemeHandler, macBu
   readFile(new URL('../scripts/build-macos-icon.sh', import.meta.url), 'utf8'),
   readFile(new URL('../apps/macos/Info.plist', import.meta.url), 'utf8'),
   readFile(new URL('../scripts/linux/deck-workbench.svg', import.meta.url), 'utf8'),
+  readFile(new URL('../scripts/verify-packaged-macos.sh', import.meta.url), 'utf8'),
+  readFile(new URL('../NOTICE', import.meta.url), 'utf8'),
+  readFile(new URL('../scripts/write-evidence-receipt.mjs', import.meta.url), 'utf8'),
+  readFile(new URL('../scripts/linux/write-linux-evidence-receipt.mjs', import.meta.url), 'utf8'),
 ])
 
 test('every static shared-workspace action declares its button behaviour explicitly', () => {
@@ -44,7 +48,7 @@ test('frequent interactions avoid ambient motion and expose reduced-motion behav
   assert.doesNotMatch(styles, /animation:\s*[^;]+infinite/)
 })
 
-test('the pitch.dog mark ships from the shared workspace through every host', () => {
+test('the pitch.dog mark and release notices ship through every host', () => {
   assert.match(html, /rel="icon" href="workbench-mark\.svg" type="image\/svg\+xml"/)
   assert.match(html, /class="brand-mark" src="workbench-mark\.svg"/)
   assert.match(mark, /viewBox="0 0 256 256"/)
@@ -60,6 +64,19 @@ test('the pitch.dog mark ships from the shared workspace through every host', ()
   assert.match(macBuild, /build-macos-icon\.sh/)
   assert.match(macIconBuild, /iconutil -c icns/)
   assert.match(macInfo, /<key>CFBundleIconFile<\/key>\s*<string>DeckWorkbench\.icns<\/string>/)
+  assert.match(macBuild, /cp LICENSE NOTICE THIRD_PARTY\.md "\$APP\/Contents\/Resources\/Legal\/"/)
+  assert.match(macVerify, /for legal_file in LICENSE NOTICE THIRD_PARTY\.md; do/)
+  assert.match(macVerify, /cmp "\$REPOSITORY_ROOT\/\$legal_file" "\$APP\/Contents\/Resources\/Legal\/\$legal_file"/)
+  assert.match(notice, /licence\s+declarations\/notices/)
+  assert.doesNotMatch(notice, /licence text/)
+  for (const receipt of [macReceipt, linuxReceipt]) {
+    assert.match(receipt, /FontBlind font binaries/)
+    assert.match(receipt, /Phosphor Icons Web/)
+  }
+  assert.doesNotMatch(macReceipt, /only Deck Workbench code and Apple operating-system frameworks/)
+  assert.match(linuxReceipt, /runtime extract-and-run path without FUSE/)
+  assert.match(linuxReceipt, /shipped workspace action icons/)
+  assert.doesNotMatch(linuxReceipt, /clean extraction, direct launch/)
 })
 
 test('Stage owns a scaled footprint, genuine Fit control and decorative brand silence', () => {

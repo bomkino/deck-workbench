@@ -63,6 +63,7 @@ cp apps/macos/Resources/Fonts/pd-body-400.otf "$APP/Contents/Resources/Fonts/pd-
 cp apps/macos/Resources/Fonts/pd-body-600.otf "$APP/Contents/Resources/Fonts/pd-body-600.otf"
 cp apps/macos/Resources/Fonts/pd-body-700.otf "$APP/Contents/Resources/Fonts/pd-body-700.otf"
 cp apps/macos/Resources/Fonts/Phosphor.ttf "$APP/Contents/Resources/Fonts/Phosphor.ttf"
+cp LICENSE NOTICE THIRD_PARTY.md "$APP/Contents/Resources/Legal/"
 cp -R legal/fontblind-v13 "$APP/Contents/Resources/Legal/fontblind-v13"
 cp -R legal/phosphor-icons "$APP/Contents/Resources/Legal/phosphor-icons"
 scripts/build-macos-icon.sh "$APP/Contents/Resources/DeckWorkbench.icns"

@@ -331,8 +331,16 @@ async function exportOnePagePDF(destination) {
   } catch (error) {
     cleanupFailures.push(error)
   }
+  if (cleanupFailures.length) {
+    if (operationFailure) {
+      throw namedError(
+        'ExportCleanupFailed',
+        `${operationFailure?.name ?? 'PDF export'} failed and workspace cleanup also failed as ${cleanupFailures[0]?.name ?? 'Error'}`,
+      )
+    }
+    throw cleanupFailures[0]
+  }
   if (operationFailure) throw operationFailure
-  if (cleanupFailures.length) throw cleanupFailures[0]
   return result
 }
 
