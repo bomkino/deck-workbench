@@ -56,27 +56,26 @@ enum WorkbenchWindowChrome {
             .max()
         else { return }
         let inset = ceil(occupiedMaxX + 12)
-        installDragRegion(in: window, x: inset)
+        installDragRegion(in: webView, x: inset)
         webView.evaluateJavaScript(
             "document.documentElement.style.setProperty('--macos-window-controls-inset', '\(Int(inset))px');"
         )
     }
 
-    private static func installDragRegion(in window: NSWindow, x: CGFloat) {
-        guard let contentView = window.contentView else { return }
-        let dragRegion = contentView.subviews
+    private static func installDragRegion(in webView: WKWebView, x: CGFloat) {
+        let dragRegion = webView.subviews
             .first(where: { $0.identifier == dragRegionIdentifier }) as? WorkbenchWindowDragRegion
             ?? WorkbenchWindowDragRegion(frame: .zero)
         dragRegion.identifier = dragRegionIdentifier
         dragRegion.frame = NSRect(
             x: x,
-            y: contentView.bounds.maxY - toolbarHeight,
+            y: webView.bounds.maxY - toolbarHeight,
             width: dragRegionWidth,
             height: toolbarHeight
         )
         dragRegion.autoresizingMask = [.minYMargin]
         if dragRegion.superview == nil {
-            contentView.addSubview(dragRegion, positioned: .above, relativeTo: nil)
+            webView.addSubview(dragRegion, positioned: .above, relativeTo: nil)
         }
     }
 }

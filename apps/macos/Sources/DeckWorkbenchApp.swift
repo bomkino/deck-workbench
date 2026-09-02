@@ -65,6 +65,7 @@ struct DeckWorkbenchApp: App {
         Window("Deck Workbench", id: "main") {
             WorkbenchRootView(controller: controller)
                 .frame(minWidth: 1180, minHeight: 700)
+                .ignoresSafeArea(.container, edges: .top)
         }
         .windowStyle(.hiddenTitleBar)
         .commands {

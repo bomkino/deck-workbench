@@ -11,6 +11,7 @@ const [app, webView, coordinator, styles] = await Promise.all([
 
 test('macOS uses one full-content window frame with native traffic lights and a bounded native drag zone', () => {
   assert.match(app, /\.windowStyle\(\.hiddenTitleBar\)/)
+  assert.match(app, /\.ignoresSafeArea\(\.container, edges: \.top\)/)
   assert.doesNotMatch(app, /\.windowBackgroundDragBehavior\(\.enabled\)/)
   assert.match(webView, /window\.styleMask\.insert\(\.fullSizeContentView\)/)
   assert.match(webView, /window\.titleVisibility = \.hidden/)
@@ -19,6 +20,7 @@ test('macOS uses one full-content window frame with native traffic lights and a 
   assert.match(webView, /window\.isMovableByWindowBackground = false/)
   assert.match(webView, /private static let dragRegionWidth: CGFloat = 32/)
   assert.match(webView, /WorkbenchWindowDragRegion/)
+  assert.match(webView, /webView\.addSubview\(dragRegion, positioned: \.above, relativeTo: nil\)/)
   assert.match(webView, /window\?\.performDrag\(with: event\)/)
   assert.match(webView, /window\.standardWindowButton\(\$0\)/)
   assert.match(webView, /\$0\.convert\(\$0\.bounds, to: nil\)\.maxX/)
