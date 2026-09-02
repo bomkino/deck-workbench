@@ -72,7 +72,10 @@ function normalizeCurateAsset(asset) {
       : null,
     availability,
     previewCapability: asset?.previewCapability === 'grid' ? 'grid' : 'catalog_only',
-    renditions: Object.freeze({ gridStandard: asset?.renditions?.gridStandard ?? null }),
+    renditions: Object.freeze({
+      gridStandard: asset?.renditions?.gridStandard ?? null,
+      previewStandard: asset?.renditions?.previewStandard ?? null,
+    }),
   })
 }
 
@@ -106,6 +109,17 @@ let curateQueueUnplacedCounts = new Map()
 let curateDocumentDeckId = null
 let curateRenderedWindowKey = ''
 const curateLastFocusBySlide = new Map()
+let curateProjectPicksProjection = []
+let curateTrayAssets = new Map()
+let curateTrayAssetLoadKey = ''
+let curateTrayAssetLoadGeneration = 0
+let curateTrayAssetLoadPromise = null
+let curatePreviewMediaId = null
+let curateAssignmentAssetId = null
+let curateAssignmentTargets = []
+let curateAssignmentTargetGeneration = 0
+let curateAssignmentPending = false
+let curatePreviewActionPending = false
 
 function defaultCurateJudgment() {
   return { rating: 0, review: 'unreviewed', projectPick: false }
@@ -146,10 +160,13 @@ async function queryCurateAssetStateMap(slideId, assetReferenceIds, expectedRevi
   return { revision, states }
 }
 
-async function prepareCurateAssetStateSnapshot(slideId, expectedRevision) {
+async function prepareCurateAssetStateSnapshot(slideId, expectedRevision, additionalAssetIds = []) {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const mediaGeneration = curateMediaLoadGeneration
-    const assetIds = curateAssets.map((asset) => asset.id)
+    const assetIds = [...new Set([
+      ...curateAssets.map((asset) => asset.id),
+      ...additionalAssetIds.filter(Boolean),
+    ])]
     const hydrated = await queryCurateAssetStateMap(slideId, assetIds, expectedRevision)
     if (mediaGeneration !== curateMediaLoadGeneration) continue
     const missingIds = curateAssets.map((asset) => asset.id).filter((assetId) => !hydrated.states.has(assetId))
@@ -232,6 +249,7 @@ async function prepareCuratePhaseSnapshot(slideId) {
   const requests = [
     window.deckBridge.query({ name: 'curate.queue', params: {} }),
     queryCurateRootSnapshot(),
+    window.deckBridge.query({ name: 'asset.catalog', params: {} }),
   ]
   if (slideId) requests.unshift(window.deckBridge.query({ name: 'curate.slide', params: { slideId } }))
   const results = await Promise.allSettled(requests)
@@ -243,18 +261,41 @@ async function prepareCuratePhaseSnapshot(slideId) {
   if (slideResult?.status === 'rejected') throw slideResult.reason
   const slide = slideResult?.value ?? emptyCurateSlideProjection(null)
   const queueSettled = results[resultIndex++]
-  const rootSettled = results[resultIndex]
+  const rootSettled = results[resultIndex++]
+  const assetCatalogSettled = results[resultIndex]
   if (rootSettled.status === 'rejected' && rootSettled.reason?.name === 'QuerySnapshotChanged') {
     throw rootSettled.reason
   }
   const queueResult = queueSettled.status === 'fulfilled' ? queueSettled.value : { slides: [] }
   const rootResult = rootSettled.status === 'fulfilled' ? rootSettled.value : { roots: [] }
+  const assetReferences = assetCatalogSettled.status === 'fulfilled' && Array.isArray(assetCatalogSettled.value?.assets)
+    ? assetCatalogSettled.value.assets
+    : []
   const hydrated = slideId
-    ? await prepareCurateAssetStateSnapshot(slideId, slide?.revision ?? null)
+    ? await prepareCurateAssetStateSnapshot(
+        slideId,
+        slide?.revision ?? null,
+        assetReferences.map((asset) => asset?.id),
+      )
     : { revision: null, states: new Map(), mediaGeneration: curateMediaLoadGeneration }
   const unplaced = await prepareCurateUnplacedCounts(queueResult, slide)
+  const referenceById = new Map(assetReferences.map((asset) => [asset.id, asset]))
+  const enrichedSlide = {
+    ...slide,
+    decisions: (slide?.decisions ?? []).map((decision) => ({
+      ...decision,
+      assetReference: decision.assetReference ?? referenceById.get(decision.assetReferenceId) ?? null,
+    })),
+  }
+  const projectPicks = assetReferences
+    .filter((asset) => hydrated.states.get(asset.id)?.projectJudgment?.projectPick)
+    .map((asset) => ({
+      assetReferenceId: asset.id,
+      assetReference: asset,
+      projectJudgment: hydrated.states.get(asset.id).projectJudgment,
+    }))
   return Object.freeze({
-    slide,
+    slide: enrichedSlide,
     queue: Array.isArray(queueResult?.slides) ? queueResult.slides : [],
     queueRevision: queueResult?.revision ?? slide?.revision ?? null,
     unplacedCounts: unplaced.counts,
@@ -264,6 +305,7 @@ async function prepareCuratePhaseSnapshot(slideId) {
     assetStates: hydrated.states,
     assetStateRevision: hydrated.revision,
     assetStateMediaGeneration: hydrated.mediaGeneration,
+    projectPicks,
     errors: [...errors, ...unplaced.errors],
   })
 }
@@ -292,6 +334,7 @@ function commitCuratePhaseSnapshot(snapshot) {
   curateAssetStates = new Map(snapshot?.assetStates ?? [])
   curateAssetStateSlideId = nextSlideId
   curateAssetStateRevision = snapshot?.assetStateRevision ?? curateSlideProjection?.revision ?? null
+  curateProjectPicksProjection = snapshot?.projectPicks ?? []
   curateDocumentDeckId = projection?.deckId ?? curateDocumentDeckId
   if (priorSlideId !== nextSlideId) {
     curateFocusedMediaId = curateLastFocusBySlide.get(nextSlideId) ?? curateFocusedMediaId
@@ -334,6 +377,17 @@ function clearCurateState() {
   curateQueueUnplacedCounts = new Map()
   curateDocumentDeckId = null
   curateRenderedWindowKey = ''
+  curateProjectPicksProjection = []
+  curateTrayAssets = new Map()
+  curateTrayAssetLoadKey = ''
+  curateTrayAssetLoadGeneration += 1
+  curateTrayAssetLoadPromise = null
+  curatePreviewMediaId = null
+  curateAssignmentAssetId = null
+  curateAssignmentTargets = []
+  curateAssignmentTargetGeneration += 1
+  curateAssignmentPending = false
+  curatePreviewActionPending = false
   curateFindMoreDrafts.clear()
   closeCurateOverlays()
 }
@@ -350,6 +404,10 @@ function resetCurateMediaCatalog(message = '') {
   curateFocusedMediaId = null
   curateCompareIds = []
   curateAssetStates = new Map()
+  curateTrayAssets = new Map()
+  curateTrayAssetLoadKey = ''
+  curateTrayAssetLoadGeneration += 1
+  curateTrayAssetLoadPromise = null
   curateRenderedWindowKey = ''
   elements.mediaScroll.scrollTop = 0
   return curateMediaLoadGeneration
@@ -362,6 +420,15 @@ function selectedCurateRoot() {
 
 function curateRenditionUrl(asset) {
   const candidate = asset?.renditions?.gridStandard
+  return asset?.previewCapability === 'grid'
+    && typeof candidate === 'string'
+    && candidate.startsWith('pitchdog-asset:')
+    ? candidate
+    : null
+}
+
+function curatePreviewRenditionUrl(asset) {
+  const candidate = asset?.renditions?.previewStandard ?? asset?.renditions?.gridStandard
   return asset?.previewCapability === 'grid'
     && typeof candidate === 'string'
     && candidate.startsWith('pitchdog-asset:')
@@ -384,7 +451,16 @@ function neutralAssetReferenceSnapshot(asset) {
 }
 
 function curateAssetById(assetId) {
-  return curateAssets.find((asset) => asset.id === assetId) ?? null
+  const loaded = curateAssets.find((asset) => asset.id === assetId) ?? curateTrayAssets.get(assetId)
+  if (loaded) return loaded
+  const primary = (curateSlideProjection?.slots ?? [])
+    .map((slot) => slot.selected)
+    .find((selected) => selected?.assetReferenceId === assetId)
+  const decision = (curateSlideProjection?.decisions ?? [])
+    .find((entry) => entry.assetReferenceId === assetId)
+  const pick = curateProjectPicksProjection.find((entry) => entry.assetReferenceId === assetId)
+  const reference = primary?.assetReference ?? decision?.assetReference ?? pick?.assetReference
+  return reference ? normalizeCurateAsset(reference) : null
 }
 
 function normalizedSlideDecision(entry) {
@@ -670,51 +746,184 @@ function findMoreValuesEqual(left, right) {
     && normalizedLeft.brief === normalizedRight.brief
 }
 
-function slotDisplayName(slot) {
+function slotDisplayName(slot, record = selectedPlanRecord()) {
   if (slot.kind === 'supporting-item') {
-    const record = selectedPlanRecord()
     const item = record?.metadata.supportingItems.find((candidate) => candidate.id === slot.supportingItemId)
     return item?.title ? `Media · ${item.title}` : `Supporting item ${slot.ordinal + 1}`
   }
   return `Primary ${slot.ordinal + 1}`
 }
 
+function curateAssignmentTargetSlot() {
+  const slots = curateSlideProjection?.slots ?? []
+  return slots.find((slot) => slot.key === curateTargetSlotKey)
+    ?? slots.find((slot) => !slot.selected)
+    ?? slots[0]
+    ?? null
+}
+
 function durableAssetLabel(assetId, fallback = null) {
   return curateAssetById(assetId)?.label ?? fallback?.label ?? `Asset ${String(assetId).slice(0, 8)}`
+}
+
+function curateTrayAssetIds() {
+  return [...new Set([
+    ...(curateSlideProjection?.slots ?? []).map((slot) => slot.selected?.assetReferenceId),
+    ...(curateSlideProjection?.decisions ?? []).map((entry) => entry.assetReferenceId),
+    ...curateProjectPicksProjection.map((entry) => entry.assetReferenceId),
+  ].filter(Boolean))]
+}
+
+function scheduleCurateTrayAssetHydration() {
+  const assetIds = curateTrayAssetIds()
+  const key = [
+    projection?.deckId ?? '',
+    projection?.revision ?? '',
+    curateCatalogRevision ?? '',
+    curateAvailabilityRevision ?? '',
+    assetIds.slice().sort().join('\u001f'),
+  ].join('|')
+  if (key === curateTrayAssetLoadKey) return curateTrayAssetLoadPromise
+  curateTrayAssetLoadKey = key
+  const generation = ++curateTrayAssetLoadGeneration
+  const expectedDeckId = projection?.deckId ?? null
+  const expectedRevision = projection?.revision ?? null
+  const load = (async () => {
+    const hydrated = new Map()
+    for (let index = 0; index < assetIds.length; index += 250) {
+      const params = { assetIds: assetIds.slice(index, index + 250) }
+      if (curateCatalogRevision !== null) params.expectedCatalogRevision = curateCatalogRevision
+      if (curateAvailabilityRevision !== null) params.expectedAvailabilityRevision = curateAvailabilityRevision
+      const result = await window.deckBridge.query({ name: 'media.assets', params })
+      const items = Array.isArray(result?.items) ? result.items : Array.isArray(result?.assets) ? result.assets : []
+      for (const item of items) {
+        const asset = normalizeCurateAsset(item)
+        if (asset.id) hydrated.set(asset.id, asset)
+      }
+    }
+    if (
+      generation !== curateTrayAssetLoadGeneration
+      || projection?.deckId !== expectedDeckId
+      || projection?.revision !== expectedRevision
+    ) return null
+    curateTrayAssets = hydrated
+    renderCurateTrays()
+    if (elements.mediaPreview?.open) renderCuratePreview()
+    return hydrated
+  })().catch(() => {
+    if (generation === curateTrayAssetLoadGeneration) curateTrayAssets = new Map()
+    return null
+  })
+  curateTrayAssetLoadPromise = load
+  void load.finally(() => {
+    if (curateTrayAssetLoadPromise === load) curateTrayAssetLoadPromise = null
+  })
+  return load
+}
+
+function createCurateTrayEmpty(title, detail) {
+  const empty = document.createElement('div')
+  empty.className = 'tray-item is-empty'
+  const heading = document.createElement('strong')
+  heading.textContent = title
+  const copy = document.createElement('small')
+  copy.textContent = detail
+  empty.append(heading, copy)
+  return empty
+}
+
+function createCurateTrayItem({
+  assetId = null,
+  assetReference = null,
+  title,
+  detail,
+  slotKey = null,
+  pressed = false,
+  empty = false,
+}) {
+  const button = document.createElement('button')
+  button.className = `tray-item${empty ? ' is-empty' : ''}`
+  button.type = 'button'
+  if (slotKey) button.dataset.slotKey = slotKey
+  if (assetId) button.dataset.trayAssetId = assetId
+  if (slotKey) button.setAttribute('aria-pressed', String(pressed))
+
+  const thumb = document.createElement('span')
+  thumb.className = 'tray-thumb'
+  const asset = assetId ? curateAssetById(assetId) ?? (assetReference ? normalizeCurateAsset(assetReference) : null) : null
+  if (asset) appendCurateThumbnail(thumb, asset, '')
+  else {
+    const state = document.createElement('span')
+    state.className = 'media-thumb-state'
+    state.textContent = empty ? 'Open' : 'Preview unavailable'
+    thumb.append(state)
+  }
+
+  const copy = document.createElement('span')
+  copy.className = 'tray-copy'
+  const heading = document.createElement('strong')
+  heading.textContent = title
+  const description = document.createElement('small')
+  description.textContent = detail
+  copy.append(heading, description)
+  button.append(thumb, copy)
+  button.setAttribute('aria-label', `${title}. ${detail}`)
+  return button
 }
 
 function renderCurateTrays() {
   const slots = curateSlideProjection?.slots ?? []
   const filled = slots.filter((slot) => slot.selected).length
   elements.slotProgress.textContent = `${filled}/${slots.length}`
-  elements.primaryTray.innerHTML = slots.length
+  elements.primaryTray.replaceChildren(...(slots.length
     ? slots.map((slot) => {
-      const selected = slot.selected
-      const label = selected ? durableAssetLabel(selected.assetReferenceId, selected.assetReference) : 'Open slot'
-      return `<button class="tray-item ${selected ? '' : 'is-empty'}" type="button" data-slot-key="${escapeAttribute(slot.key)}"${selected ? ` data-tray-asset-id="${escapeAttribute(selected.assetReferenceId)}"` : ''} aria-pressed="${slot.key === curateTargetSlotKey}">
-        <strong>${escapeHTML(slotDisplayName(slot))}</strong>
-        <small>${escapeHTML(label)}</small>
-      </button>`
-    }).join('')
-    : '<div class="tray-item is-empty"><strong>No primary slots</strong><small>The current Visual Style does not request media.</small></div>'
+        const selected = slot.selected
+        return createCurateTrayItem({
+          assetId: selected?.assetReferenceId ?? null,
+          assetReference: selected?.assetReference ?? null,
+          title: slotDisplayName(slot),
+          detail: selected ? durableAssetLabel(selected.assetReferenceId, selected.assetReference) : 'Open slot',
+          slotKey: slot.key,
+          pressed: slot.key === curateTargetSlotKey,
+          empty: !selected,
+        })
+      })
+    : [createCurateTrayEmpty('No primary slots', 'The current Visual Style does not request media.')]))
 
   const decisions = curateSlideProjection?.decisions ?? []
   const renderDecisionTray = (state, target) => {
     const matches = decisions.filter((entry) => normalizedSlideDecision(entry)?.state === state)
     const emptyLabel = { alternate: 'No alternates', shortlisted: 'No shortlist', unplaced: 'No unplaced media' }[state]
-    target.innerHTML = matches.length
+    target.replaceChildren(...(matches.length
       ? matches.map((entry) => {
         const decision = normalizedSlideDecision(entry)
         const detail = state === 'unplaced'
           ? `${String(decision.reason ?? 'slot changed').replaceAll('-', ' ')} · from ${decision.previousSlotKey ?? decision.previousAssignmentRole ?? 'prior slot'}`
           : state
-        return `<button class="tray-item" type="button" data-tray-asset-id="${escapeAttribute(entry.assetReferenceId)}"><strong>${escapeHTML(durableAssetLabel(entry.assetReferenceId, entry.assetReference))}</strong><small>${escapeHTML(detail)}</small></button>`
-      }).join('')
-      : `<div class="tray-item is-empty"><strong>${escapeHTML(emptyLabel)}</strong><small>None for this Slide.</small></div>`
+        return createCurateTrayItem({
+          assetId: entry.assetReferenceId,
+          assetReference: entry.assetReference,
+          title: durableAssetLabel(entry.assetReferenceId, entry.assetReference),
+          detail,
+        })
+      })
+      : [createCurateTrayEmpty(emptyLabel, 'None for this Slide.')]))
   }
   renderDecisionTray('alternate', elements.alternateTray)
   renderDecisionTray('shortlisted', elements.shortlistTray)
   renderDecisionTray('unplaced', elements.unplacedTray)
+
+  const picks = curateProjectPicksProjection
+  elements.projectPickTray.replaceChildren(...(picks.length
+    ? picks.map((entry) => createCurateTrayItem({
+        assetId: entry.assetReferenceId,
+        assetReference: entry.assetReference,
+        title: durableAssetLabel(entry.assetReferenceId, entry.assetReference),
+        detail: entry.projectJudgment?.rating ? `${entry.projectJudgment.rating} stars · Project Pick` : 'Project Pick',
+      }))
+    : [createCurateTrayEmpty('No Project Picks', 'Star or mark an image as a Project Pick.')]))
+
+  void scheduleCurateTrayAssetHydration()
 }
 
 function renderCurateRootControls() {
@@ -757,10 +966,9 @@ function renderCurateActions() {
   const decision = asset ? curateDecisionForAsset(asset.id) : null
   const slots = curateSlideProjection?.slots ?? []
   const hasAssignableSlot = slots.length > 0
-  const targetSlot = slots.find((slot) => slot.key === curateTargetSlotKey)
-    ?? slots.find((slot) => !slot.selected)
-    ?? slots[0]
+  const targetSlot = curateAssignmentTargetSlot()
   const targetLabel = targetSlot ? slotDisplayName(targetSlot) : 'No open slot'
+  const alreadyAssigned = Boolean(asset && targetSlot?.selected?.assetReferenceId === asset.id)
   elements.focusedAssetSummary.textContent = asset ? `${asset.label} · Target: ${targetLabel}` : 'No Asset selected'
   elements.focusedAssetSummary.title = elements.focusedAssetSummary.textContent
   elements.toggleProjectPick.disabled = !enabled
@@ -774,8 +982,12 @@ function renderCurateActions() {
   elements.projectReview.value = judgment.review
   elements.previewMedia.disabled = !enabled
   elements.shortlistMedia.disabled = !enabled
-  elements.assignPrimaryMedia.disabled = !enabled || !hasAssignableSlot
-  elements.assignPrimaryMedia.textContent = 'Assign to slot'
+  elements.assignPrimaryMedia.disabled = !enabled || !hasAssignableSlot || alreadyAssigned
+  elements.assignPrimaryMedia.textContent = targetSlot
+    ? alreadyAssigned
+      ? `${targetLabel} selected`
+      : `${targetSlot.selected ? 'Replace' : 'Use as'} ${targetLabel}`
+    : 'No Primary requested'
   elements.assignPrimaryMedia.title = targetSlot
     ? `${targetSlot.selected ? 'Replace' : 'Assign to'} ${slotDisplayName(targetSlot)}`
     : 'This Slide has no media slots'
@@ -814,6 +1026,8 @@ function shouldAutoLoadCurateMedia({
 }
 
 function renderCurate() {
+  elements.curateBack.disabled = !projection
+  elements.curateNext.disabled = !projection
   renderCurateQueue()
   renderCurateBrief()
   renderCurateTrays()
@@ -1196,9 +1410,14 @@ function payloadAssetReference(asset) {
 
 async function setFocusedProjectJudgment(patch, sourceLabel = 'Set project Asset judgment') {
   const asset = selectedCurateAsset()
-  if (!asset || !projection) return
+  return setProjectJudgmentForAsset(asset?.id, patch, sourceLabel)
+}
+
+async function setProjectJudgmentForAsset(assetId, patch, sourceLabel = 'Set project Asset judgment') {
+  const asset = curateAssetById(assetId)
+  if (!asset || !projection) return null
   const judgment = { ...curateJudgmentForAsset(asset.id), ...patch }
-  await executeCurateCommand('curate.projectJudgment.set', {
+  return executeCurateCommand('curate.projectJudgment.set', {
     assetReferenceId: asset.id,
     ...payloadAssetReference(asset),
     judgment,
@@ -1207,8 +1426,13 @@ async function setFocusedProjectJudgment(patch, sourceLabel = 'Set project Asset
 
 async function setFocusedSlideDecision(decision, sourceLabel) {
   const asset = selectedCurateAsset()
-  if (!asset || !projection || !selectedSlideId) return
-  await executeCurateCommand('curate.slideDecision.set', {
+  return setSlideDecisionForAsset(asset?.id, decision, sourceLabel)
+}
+
+async function setSlideDecisionForAsset(assetId, decision, sourceLabel) {
+  const asset = curateAssetById(assetId)
+  if (!asset || !projection || !selectedSlideId) return null
+  return executeCurateCommand('curate.slideDecision.set', {
     slideId: selectedSlideId,
     assetReferenceId: asset.id,
     ...payloadAssetReference(asset),
@@ -1217,17 +1441,24 @@ async function setFocusedSlideDecision(decision, sourceLabel) {
 }
 
 async function assignFocusedAsset() {
-  const slots = curateSlideProjection?.slots ?? []
-  let slot = curateTargetSlotKey ? slots.find((candidate) => candidate.key === curateTargetSlotKey) : null
-  if (!slot) slot = slots.find((candidate) => !candidate.selected) ?? null
-  if (!slot) {
-    setCurateLiveStatus('All named slots are filled. Activate a slot in the tray to replace it.')
+  const asset = selectedCurateAsset()
+  return assignAssetForCurrentSlide(asset?.id)
+}
+
+async function assignAssetForCurrentSlide(assetId) {
+  const asset = curateAssetById(assetId)
+  const slot = curateAssignmentTargetSlot()
+  if (!asset || !slot) {
+    setCurateLiveStatus('This Slide does not request Primary media. Change its Visual Style in Plan first.')
     return false
+  }
+  if (slot.selected?.assetReferenceId === asset?.id) {
+    setCurateLiveStatus(`${asset.label} is already ${slotDisplayName(slot)}.`)
+    return true
   }
   const decision = { state: 'selected', slotKey: slot.key }
   if (!slot.selected) decision.mediaAssignmentId = crypto.randomUUID()
-  await setFocusedSlideDecision(decision, `Assign Asset to ${slotDisplayName(slot)}`)
-  return true
+  return Boolean(await setSlideDecisionForAsset(asset.id, decision, `Assign Asset to ${slotDisplayName(slot)}`))
 }
 
 function toggleFocusedCompare() {
@@ -1260,24 +1491,287 @@ function curateAssetDetailsMarkup(asset) {
     ${asset.note ? `<p>${escapeHTML(asset.note)}</p>` : ''}`
 }
 
-function openFocusedPreview() {
-  const asset = selectedCurateAsset()
-  if (!asset) return
+function curatePreviewAssetIds() {
+  return [...new Set([
+    ...filteredCurateAssets().map((asset) => asset.id),
+    ...(curateSlideProjection?.slots ?? []).map((slot) => slot.selected?.assetReferenceId),
+    ...(curateSlideProjection?.decisions ?? []).map((entry) => entry.assetReferenceId),
+    ...curateProjectPicksProjection.map((entry) => entry.assetReferenceId),
+  ].filter(Boolean))]
+}
+
+function selectedCuratePreviewAsset() {
+  return curateAssetById(curatePreviewMediaId)
+}
+
+function renderCuratePreview() {
+  const asset = selectedCuratePreviewAsset()
+  if (!asset) return false
   elements.previewMediaTitle.textContent = asset.label
   elements.previewMediaDetails.innerHTML = curateAssetDetailsMarkup(asset)
   elements.previewMediaImage.hidden = true
   elements.previewMediaImage.removeAttribute('src')
-  const url = curateRenditionUrl(asset)
+  const url = curatePreviewRenditionUrl(asset)
   if (url) {
     elements.previewMediaImage.alt = `Preview of ${asset.label}`
     elements.previewMediaImage.src = url
     elements.previewMediaImage.hidden = false
-    elements.previewCapabilityState.textContent = 'Bounded grid rendition. Full Preview is not available in this gate.'
+    elements.previewCapabilityState.textContent = asset.renditions.previewStandard
+      ? 'Local preview rendition.'
+      : 'Local thumbnail rendition.'
   } else {
     elements.previewCapabilityState.textContent = `${mediaAssetStateText(asset) || 'Preview unavailable'}. The catalogue descriptor remains usable.`
   }
   elements.previewCapabilityState.hidden = false
+
+  const previewIds = curatePreviewAssetIds()
+  const index = previewIds.indexOf(asset.id)
+  elements.previewMediaPrevious.disabled = curatePreviewActionPending || previewIds.length < 2 || index < 0
+  elements.previewMediaNext.disabled = curatePreviewActionPending || previewIds.length < 2 || index < 0
+
+  const judgment = curateJudgmentForAsset(asset.id)
+  for (const button of elements.previewRating.querySelectorAll('[data-preview-rating]')) {
+    const rating = Number(button.dataset.previewRating)
+    button.disabled = curateAssignmentPending || curatePreviewActionPending
+    button.setAttribute('aria-pressed', String(judgment.rating === rating))
+  }
+  elements.previewProjectPick.disabled = curateAssignmentPending || curatePreviewActionPending
+  elements.previewProjectPick.setAttribute('aria-pressed', String(judgment.projectPick))
+  elements.previewProjectPick.textContent = judgment.projectPick ? 'Project Pick ✓' : 'Project Pick'
+
+  const decision = curateDecisionForAsset(asset.id)
+  elements.previewShortlist.disabled = curateAssignmentPending || curatePreviewActionPending
+  elements.previewAlternate.disabled = curateAssignmentPending || curatePreviewActionPending
+  elements.previewShortlist.setAttribute('aria-pressed', String(decision?.state === 'shortlisted'))
+  elements.previewAlternate.setAttribute('aria-pressed', String(decision?.state === 'alternate'))
+
+  elements.previewAssign.disabled = curateAssignmentPending || curatePreviewActionPending
+  elements.previewAssign.textContent = 'Assign to Slide…'
+  return true
+}
+
+function openFocusedPreview(assetId = curateFocusedMediaId) {
+  const asset = curateAssetById(assetId)
+  if (!asset) return false
+  curatePreviewMediaId = asset.id
+  renderCuratePreview()
   if (!elements.mediaPreview.open) elements.mediaPreview.showModal()
+  return true
+}
+
+function moveCuratePreview(delta) {
+  if (curateAssignmentPending || curatePreviewActionPending) return false
+  const ids = curatePreviewAssetIds()
+  if (ids.length < 2) return false
+  const current = Math.max(0, ids.indexOf(curatePreviewMediaId))
+  curatePreviewMediaId = ids[(current + delta + ids.length) % ids.length]
+  if (curateAssets.some((asset) => asset.id === curatePreviewMediaId)) {
+    focusCurateAsset(curatePreviewMediaId, { focus: false })
+  }
+  return renderCuratePreview()
+}
+
+async function setCuratePreviewRating(rating) {
+  const assetId = curatePreviewMediaId
+  if (!assetId || curateAssignmentPending || curatePreviewActionPending) return false
+  if (curateJudgmentForAsset(assetId).rating === rating) return true
+  curatePreviewActionPending = true
+  renderCuratePreview()
+  try {
+    return Boolean(await setProjectJudgmentForAsset(assetId, { rating }, 'Set project Asset rating'))
+  } finally {
+    curatePreviewActionPending = false
+    if (elements.mediaPreview.open) renderCuratePreview()
+  }
+}
+
+async function toggleCuratePreviewProjectPick() {
+  const assetId = curatePreviewMediaId
+  if (!assetId || curateAssignmentPending || curatePreviewActionPending) return false
+  const judgment = curateJudgmentForAsset(assetId)
+  curatePreviewActionPending = true
+  renderCuratePreview()
+  try {
+    return Boolean(await setProjectJudgmentForAsset(assetId, { projectPick: !judgment.projectPick }, 'Toggle Project Pick'))
+  } finally {
+    curatePreviewActionPending = false
+    if (elements.mediaPreview.open) renderCuratePreview()
+  }
+}
+
+async function toggleCuratePreviewDecision(state) {
+  const assetId = curatePreviewMediaId
+  if (!assetId || curateAssignmentPending || curatePreviewActionPending) return false
+  const decision = curateDecisionForAsset(assetId)
+  const nextState = decision?.state === state ? 'considered' : state
+  const label = state === 'shortlisted' ? 'Shortlist Asset for Slide' : 'Add Slide Alternate'
+  curatePreviewActionPending = true
+  renderCuratePreview()
+  try {
+    return Boolean(await setSlideDecisionForAsset(assetId, { state: nextState }, label))
+  } finally {
+    curatePreviewActionPending = false
+    if (elements.mediaPreview.open) renderCuratePreview()
+  }
+}
+
+async function assignCuratePreviewAsset() {
+  const assetId = curatePreviewMediaId
+  if (!assetId || curateAssignmentPending || curatePreviewActionPending) return false
+  return openCurateAssignmentChooser(assetId)
+}
+
+function handleCuratePreviewKeydown(event) {
+  if (event.isComposing || event.metaKey || event.ctrlKey || event.altKey) return
+  if (event.key === 'ArrowLeft') {
+    event.preventDefault()
+    moveCuratePreview(-1)
+  } else if (event.key === 'ArrowRight') {
+    event.preventDefault()
+    moveCuratePreview(1)
+  } else if (/^[0-5]$/.test(event.key)) {
+    event.preventDefault()
+    void setCuratePreviewRating(Number(event.key))
+  }
+}
+
+function assignmentTargetRecords() {
+  return planRecords().filter((record) => record.metadata.lifecycle === 'included')
+}
+
+async function queryCurateAssignmentTargets(expectedRevision, generation) {
+  const records = assignmentTargetRecords()
+  const queueBySlideId = new Map(curateQueueProjection.map((item) => [item.slideId, item]))
+  const targets = []
+  for (let index = 0; index < records.length; index += 8) {
+    const batch = records.slice(index, index + 8)
+    const results = await Promise.all(batch.map(async (record) => {
+      const queueItem = queueBySlideId.get(record.slide.id)
+      if (Array.isArray(queueItem?.slots)) {
+        return { revision: expectedRevision, slots: queueItem.slots }
+      }
+      return window.deckBridge.query({ name: 'curate.slide', params: { slideId: record.slide.id } })
+    }))
+    if (
+      generation !== curateAssignmentTargetGeneration
+      || projection?.revision !== expectedRevision
+    ) throw curateNamedError('CurateSnapshotChanged', 'Curate assignment targets changed while loading')
+    for (let offset = 0; offset < batch.length; offset += 1) {
+      const result = results[offset]
+      if (result?.revision !== expectedRevision) {
+        throw curateNamedError('CurateSnapshotChanged', 'Curate assignment targets changed while loading')
+      }
+      targets.push({ record: batch[offset], slideId: batch[offset].slide.id, slots: result?.slots ?? [] })
+    }
+  }
+  return targets
+}
+
+function renderCurateAssignmentTargets(assetId, targets = curateAssignmentTargets) {
+  elements.mediaAssignmentTargets.replaceChildren()
+  const asset = curateAssetById(assetId)
+  if (!asset) {
+    elements.mediaAssignmentTargets.append(createCurateTrayEmpty('Asset unavailable', 'Choose another image.'))
+    return
+  }
+  let targetCount = 0
+  for (const target of targets) {
+    if (!target.slots.length) continue
+    const section = document.createElement('section')
+    section.className = 'media-assignment-slide'
+    const heading = document.createElement('h3')
+    heading.textContent = target.record.metadata.internalTitle || 'Untitled Slide'
+    const part = document.createElement('p')
+    part.textContent = target.record.section.title
+    section.append(heading, part)
+    const selectedSlot = target.slots.find((slot) => slot.selected?.assetReferenceId === assetId)
+    for (const slot of target.slots) {
+      targetCount += 1
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.dataset.assignmentSlideId = target.slideId
+      button.dataset.assignmentSlotKey = slot.key
+      const slotName = slotDisplayName(slot, target.record)
+      const occupant = slot.selected
+      if (selectedSlot) {
+        button.disabled = true
+        button.textContent = selectedSlot.key === slot.key
+          ? `Already ${slotName}`
+          : `Used as ${slotDisplayName(selectedSlot, target.record)}`
+      } else if (occupant) {
+        button.textContent = `Replace ${slotName} · ${durableAssetLabel(occupant.assetReferenceId, occupant.assetReference)}`
+      } else {
+        button.textContent = `Use as ${slotName}`
+      }
+      button.disabled = button.disabled || curateAssignmentPending
+      section.append(button)
+    }
+    elements.mediaAssignmentTargets.append(section)
+  }
+  if (!targetCount) {
+    elements.mediaAssignmentTargets.append(createCurateTrayEmpty('No media roles', 'Choose a Visual Style in Plan first.'))
+  }
+}
+
+async function openCurateAssignmentChooser(assetId = curateFocusedMediaId) {
+  if (curateAssignmentPending || curatePreviewActionPending) return false
+  const asset = curateAssetById(assetId)
+  if (!asset || !projection) return false
+  elements.mediaContextMenu.hidden = true
+  if (elements.mediaPreview.open) elements.mediaPreview.close()
+  curateAssignmentAssetId = asset.id
+  curateAssignmentTargets = []
+  const generation = ++curateAssignmentTargetGeneration
+  const expectedRevision = projection.revision
+  elements.mediaAssignmentAsset.textContent = asset.label
+  elements.mediaAssignmentTargets.replaceChildren(createCurateTrayEmpty('Loading Slides…', 'Finding every named media role.'))
+  if (!elements.mediaAssignmentDialog.open) elements.mediaAssignmentDialog.showModal()
+  try {
+    const targets = await queryCurateAssignmentTargets(expectedRevision, generation)
+    if (generation !== curateAssignmentTargetGeneration || curateAssignmentAssetId !== asset.id) return false
+    curateAssignmentTargets = targets
+    renderCurateAssignmentTargets(asset.id)
+    return true
+  } catch (error) {
+    if (generation !== curateAssignmentTargetGeneration) return false
+    elements.mediaAssignmentTargets.replaceChildren(createCurateTrayEmpty('Assignments unavailable', error.message))
+    return false
+  }
+}
+
+async function assignCurateAssetToTarget(slideId, slotKey) {
+  const asset = curateAssetById(curateAssignmentAssetId)
+  const target = curateAssignmentTargets.find((candidate) => candidate.slideId === slideId)
+  const slot = target?.slots.find((candidate) => candidate.key === slotKey)
+  if (!asset || !slot || !projection || curateAssignmentPending) return false
+  const decision = { state: 'selected', slotKey: slot.key }
+  if (!slot.selected) decision.mediaAssignmentId = crypto.randomUUID()
+  curateAssignmentPending = true
+  renderCurateAssignmentTargets(asset.id)
+  const currentSlideId = selectedSlideId
+  try {
+    const result = await executeStructural(
+      'curate.slideDecision.set',
+      {
+        slideId,
+        assetReferenceId: asset.id,
+        ...payloadAssetReference(asset),
+        decision,
+      },
+      currentSlideId,
+      {
+        sourceLabel: `Assign Asset to ${slotDisplayName(slot, target.record)}`,
+        preserveCurrentSelection: true,
+      },
+    )
+    if (!result) return false
+    if (elements.mediaAssignmentDialog.open) elements.mediaAssignmentDialog.close()
+    setCurateLiveStatus(`${asset.label} assigned to ${target.record.metadata.internalTitle} · ${slotDisplayName(slot, target.record)}.`)
+    return true
+  } finally {
+    curateAssignmentPending = false
+    if (elements.mediaAssignmentDialog.open) renderCurateAssignmentTargets(asset.id)
+  }
 }
 
 function renderCurateCompare() {
@@ -1321,9 +1815,14 @@ function openCurateCompare() {
 function closeCurateOverlays() {
   if (elements?.mediaPreview?.open) elements.mediaPreview.close()
   if (elements?.mediaCompare?.open) elements.mediaCompare.close()
+  if (elements?.mediaAssignmentDialog?.open) elements.mediaAssignmentDialog.close()
   if (elements?.mediaContextMenu) elements.mediaContextMenu.hidden = true
   if (elements?.projectMediaJudgment?.open) elements.projectMediaJudgment.open = false
   if (elements?.findMorePanel?.open) elements.findMorePanel.open = false
+  curatePreviewMediaId = null
+  curateAssignmentAssetId = null
+  curateAssignmentTargets = []
+  curateAssignmentTargetGeneration += 1
 }
 
 function restoreCurateMediaFocus() {
@@ -1331,12 +1830,12 @@ function restoreCurateMediaFocus() {
 }
 
 async function executeMediaRootCommand(type, payload, sourceLabel) {
-  if (!projection) return
+  if (!projection) return false
   const operationDeckId = projection.deckId
   const operationRefreshGeneration = refreshGeneration
   setBusy(`${sourceLabel}…`)
   try {
-    await window.deckBridge.execute({
+    const result = await window.deckBridge.execute({
       command: {
         commandId: crypto.randomUUID(),
         expectedRevision: projection.revision,
@@ -1346,17 +1845,52 @@ async function executeMediaRootCommand(type, payload, sourceLabel) {
         issuedAt: new Date().toISOString(),
       },
     })
-    if (!projection || projection.deckId !== operationDeckId) return
+    if (!projection || projection.deckId !== operationDeckId) return false
     const targetSlideId = pendingWorkspaceSlideId ?? selectedSlideId
     const viewChangedDuringOperation = refreshGeneration !== operationRefreshGeneration
     const refreshed = await refreshWorkspace(targetSlideId)
-    if (!refreshed || projection?.deckId !== operationDeckId) return
+    if (!refreshed || projection?.deckId !== operationDeckId) return false
     if (!viewChangedDuringOperation) setCurateLiveStatus(`${sourceLabel} complete.`)
+    return { result, refreshed }
   } catch (error) {
-    if (!projection || projection.deckId !== operationDeckId) return
+    if (!projection || projection.deckId !== operationDeckId) return false
     renderAll()
     setCurateLiveStatus(`${error.name ?? 'Error'}: ${error.message}`)
+    return false
   }
+}
+
+async function authoriseCurateMediaRoot() {
+  const completed = await executeMediaRootCommand('media.root.authorize', {}, 'Authorise Media Root')
+  const rootId = completed?.result?.media?.root?.id
+  if (!rootId || ![...elements.mediaRootFilter.options].some((option) => option.value === rootId)) return Boolean(completed)
+  elements.mediaRootFilter.value = rootId
+  renderCurateRootControls()
+  const root = selectedCurateRoot()
+  if (root?.availability === 'available' && root.assetCount === 0) {
+    return scanSelectedCurateRoot({ automatic: true })
+  }
+  scheduleCurateMediaReset({ message: 'Media folder connected. Loading its images…' })
+  return true
+}
+
+async function scanSelectedCurateRoot({ automatic = false } = {}) {
+  const root = selectedCurateRoot()
+  if (!root) {
+    scheduleCurateMediaReset({ message: 'Loading media catalogue…' })
+    return false
+  }
+  if (root.availability !== 'available') {
+    scheduleCurateMediaReset({ message: `Loading ${root.label} catalogue…` })
+    return false
+  }
+  resetCurateMediaCatalog(`Scanning ${root.label}…`)
+  renderCurateMediaWall()
+  const scanned = await executeMediaRootCommand('media.root.scan', { rootId: root.id }, automatic ? `Scan ${root.label}` : 'Scan Media Root')
+  if (scanned && !curateMediaLoading && curateAssets.length === 0) {
+    scheduleCurateMediaReset({ message: `Loading ${root.label} catalogue…` })
+  }
+  return scanned
 }
 
 async function saveCurateFindMore() {
@@ -1485,6 +2019,7 @@ function showCurateContextMenu(event, assetId) {
     const action = button.dataset.mediaContextAction
     button.disabled = action === 'reveal'
       || (action === 'primary' && (curateSlideProjection?.slots?.length ?? 0) === 0)
+      || (action === 'assign' && !curateQueueProjection.some((item) => Number(item.requiredSlotCount ?? 0) > 0))
       || (action === 'compare' && !curateCompareIds.includes(assetId) && curateCompareIds.length >= CURATE_COMPARE_LIMIT)
   }
   menu.querySelector('button:not(:disabled)')?.focus()
@@ -1494,6 +2029,10 @@ async function runCurateContextAction(action) {
   elements.mediaContextMenu.hidden = true
   if (action === 'preview') {
     openFocusedPreview()
+    return
+  }
+  if (action === 'assign') {
+    await openCurateAssignmentChooser()
     return
   }
   try {
@@ -1620,6 +2159,8 @@ function bindCurateDisclosure(details, otherDetails) {
 function bindCurateEvents() {
   bindCurateDisclosure(elements.projectMediaJudgment, elements.findMorePanel)
   bindCurateDisclosure(elements.findMorePanel, elements.projectMediaJudgment)
+  elements.curateBack.addEventListener('click', () => void enterPhaseForSlide('plan'))
+  elements.curateNext.addEventListener('click', () => void enterPhaseForSlide('assemble'))
   elements.curateQueueFilters.forEach((button) => button.addEventListener('click', () => {
     curateQueueFilter = button.dataset.curateQueueFilter
     renderCurateQueue()
@@ -1641,7 +2182,12 @@ function bindCurateEvents() {
     scheduleCurateMediaReset({ delay: 180, message: 'Search changed. Loading matching media…' })
   })
   elements.mediaRootFilter.addEventListener('change', () => {
-    scheduleCurateMediaReset({ message: 'Media Root changed. Loading catalogue…' })
+    const root = selectedCurateRoot()
+    const needsInitialScan = root
+      && root.availability === 'available'
+      && root.assetCount === 0
+    if (needsInitialScan) void scanSelectedCurateRoot({ automatic: true })
+    else scheduleCurateMediaReset({ message: 'Media Root changed. Loading catalogue…' })
   })
   for (const control of [elements.mediaTypeFilter, elements.mediaAvailabilityFilter]) {
     control.addEventListener('change', applyCurateClientFilter)
@@ -1665,7 +2211,7 @@ function bindCurateEvents() {
     const card = event.target.closest('[data-asset-id]')
     if (!card) return
     focusCurateAsset(card.dataset.assetId)
-    openFocusedPreview()
+    void assignFocusedAsset()
   })
   elements.mediaCanvas.addEventListener('contextmenu', (event) => {
     const card = event.target.closest('[data-asset-id]')
@@ -1688,14 +2234,13 @@ function bindCurateEvents() {
   elements.toggleCompareMedia.addEventListener('click', toggleFocusedCompare)
   elements.openMediaCompare.addEventListener('click', openCurateCompare)
 
-  elements.authoriseMediaRoot.addEventListener('click', () => void executeMediaRootCommand('media.root.authorize', {}, 'Authorise Media Root'))
+  elements.authoriseMediaRoot.addEventListener('click', () => void authoriseCurateMediaRoot())
   elements.reconnectMediaRoot.addEventListener('click', () => {
     const root = selectedCurateRoot()
     if (root) void executeMediaRootCommand('media.root.reconnect', { rootId: root.id }, 'Reconnect Media Root')
   })
   elements.scanMediaRoot.addEventListener('click', () => {
-    const root = selectedCurateRoot()
-    if (root) void executeMediaRootCommand('media.root.scan', { rootId: root.id }, 'Scan Media Root')
+    void scanSelectedCurateRoot()
   })
   elements.revealMediaSource.addEventListener('click', () => setCurateLiveStatus('Source reveal is not exposed to the renderer in this gate.'))
 
@@ -1722,7 +2267,7 @@ function bindCurateEvents() {
     event.preventDefault()
     void saveCurateFindMore()
   })
-  for (const tray of [elements.primaryTray, elements.alternateTray, elements.shortlistTray, elements.unplacedTray]) {
+  for (const tray of [elements.primaryTray, elements.projectPickTray, elements.alternateTray, elements.shortlistTray, elements.unplacedTray]) {
     tray.addEventListener('click', (event) => {
       const slot = event.target.closest('[data-slot-key]')
       if (slot) {
@@ -1735,7 +2280,7 @@ function bindCurateEvents() {
       }
       const assetButton = event.target.closest('[data-tray-asset-id]')
       if (assetButton && !focusCurateAsset(assetButton.dataset.trayAssetId)) {
-        setCurateLiveStatus('That durable Asset is not in the currently loaded catalogue page.')
+        openFocusedPreview(assetButton.dataset.trayAssetId)
       }
     })
   }
@@ -1745,7 +2290,27 @@ function bindCurateEvents() {
     elements.previewMediaImage.removeAttribute('src')
     elements.previewCapabilityState.textContent = 'Preview failed. The catalogue descriptor remains usable.'
   })
-  elements.mediaPreview.addEventListener('close', restoreCurateMediaFocus)
+  elements.previewMediaImage.addEventListener('contextmenu', (event) => {
+    event.preventDefault()
+    if (curatePreviewMediaId && !curateAssignmentPending && !curatePreviewActionPending) {
+      void openCurateAssignmentChooser(curatePreviewMediaId)
+    }
+  })
+  elements.previewMediaPrevious.addEventListener('click', () => moveCuratePreview(-1))
+  elements.previewMediaNext.addEventListener('click', () => moveCuratePreview(1))
+  elements.previewRating.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-preview-rating]')
+    if (button) void setCuratePreviewRating(Number(button.dataset.previewRating))
+  })
+  elements.previewProjectPick.addEventListener('click', () => void toggleCuratePreviewProjectPick())
+  elements.previewShortlist.addEventListener('click', () => void toggleCuratePreviewDecision('shortlisted'))
+  elements.previewAlternate.addEventListener('click', () => void toggleCuratePreviewDecision('alternate'))
+  elements.previewAssign.addEventListener('click', () => void assignCuratePreviewAsset())
+  elements.mediaPreview.addEventListener('keydown', handleCuratePreviewKeydown)
+  elements.mediaPreview.addEventListener('close', () => {
+    curatePreviewMediaId = null
+    restoreCurateMediaFocus()
+  })
   elements.mediaCompare.addEventListener('close', restoreCurateMediaFocus)
   elements.compareMediaGrid.addEventListener('click', (event) => {
     const remove = event.target.closest('[data-remove-compare-id]')
@@ -1766,6 +2331,17 @@ function bindCurateEvents() {
     if (action) void runCurateContextAction(action)
   })
   elements.mediaContextMenu.addEventListener('keydown', handleCurateContextMenuKeydown)
+  elements.mediaAssignmentTargets.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-assignment-slide-id][data-assignment-slot-key]')
+    if (!button || button.disabled) return
+    void assignCurateAssetToTarget(button.dataset.assignmentSlideId, button.dataset.assignmentSlotKey)
+  })
+  elements.mediaAssignmentDialog.addEventListener('close', () => {
+    curateAssignmentAssetId = null
+    curateAssignmentTargets = []
+    curateAssignmentTargetGeneration += 1
+    restoreCurateMediaFocus()
+  })
   document.addEventListener('pointerdown', (event) => {
     if (!elements.mediaContextMenu.hidden && !elements.mediaContextMenu.contains(event.target)) {
       elements.mediaContextMenu.hidden = true

@@ -219,7 +219,8 @@ test('native and Linux export modes preserve one authored artboard with uniform 
     artboard: { getBoundingClientRect: () => ({ ...exportFrameState }) },
   }
   const harness = Function(
-    'compositionOverflowCountForProjection', 'initialProjection', 'document', 'elements',
+    'compositionOverflowCountForProjection', 'prepareAssemblyForExport', 'waitForAssemblyImageDecode',
+    'initialProjection', 'document', 'elements',
     `"use strict";
       let projection = initialProjection;
       let workspaceExportSession = null;
@@ -246,6 +247,8 @@ test('native and Linux export modes preserve one authored artboard with uniform 
     `,
   )(
     () => exportState.overflow,
+    async (next) => ({ projection: next }),
+    async () => true,
     initialExportProjection,
     documentState,
     exportElements,
@@ -315,8 +318,10 @@ test('native and Linux export modes preserve one authored artboard with uniform 
   assert.equal(documentState.documentElement.dataset.workspaceExport, 'linux')
   assert.deepEqual(harness.api.finishExport('5'), { finished: true })
   assert.equal(harness.state().renderCount, 10)
-  assert.equal(exportLayoutReads, 7)
+  assert.equal(exportLayoutReads, 4)
   assert.match(exportSource, /await \(document\.fonts\?\.ready/)
+  assert.match(exportSource, /await prepareAssemblyForExport\(projection\)/)
+  assert.match(exportSource, /await waitForAssemblyImageDecode\(exportProjection\)/)
   assert.match(exportSource, /document\.documentElement\.getBoundingClientRect\(\)/)
   assert.match(exportSource, /projection !== exportProjection/)
   assert.doesNotMatch(exportSource, /requestAnimationFrame/)
@@ -327,16 +332,203 @@ test('native and Linux export modes preserve one authored artboard with uniform 
   assert.match(macExport, /return deckWorkbench\.finishExport\(token\)/)
   assert.match(macExport, /try await finishExport\(\)/)
   assert.match(macExport, /ExportCleanupFailed/)
+  assert.match(macExport, /errorName == "AssemblyUnavailable" \|\| errorName == "AssemblyMediaUnavailable"/)
+  assert.match(macExport, /frame\["message"\] as\? String/)
   assert.doesNotMatch(macExport, /try\? await finishExport\(\)/)
   assert.doesNotMatch(macExport, /evaluateJavaScript\("deckWorkbench\.finishExport/)
   const linuxExportHost = linuxHost.slice(linuxHost.indexOf('async function exportOnePagePDF'), linuxHost.indexOf('async function presentPDFExport'))
   assert.match(linuxExportHost, /deckWorkbench\.exportFrame\('linux'\)/)
   assert.match(linuxExportHost, /removeInsertedCSS\(cssKey\)[\s\S]*deckWorkbench\.finishExport/)
   assert.match(linuxExportHost, /cleanupFailures\.push/)
+  assert.match(linuxExportHost, /frame\?\.error === 'AssemblyUnavailable' \|\| frame\?\.error === 'AssemblyMediaUnavailable'/)
+  assert.match(linuxExportHost, /namedError\(frame\.error, typeof frame\.message === 'string' \? frame\.message/)
   assert.ok(
     linuxExportHost.indexOf('if (cleanupFailures.length)') < linuxExportHost.indexOf('if (operationFailure) throw operationFailure'),
     'Linux must surface cleanup failure before a primary operation failure can hide it',
   )
+})
+
+test('Plan-derived Assembly creation deduplicates per Slide and serializes rapid rail navigation', async () => {
+  assert.match(workspace, /^selectedPlanRecord = function selectedPlanRecordWithProjectionFallback\(\)/m)
+  assert.doesNotMatch(workspace, /^function selectedPlanRecord\(\)/m)
+  assert.match(html, /id="rebuild-assembly"[^>]*>Rebuild from current Plan<\/button>/)
+  const renderSource = functionSource(visual, 'renderAssemble', 'renderAssemblySlideRail')
+  assert.match(renderSource, /planReviewRequired[\s\S]*Assembly preserved\. 01 Plan changed[\s\S]*Rebuild is undoable/)
+  assert.doesNotMatch(renderSource, /This starting layout follows/)
+  const rebuildSource = functionSource(visual, 'rebuildAssemblyFromPlan', 'assignedAssemblyAssetIds')
+  assert.match(rebuildSource, /'designOption\.rebuildFromPlan'/)
+  assert.match(rebuildSource, /preserveCurrentSelection: true/)
+  const ensureStart = visual.indexOf('async function ensureAssemblyFromPlan')
+  const ensureEnd = visual.indexOf('function assignedAssemblyAssetIds', ensureStart)
+  const ensureSource = visual.slice(ensureStart, ensureEnd)
+  assert.match(ensureSource, /assemblyCreationPromises\.get\(next\.slide\.id\)/)
+  assert.match(ensureSource, /assemblyCreationQueue[\s\S]*preserveCurrentSelection: true/)
+  const calls = []
+  let active = 0
+  let maximumActive = 0
+  const ensure = Function(
+    'executeStructural', 'initialProjection', 'crypto',
+    `"use strict";
+      let projection = initialProjection;
+      let assemblyCreationQueue = Promise.resolve(null);
+      const assemblyCreationPromises = new Map();
+      ${ensureSource}
+      return ensureAssemblyFromPlan;
+    `,
+  )(
+    async (type, payload, requestedSlideId, options) => {
+      active += 1
+      maximumActive = Math.max(maximumActive, active)
+      calls.push({ type, payload, requestedSlideId, options })
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      active -= 1
+      return { slide: { id: requestedSlideId }, composition: { elements: [] } }
+    },
+    { deckId: 'deck-one', slide: { id: 'slide-a' }, composition: null },
+    { randomUUID: (() => { let value = 0; return () => `option-${++value}` })() },
+  )
+  const slideA = { deckId: 'deck-one', slide: { id: 'slide-a' }, composition: null }
+  const slideB = { deckId: 'deck-one', slide: { id: 'slide-b' }, composition: null }
+  const [firstA, resultB, secondA] = await Promise.all([ensure(slideA), ensure(slideB), ensure(slideA)])
+  assert.equal(maximumActive, 1)
+  assert.deepEqual(calls.map((call) => call.requestedSlideId), ['slide-a', 'slide-b'])
+  assert.ok(calls.every((call) => call.options.preserveCurrentSelection === true))
+  assert.equal(firstA, secondA)
+  assert.equal(resultB.slide.id, 'slide-b')
+})
+
+test('PDF export requires an existing Assembly, then waits for exact media hydration and image decode', async () => {
+  assert.match(visual, /if \(assemblyAssetLoadPromise\) return assemblyAssetLoadPromise/)
+  const preparationStart = visual.indexOf('async function prepareAssemblyForExport')
+  const preparationEnd = visual.indexOf('async function waitForAssemblyImageDecode', preparationStart)
+  const preparationSource = visual.slice(preparationStart, preparationEnd)
+  assert.doesNotMatch(preparationSource, /ensureAssemblyFromPlan|executeStructural|deckBridge\.execute/)
+  assert.match(preparationSource, /Open this Slide in 03 Assemble first/)
+  assert.match(preparationSource, /await hydrateAssemblyAssets\(next, \{ refresh: true \}\)/)
+  assert.match(preparationSource, /asset\?\.renditions\?\.previewStandard/)
+  assert.match(preparationSource, /asset\?\.renditions\?\.gridStandard/)
+  const prepareWithoutAssembly = Function(
+    'assemblyExportFailure',
+    `"use strict"; ${preparationSource}; return prepareAssemblyForExport;`,
+  )((error, message) => ({ error, message }))
+  assert.deepEqual(await prepareWithoutAssembly({ slide: { id: 'slide-one' }, composition: null }), {
+    error: 'AssemblyUnavailable',
+    message: 'Open this Slide in 03 Assemble first so Workbench can create its Assembly before export',
+  })
+  const decodeStart = visual.indexOf('async function waitForAssemblyImageDecode')
+  const decodeEnd = visual.indexOf('function compositionElementLabel', decodeStart)
+  const decodeSource = visual.slice(decodeStart, decodeEnd)
+  assert.match(decodeSource, /await image\.decode\(\)/)
+  assert.match(decodeSource, /image\.naturalWidth <= 0 \|\| image\.naturalHeight <= 0/)
+
+  const exportStart = workspace.indexOf('  async exportFrame(')
+  const exportEnd = workspace.indexOf('  async tracerEditHeadline', exportStart)
+  const exportSource = workspace.slice(exportStart, exportEnd)
+  const trace = []
+  let releasePreparation
+  let releaseDecode
+  let preparationGate = new Promise((resolve) => { releasePreparation = resolve })
+  let decodeGate = new Promise((resolve) => { releaseDecode = resolve })
+  const initialProjection = {
+    slide: { id: 'slide-one' },
+    revision: 1,
+    composition: { elements: [{ id: 'image-one', kind: 'image', mediaRole: 'primary' }] },
+    canvas: { id: 'cinemascope-2576x1080', width: 2576, height: 1080, pageWidthMm: 257.6, pageHeightMm: 108 },
+  }
+  let preparationResult = { projection: initialProjection }
+  let decodeResult = true
+  const documentState = {
+    fonts: { ready: Promise.resolve() },
+    documentElement: {
+      dataset: {},
+      getBoundingClientRect() {
+        trace.push('layout-ready')
+        return { x: 0, y: 0, width: 0, height: 0 }
+      },
+    },
+  }
+  const exportElements = {
+    workbench: { inert: false },
+    artboard: {
+      getBoundingClientRect() {
+        trace.push('capture-frame')
+        return { x: 8, y: 12, width: 1088, height: 456.149068 }
+      },
+    },
+  }
+  const harness = Function(
+    'initialProjection', 'document', 'elements', 'trace', 'prepareOperation', 'decodeOperation',
+    `"use strict";
+      let projection = initialProjection;
+      let workspaceExportSession = null;
+      let workspaceExportPreparing = false;
+      let workspaceExportSequence = 0;
+      let activePhase = 'handoff';
+      function compositionOverflowCountForProjection() { return 0; }
+      function renderAll() { trace.push('render'); }
+      async function prepareAssemblyForExport(next) {
+        const result = await prepareOperation(next);
+        if (result?.projection) projection = result.projection;
+        return result;
+      }
+      async function waitForAssemblyImageDecode(next) { return decodeOperation(next); }
+      const api = Object.freeze({${exportSource}});
+      return {
+        api,
+        state: () => ({ projection, workspaceExportPreparing, workspaceExportSession, activePhase }),
+        setProjection: (next) => { projection = next; },
+      };
+    `,
+  )(
+    initialProjection,
+    documentState,
+    exportElements,
+    trace,
+    async (next) => {
+      trace.push(`prepare:${next.slide.id}`)
+      if (preparationGate) await preparationGate
+      trace.push('hydrated')
+      return preparationResult
+    },
+    async (next) => {
+      trace.push(`decode:${next.slide.id}`)
+      assert.equal(exportElements.workbench.inert, true)
+      assert.equal(documentState.documentElement.dataset.workspaceExport, 'native')
+      if (decodeGate) await decodeGate
+      trace.push('decoded')
+      return decodeResult
+    },
+  )
+
+  const pending = harness.api.exportFrame()
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.deepEqual(trace, ['prepare:slide-one'])
+  assert.equal(harness.state().workspaceExportPreparing, true)
+  assert.deepEqual(await harness.api.exportFrame('linux'), { error: 'ExportBusy' })
+
+  releasePreparation()
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.deepEqual(trace, ['prepare:slide-one', 'hydrated', 'render', 'decode:slide-one'])
+  assert.equal(trace.includes('capture-frame'), false)
+
+  releaseDecode()
+  const frame = await pending
+  assert.equal(frame.token, '1')
+  assert.ok(trace.indexOf('hydrated') < trace.indexOf('decode:slide-one'))
+  assert.ok(trace.indexOf('decoded') < trace.indexOf('layout-ready'))
+  assert.ok(trace.indexOf('layout-ready') < trace.indexOf('capture-frame'))
+  assert.deepEqual(harness.api.finishExport('1'), { finished: true })
+
+  harness.setProjection(initialProjection)
+  preparationGate = null
+  decodeGate = null
+  preparationResult = { error: 'AssemblyMediaUnavailable', message: 'Assigned media is unavailable' }
+  decodeResult = false
+  const traceBeforeRefusal = trace.length
+  assert.deepEqual(await harness.api.exportFrame(), preparationResult)
+  assert.deepEqual(trace.slice(traceBeforeRefusal), ['prepare:slide-one', 'hydrated'])
+  assert.equal(harness.state().workspaceExportSession, null)
+  assert.equal(harness.state().activePhase, 'handoff')
 })
 
 test('static and generated icon controls expose names while Phosphor glyphs stay decorative', () => {
@@ -486,13 +678,22 @@ test('composition rendering preserves authored text roles and announces actual f
   }
   let scheduled = 0
   const renderComposition = Function(
-    'document', 'elements', 'scheduleCompositionOverflowCheck', 'compositionElementLabel',
+    'document', 'elements', 'scheduleCompositionOverflowCheck', 'compositionElementLabel', 'applyProportionalImagePlacement',
     `"use strict"; ${functionSource(visual, 'renderComposition', 'scheduleCompositionOverflowCheck')}; return renderComposition;`,
   )(
-    { createElement: () => ({ dataset: {}, style: {}, attributes: new Map(), setAttribute(name, value) { this.attributes.set(name, value) } }) },
+    { createElement: () => ({
+      dataset: {},
+      style: {},
+      attributes: new Map(),
+      children: [],
+      setAttribute(name, value) { this.attributes.set(name, value) },
+      addEventListener() {},
+      append(...nodes) { this.children.push(...nodes) },
+    }) },
     elementsState,
     () => { scheduled += 1 },
     compositionElementLabel,
+    () => false,
   )
   const frame = { x: 100, y: 50, width: 500, height: 250 }
   const projectionFixture = {
@@ -539,10 +740,11 @@ test('composition rendering preserves authored text roles and announces actual f
     }
     get className() { return this._className }
     setAttribute(name, value) { this.attributes.set(name, String(value)) }
+    addEventListener() {}
     append(...nodes) { this.children.push(...nodes) }
     querySelectorAll(selector) {
-      if (selector !== '.composition-element') return []
-      return this.children.filter((node) => node.className.split(/\s+/).includes('composition-element'))
+      if (selector !== '.composition-text') return []
+      return this.children.filter((node) => node.className.split(/\s+/).includes('composition-text'))
     }
     remove() { this.removed = true }
   }
@@ -551,9 +753,9 @@ test('composition rendering preserves authored text roles and announces actual f
     body: { append(node) { appendedSurface = node } },
   }
   const preflight = Function(
-    'document', 'compositionElementLabel',
+    'document', 'compositionElementLabel', 'applyProportionalImagePlacement',
     `"use strict"; ${functionSource(visual, 'appendCompositionElements', 'scheduleCompositionOverflowCheck')}; return { compositionOverflowNodes, compositionOverflowCountForProjection };`,
-  )(preflightDocument, compositionElementLabel)
+  )(preflightDocument, compositionElementLabel, () => false)
   assert.equal(preflight.compositionOverflowCountForProjection(null), 0)
   assert.equal(preflight.compositionOverflowCountForProjection(projectionFixture), 2)
   assert.ok(appendedSurface?.removed, 'preflight measurement surface must always be removed')
@@ -578,7 +780,7 @@ test('composition rendering preserves authored text roles and announces actual f
   assert.equal(overflowElements.assemblyOverflowState.hidden, true, 'measurement waits for layout')
   frames.splice(0).forEach((frameCallback) => frameCallback())
   assert.equal(overflowElements.assemblyOverflowState.hidden, false)
-  assert.match(overflowElements.assemblyOverflowState.textContent, /^2 authored elements exceed the composition frame\./)
+  assert.match(overflowElements.assemblyOverflowState.textContent, /^2 elements exceed the composition frame\./)
   nodes.forEach((node) => {
     node.scrollWidth = node.clientWidth
     node.scrollHeight = node.clientHeight
@@ -602,7 +804,11 @@ test('composition overflow is a visible Handoff state and a real PDF barrier', a
     handoffSummary: { innerHTML: '' },
     handoffList: { innerHTML: '', addEventListener() {} },
   }
-  const projection = { slide: { internalTitle: 'Overflow proof' }, headline: { plainText: 'Overflow proof' } }
+  const projection = {
+    slide: { internalTitle: 'Overflow proof' },
+    headline: { plainText: 'Overflow proof' },
+    composition: { elements: [] },
+  }
   const overflowState = { count: 2 }
   const renderStart = handoff.indexOf('function renderHandoff')
   assert.ok(renderStart >= 0)
@@ -625,6 +831,17 @@ test('composition overflow is a visible Handoff state and a real PDF barrier', a
   assert.match(handoffElements.handoffExportState.textContent, /^2 active-Slide elements exceed the authored frame\./)
   assert.equal(handoffElements.exportPDF.disabled, true)
   assert.equal(handoffElements.exportPDF.title, 'Fix active-Slide composition overflow before export')
+
+  projection.composition = null
+  overflowState.count = 0
+  renderHandoff()
+  assert.equal(handoffElements.handoffExportState.hidden, false)
+  assert.equal(
+    handoffElements.handoffExportState.textContent,
+    'Open this Slide in 03 Assemble first so Workbench can create its Assembly before export.',
+  )
+  assert.equal(handoffElements.exportPDF.disabled, true)
+  assert.equal(handoffElements.exportPDF.title, 'Open this Slide in 03 Assemble before export')
 
   const callbacks = {}
   handoffElements.handoffList.addEventListener = (type, callback) => { callbacks[type] = callback }
@@ -653,7 +870,17 @@ test('composition overflow is a visible Handoff state and a real PDF barrier', a
   assert.equal(effects.exports, 0)
   assert.equal(effects.busy.length, 0)
   assert.equal(effects.handoffRenders, 1)
-  assert.deepEqual(effects.statuses, ['CompositionOverflow: Fix the active Slide before PDF export'])
+  assert.deepEqual(effects.statuses, [
+    'AssemblyUnavailable: Open this Slide in 03 Assemble first so Workbench can create its Assembly before export',
+  ])
+
+  projection.composition = { elements: [] }
+  overflowState.count = 2
+  await callbacks.click()
+  assert.equal(effects.exports, 0)
+  assert.equal(effects.busy.length, 0)
+  assert.equal(effects.handoffRenders, 2)
+  assert.equal(effects.statuses.at(-1), 'CompositionOverflow: Fix the active Slide before PDF export')
 
   overflowState.count = 0
   const firstExport = callbacks.click()

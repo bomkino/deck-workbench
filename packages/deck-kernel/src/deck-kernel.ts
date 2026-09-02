@@ -95,6 +95,28 @@ type NormalizedCrop = {
   height: number
 }
 
+type NormalizedPoint = {
+  x: number
+  y: number
+}
+
+type ElementTextSize = 'small' | 'medium' | 'large'
+
+type ElementImageFit = 'fit' | 'fill'
+
+type ElementGradientColors = {
+  start: string
+  end: string
+}
+
+type ElementGradient = {
+  type: 'linear'
+  start: NormalizedPoint
+  end: NormalizedPoint
+  opacity: number
+  colors?: ElementGradientColors
+}
+
 type CompositionElement = {
   id: string
   kind: 'text' | 'image' | 'shape' | 'line' | 'group'
@@ -103,6 +125,9 @@ type CompositionElement = {
   contentBlockId?: string
   mediaRole?: string
   crop?: NormalizedCrop
+  textSize?: ElementTextSize
+  imageFit?: ElementImageFit
+  gradient?: ElementGradient
 }
 
 type Composition = {
@@ -129,10 +154,25 @@ type LayoutPatternSnapshot = {
   elements: PatternElementSnapshot[]
 }
 
+type PlanAssemblySnapshot = {
+  format: 'pitchdog.workbench-plan-assembly'
+  version: 1
+  visualStyle: string
+  contentPattern: string
+  canvasPresetId: CanvasPresetId
+  curateSlotManifest: CurateSlot[]
+  contentBlockIds: {
+    headline?: string
+    subheadline?: string
+    body?: string
+  }
+}
+
 type DesignOption = {
   id: string
   name: string
   patternSnapshot?: LayoutPatternSnapshot
+  planSnapshot?: PlanAssemblySnapshot
   composition: Composition
 }
 
@@ -327,6 +367,27 @@ type ElementCropSetPayload = {
   crop: NormalizedCrop | null
 }
 
+type ElementGradientSetPayload = {
+  slideId: string
+  designOptionId: string
+  elementId: string
+  gradient: ElementGradient
+}
+
+type ElementTextSizeSetPayload = {
+  slideId: string
+  designOptionId: string
+  elementId: string
+  textSize: ElementTextSize | null
+}
+
+type ElementImageFitSetPayload = {
+  slideId: string
+  designOptionId: string
+  elementId: string
+  imageFit: ElementImageFit | null
+}
+
 type DesignOptionInsertPayload = {
   slideId: string
   designOption: DesignOption
@@ -338,6 +399,11 @@ type DesignOptionRemovePayload = {
   slideId: string
   designOptionId: string
   activeDesignOptionId: string | null
+}
+
+type DesignOptionReplacePayload = {
+  slideId: string
+  designOption: DesignOption
 }
 
 type DesignOptionActivatePayload = {
@@ -369,7 +435,7 @@ type CurateSlotManifestSetPayload = {
 type CommandEnvelope = {
   commandId: string
   expectedRevision: number
-  type: 'deck.rename' | 'canvas.preset.set' | 'content.add' | 'content.update' | 'content.remove' | 'section.add' | 'section.rename' | 'section.move' | 'section.remove' | 'slide.add' | 'slide.move' | 'slide.intent.set' | 'slide.remove' | 'asset.reference.add' | 'asset.assign' | 'curate.projectJudgment.set' | 'curate.slideDecision.set' | 'curate.findMore.set' | 'curate.reconcile' | 'designOption.applyPattern' | 'designOption.activate' | 'element.frame.update' | 'element.crop.update'
+  type: 'deck.rename' | 'canvas.preset.set' | 'content.add' | 'content.update' | 'content.remove' | 'section.add' | 'section.rename' | 'section.move' | 'section.remove' | 'slide.add' | 'slide.move' | 'slide.intent.set' | 'slide.remove' | 'asset.reference.add' | 'asset.assign' | 'curate.projectJudgment.set' | 'curate.slideDecision.set' | 'curate.findMore.set' | 'curate.reconcile' | 'designOption.applyPattern' | 'designOption.createFromPlan' | 'designOption.rebuildFromPlan' | 'designOption.activate' | 'element.frame.update' | 'element.crop.update' | 'element.gradient.update' | 'element.textSize.update' | 'element.imageFit.update'
   payload: JsonObject
   source: {
     kind: 'ui' | 'keyboard' | 'cli' | 'mcp' | 'migration'
@@ -408,9 +474,13 @@ type HistoryOperation =
   | { type: 'curate.slotManifest.set'; payload: CurateSlotManifestSetPayload }
   | { type: 'designOption.insert'; payload: DesignOptionInsertPayload }
   | { type: 'designOption.remove'; payload: DesignOptionRemovePayload }
+  | { type: 'designOption.replace'; payload: DesignOptionReplacePayload }
   | { type: 'designOption.activate.set'; payload: DesignOptionActivatePayload }
   | { type: 'element.frame.set'; payload: ElementFrameUpdatePayload }
   | { type: 'element.crop.set'; payload: ElementCropSetPayload }
+  | { type: 'element.gradient.set'; payload: ElementGradientSetPayload }
+  | { type: 'element.textSize.set'; payload: ElementTextSizeSetPayload }
+  | { type: 'element.imageFit.set'; payload: ElementImageFitSetPayload }
 
 type HistoryEntry = {
   id: string
@@ -866,7 +936,8 @@ function emptyCurateEnvelope(): CurateEnvelopeV1 {
 }
 
 function normalizedVisualStyle(intent: string): string {
-  if (['undecided', 'text-only', 'full-bleed', 'full-bleed-overlay', 'image-text', 'diptych', 'triptych', 'gallery', 'custom'].includes(intent)) {
+  if (intent === 'undecided') return 'full-bleed'
+  if (['text-only', 'full-bleed', 'full-bleed-overlay', 'image-text', 'diptych', 'triptych', 'gallery', 'custom'].includes(intent)) {
     return intent
   }
   if (intent === 'cover' || intent === 'statement' || intent === 'full-bleed-statement') return 'full-bleed-overlay'
@@ -974,7 +1045,15 @@ function deriveCurateSlotManifest(slide: Slide): CurateSlot[] {
 }
 
 function manifestsEqual(left: CurateSlot[], right: CurateSlot[]): boolean {
-  return JSON.stringify(left) === JSON.stringify(right)
+  return left.length === right.length && left.every((slot, index) => {
+    const candidate = right[index]
+    return candidate !== undefined
+      && slot.key === candidate.key
+      && slot.assignmentRole === candidate.assignmentRole
+      && slot.kind === candidate.kind
+      && slot.ordinal === candidate.ordinal
+      && slot.supportingItemId === candidate.supportingItemId
+  })
 }
 
 function isDefaultProjectJudgment(value: ProjectAssetJudgment): boolean {
@@ -997,6 +1076,120 @@ function assertNormalizedCrop(value: unknown): NormalizedCrop {
     throw new Error('crop must be a positive normalized rectangle within the source image')
   }
   return { x, y, width, height }
+}
+
+function assertNormalizedPoint(value: unknown, field: string): NormalizedPoint {
+  const candidate = assertRecord(value, field)
+  assertExactRecordKeys(candidate, ['x', 'y'], field)
+  for (const axis of ['x', 'y'] as const) {
+    if (typeof candidate[axis] !== 'number' || !Number.isFinite(candidate[axis])) {
+      throw new Error(`${field}.${axis} must be a finite number`)
+    }
+    if ((candidate[axis] as number) < 0 || (candidate[axis] as number) > 1) {
+      throw new Error(`${field}.${axis} must be between 0 and 1`)
+    }
+  }
+  return { x: candidate.x as number, y: candidate.y as number }
+}
+
+function assertElementTextSize(value: unknown): ElementTextSize {
+  if (!['small', 'medium', 'large'].includes(value as string)) {
+    throw new Error('textSize must be small, medium, or large')
+  }
+  return value as ElementTextSize
+}
+
+function assertElementImageFit(value: unknown): ElementImageFit {
+  if (!['fit', 'fill'].includes(value as string)) {
+    throw new Error('imageFit must be fit or fill')
+  }
+  return value as ElementImageFit
+}
+
+function assertGradientColor(value: unknown, field: string): string {
+  const color = assertString(value, field, 7)
+  if (!/^#[0-9a-f]{6}$/.test(color)) {
+    throw new Error(`${field} must be a canonical lowercase #rrggbb colour`)
+  }
+  return color
+}
+
+function assertElementGradientColors(value: unknown): ElementGradientColors {
+  const candidate = assertRecord(value, 'gradient.colors')
+  assertExactRecordKeys(candidate, ['start', 'end'], 'gradient.colors')
+  return {
+    start: assertGradientColor(candidate.start, 'gradient.colors.start'),
+    end: assertGradientColor(candidate.end, 'gradient.colors.end'),
+  }
+}
+
+function assertElementGradient(value: unknown): ElementGradient {
+  const candidate = assertRecord(value, 'gradient')
+  assertExactRecordKeys(candidate, ['type', 'start', 'end', 'opacity', 'colors'], 'gradient')
+  if (candidate.type !== 'linear') throw new Error('gradient.type must be linear')
+  const start = assertNormalizedPoint(candidate.start, 'gradient.start')
+  const end = assertNormalizedPoint(candidate.end, 'gradient.end')
+  if (start.x === end.x && start.y === end.y) {
+    throw new Error('gradient start and end must be different points')
+  }
+  if (typeof candidate.opacity !== 'number' || !Number.isFinite(candidate.opacity)) {
+    throw new Error('gradient.opacity must be a finite number')
+  }
+  if (candidate.opacity < 0 || candidate.opacity > 1) {
+    throw new Error('gradient.opacity must be between 0 and 1')
+  }
+  return {
+    type: 'linear',
+    start,
+    end,
+    opacity: candidate.opacity,
+    ...(candidate.colors === undefined ? {} : { colors: assertElementGradientColors(candidate.colors) }),
+  }
+}
+
+function assertPlanAssemblySnapshot(value: unknown): PlanAssemblySnapshot {
+  const candidate = assertRecord(value, 'Plan Assembly snapshot')
+  assertExactRecordKeys(
+    candidate,
+    ['format', 'version', 'visualStyle', 'contentPattern', 'canvasPresetId', 'curateSlotManifest', 'contentBlockIds'],
+    'Plan Assembly snapshot',
+  )
+  if (candidate.format !== 'pitchdog.workbench-plan-assembly' || candidate.version !== 1) {
+    throw new Error('Plan Assembly snapshot must use pitchdog.workbench-plan-assembly version 1')
+  }
+  const visualStyle = assertString(candidate.visualStyle, 'Plan Assembly snapshot visualStyle', 128)
+  if (normalizedVisualStyle(visualStyle) !== visualStyle || visualStyle === 'undecided') {
+    throw new Error('Plan Assembly snapshot visualStyle is unsupported')
+  }
+  const contentPattern = assertString(candidate.contentPattern, 'Plan Assembly snapshot contentPattern', 128)
+  if (!WORKBENCH_CONTENT_PATTERNS.has(contentPattern)) {
+    throw new Error('Plan Assembly snapshot contentPattern is unsupported')
+  }
+  const canvasPresetId = canvasPresetDefinition(
+    candidate.canvasPresetId,
+    'Plan Assembly snapshot canvasPresetId',
+  ).id
+  const contentBlockIds = assertRecord(candidate.contentBlockIds, 'Plan Assembly snapshot contentBlockIds')
+  assertExactRecordKeys(contentBlockIds, ['headline', 'subheadline', 'body'], 'Plan Assembly snapshot contentBlockIds')
+  const normalizedContentBlockIds: PlanAssemblySnapshot['contentBlockIds'] = {}
+  for (const role of ['headline', 'subheadline', 'body'] as const) {
+    if (contentBlockIds[role] !== undefined) {
+      normalizedContentBlockIds[role] = assertIdentity(
+        contentBlockIds[role],
+        `Plan Assembly snapshot ${role} Content Block identity`,
+        256,
+      )
+    }
+  }
+  return {
+    format: 'pitchdog.workbench-plan-assembly',
+    version: 1,
+    visualStyle,
+    contentPattern,
+    canvasPresetId,
+    curateSlotManifest: assertCurateSlotManifest(candidate.curateSlotManifest),
+    contentBlockIds: normalizedContentBlockIds,
+  }
 }
 
 function assertContentBindings(value: unknown, pattern: LayoutPatternSnapshot): Record<string, string> {
@@ -1234,6 +1427,12 @@ function assertDeckMediaIntegrity(deck: DeckSnapshot): void {
             assertElementFrame(patternElement.frame)
           }
         }
+        if (option.planSnapshot !== undefined) {
+          if (option.patternSnapshot !== undefined) {
+            throw new Error(`Design Option ${optionId} cannot carry both Pattern and Plan snapshots`)
+          }
+          assertPlanAssemblySnapshot(option.planSnapshot)
+        }
         const composition = assertRecord(option.composition, `Design Option ${optionId} composition`) as unknown as Composition
         assertIdentity(composition.id, `Design Option ${optionId} composition identity`, 512)
         if (!Array.isArray(composition.elements)) throw new Error(`Design Option ${optionId} Elements must be an array`)
@@ -1247,6 +1446,18 @@ function assertDeckMediaIntegrity(deck: DeckSnapshot): void {
           }
           assertElementFrame(element.frame)
           if (element.crop !== undefined) assertNormalizedCrop(element.crop)
+          if (element.textSize !== undefined) {
+            if (element.kind !== 'text') throw new Error(`Element ${elementId} textSize requires a Text Element`)
+            assertElementTextSize(element.textSize)
+          }
+          if (element.imageFit !== undefined) {
+            if (element.kind !== 'image') throw new Error(`Element ${elementId} imageFit requires an Image Element`)
+            assertElementImageFit(element.imageFit)
+          }
+          if (element.gradient !== undefined) {
+            if (element.kind !== 'shape') throw new Error(`Element ${elementId} gradient requires a Shape Element`)
+            assertElementGradient(element.gradient)
+          }
         }
       }
       if (
@@ -1635,6 +1846,247 @@ function instantiatePattern(
   }
 }
 
+const PLAN_ASSEMBLY_NAMES: Record<string, string> = {
+  'text-only': 'Text Only',
+  'full-bleed': 'Full Bleed',
+  'full-bleed-overlay': 'Full Bleed + Overlay',
+  'image-text': 'Image + Text',
+  diptych: 'Diptych',
+  triptych: 'Triptych',
+  gallery: 'Gallery',
+  custom: 'Custom',
+}
+
+type PlanTextRole = 'headline' | 'subheadline' | 'body'
+
+function normalizedFrame(
+  canvas: CanvasPresetSnapshot,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): ElementFrame {
+  return frameFromNormalized(canvas, [x, y, width, height])
+}
+
+function gridFrames(
+  canvas: CanvasPresetSnapshot,
+  count: number,
+  region: readonly [x: number, y: number, width: number, height: number],
+  preferredColumns?: number,
+): ElementFrame[] {
+  if (count === 0) return []
+  const columns = Math.min(count, Math.max(1, preferredColumns ?? Math.min(4, Math.ceil(Math.sqrt(count)))))
+  const rows = Math.ceil(count / columns)
+  const gapX = columns > 1 ? 0.012 : 0
+  const gapY = rows > 1 ? 0.012 : 0
+  const cellWidth = (region[2] - gapX * (columns - 1)) / columns
+  const cellHeight = (region[3] - gapY * (rows - 1)) / rows
+  return Array.from({ length: count }, (_, index) => normalizedFrame(
+    canvas,
+    region[0] + (index % columns) * (cellWidth + gapX),
+    region[1] + Math.floor(index / columns) * (cellHeight + gapY),
+    cellWidth,
+    cellHeight,
+  ))
+}
+
+function planAssemblyImageFrames(
+  style: string,
+  count: number,
+  canvas: CanvasPresetSnapshot,
+): ElementFrame[] {
+  if (count === 0) return []
+  const ratio = canvas.width / canvas.height
+  const portrait = ratio < 0.9
+  const squareish = ratio < 1.15
+  if (style === 'image-text') {
+    const region = portrait || squareish
+      ? [0, 0, 1, portrait ? 0.43 : 0.46] as const
+      : [0.52, 0, 0.48, 1] as const
+    return gridFrames(canvas, count, region)
+  }
+  if (style === 'diptych' || style === 'triptych' || style === 'gallery' || style === 'custom') {
+    const region = [0, 0, 1, portrait ? 0.48 : squareish ? 0.55 : 0.62] as const
+    const preferredColumns = style === 'diptych' ? 2 : style === 'triptych' ? 3 : undefined
+    return gridFrames(canvas, count, region, preferredColumns)
+  }
+  if (style === 'text-only') {
+    return gridFrames(canvas, count, [0, 0, 1, portrait ? 0.48 : squareish ? 0.55 : 0.62])
+  }
+  if (count === 1) return [normalizedFrame(canvas, 0, 0, 1, 1)]
+  return gridFrames(canvas, count, [0, 0, 1, 1])
+}
+
+function planAssemblyTextFrames(
+  style: string,
+  canvas: CanvasPresetSnapshot,
+): Record<PlanTextRole, ElementFrame> {
+  const ratio = canvas.width / canvas.height
+  const portrait = ratio < 0.9
+  const squareish = ratio < 1.15
+  if (style === 'image-text') {
+    return portrait || squareish
+      ? {
+          headline: normalizedFrame(canvas, 0.08, portrait ? 0.49 : 0.52, 0.84, 0.12),
+          subheadline: normalizedFrame(canvas, 0.08, portrait ? 0.63 : 0.66, 0.84, 0.08),
+          body: normalizedFrame(canvas, 0.08, portrait ? 0.74 : 0.77, 0.84, portrait ? 0.19 : 0.16),
+        }
+      : {
+          headline: normalizedFrame(canvas, 0.06, 0.13, 0.40, 0.20),
+          subheadline: normalizedFrame(canvas, 0.06, 0.36, 0.40, 0.10),
+          body: normalizedFrame(canvas, 0.06, 0.50, 0.40, 0.35),
+        }
+  }
+  if (style === 'diptych' || style === 'triptych' || style === 'gallery' || style === 'custom') {
+    const top = portrait ? 0.53 : squareish ? 0.60 : 0.67
+    return {
+      headline: normalizedFrame(canvas, 0.06, top, 0.88, portrait ? 0.11 : 0.10),
+      subheadline: normalizedFrame(canvas, 0.06, top + (portrait ? 0.13 : 0.12), 0.88, 0.07),
+      body: normalizedFrame(canvas, 0.06, top + (portrait ? 0.22 : 0.21), 0.88, portrait ? 0.19 : 0.10),
+    }
+  }
+  if (style === 'full-bleed' || style === 'full-bleed-overlay') {
+    return {
+      headline: normalizedFrame(canvas, 0.08, portrait ? 0.53 : 0.54, portrait ? 0.84 : 0.72, portrait ? 0.17 : 0.20),
+      subheadline: normalizedFrame(canvas, 0.08, portrait ? 0.72 : 0.76, portrait ? 0.84 : 0.64, 0.08),
+      body: normalizedFrame(canvas, 0.08, portrait ? 0.82 : 0.86, portrait ? 0.84 : 0.72, portrait ? 0.12 : 0.09),
+    }
+  }
+  return {
+    headline: normalizedFrame(canvas, 0.08, portrait ? 0.13 : 0.14, portrait ? 0.84 : 0.72, portrait ? 0.18 : 0.22),
+    subheadline: normalizedFrame(canvas, 0.08, portrait ? 0.34 : 0.39, portrait ? 0.84 : 0.64, 0.10),
+    body: normalizedFrame(canvas, 0.08, portrait ? 0.49 : 0.54, portrait ? 0.84 : 0.72, portrait ? 0.38 : 0.30),
+  }
+}
+
+function currentCurateSlotManifest(deck: DeckSnapshot, slide: Slide): CurateSlot[] {
+  const derived = deriveCurateSlotManifest(slide)
+  const stored = ownValue(deck.workbenchCurate?.slides, slide.id)?.slotManifest
+  if (stored === undefined) return derived
+  const normalized = assertCurateSlotManifest(stored)
+  if (!manifestsEqual(normalized, derived)) {
+    throw new Error('Curate slots must be reconciled with the saved Plan before creating Assembly')
+  }
+  return normalized
+}
+
+function instantiatePlanAssembly(
+  deck: DeckSnapshot,
+  slide: Slide,
+  designOptionId: string,
+): DesignOption {
+  const style = normalizedVisualStyle(slide.intent)
+  if (style === 'undecided') throw new Error('Visual Style must be decided before creating Assembly')
+  const plan = planSlotBasis(slide)
+  const slots = currentCurateSlotManifest(deck, slide)
+  const imageFrames = planAssemblyImageFrames(style, slots.length, deck.canvasPreset)
+  if (imageFrames.length !== slots.length) {
+    throw new Error('Visual Style does not support the saved Curate slot manifest')
+  }
+  const roleBlocks = new Map<PlanTextRole, ContentBlock>()
+  for (const role of ['headline', 'subheadline', 'body'] as const) {
+    const blocks = slide.contentBlocks.filter((block) => block.role === role)
+    if (blocks.length > 1) throw new Error(`Slide must contain at most one ${role} Content Block`)
+    if (blocks[0]) roleBlocks.set(role, blocks[0])
+  }
+  const elements: CompositionElement[] = slots.map((slot, index) => ({
+    id: `${designOptionId}:element:media:${index + 1}`,
+    kind: 'image',
+    frame: clone(imageFrames[index]),
+    patternElementKey: `media:${index + 1}`,
+    mediaRole: slot.assignmentRole,
+    crop: { x: 0, y: 0, width: 1, height: 1 },
+    imageFit: 'fill',
+  }))
+  if (style === 'full-bleed-overlay') {
+    elements.push({
+      id: `${designOptionId}:element:gradient-overlay`,
+      kind: 'shape',
+      frame: { x: 0, y: 0, width: deck.canvasPreset.width, height: deck.canvasPreset.height },
+      patternElementKey: 'gradient-overlay',
+      gradient: {
+        type: 'linear',
+        start: { x: 0, y: 0.5 },
+        end: { x: 0.72, y: 0.5 },
+        opacity: 0.78,
+        colors: { start: '#000000', end: '#000000' },
+      },
+    })
+  }
+  if (plan.contentPattern !== 'no-on-slide-text') {
+    const textFrames = planAssemblyTextFrames(style, deck.canvasPreset)
+    for (const role of ['headline', 'subheadline', 'body'] as const) {
+      const block = roleBlocks.get(role)
+      if (!block) continue
+      elements.push({
+        id: `${designOptionId}:element:${role}`,
+        kind: 'text',
+        frame: clone(textFrames[role]),
+        patternElementKey: role,
+        contentBlockId: block.id,
+        textSize: 'medium',
+      })
+    }
+  }
+  return {
+    id: designOptionId,
+    name: `From Plan · ${PLAN_ASSEMBLY_NAMES[style]}`,
+    planSnapshot: {
+      format: 'pitchdog.workbench-plan-assembly',
+      version: 1,
+      visualStyle: style,
+      contentPattern: plan.contentPattern,
+      canvasPresetId: deck.canvasPreset.id,
+      curateSlotManifest: clone(slots),
+      contentBlockIds: Object.fromEntries(
+        [...roleBlocks.entries()].map(([role, block]) => [role, block.id]),
+      ),
+    },
+    composition: {
+      id: `${designOptionId}:composition`,
+      elements,
+    },
+  }
+}
+
+function slideContentBlockIds(slide: Slide): PlanAssemblySnapshot['contentBlockIds'] {
+  const contentBlockIds: PlanAssemblySnapshot['contentBlockIds'] = {}
+  for (const role of ['headline', 'subheadline', 'body'] as const) {
+    const block = slide.contentBlocks.find((candidate) => candidate.role === role)
+    if (block) contentBlockIds[role] = block.id
+  }
+  return contentBlockIds
+}
+
+function planContentBlockIdsEqual(
+  left: PlanAssemblySnapshot['contentBlockIds'],
+  right: PlanAssemblySnapshot['contentBlockIds'],
+): boolean {
+  return (['headline', 'subheadline', 'body'] as const).every((role) => left[role] === right[role])
+}
+
+function planAssemblyReviewReasons(
+  deck: DeckSnapshot,
+  slide: Slide,
+  designOption: DesignOption,
+): string[] {
+  const snapshot = designOption.planSnapshot
+  if (!snapshot) return []
+  const reasons: string[] = []
+  const plan = planSlotBasis(slide)
+  if (normalizedVisualStyle(slide.intent) !== snapshot.visualStyle) reasons.push('visual-style-changed')
+  if (plan.contentPattern !== snapshot.contentPattern) reasons.push('content-pattern-changed')
+  if (!manifestsEqual(deriveCurateSlotManifest(slide), snapshot.curateSlotManifest)) {
+    reasons.push('curate-slots-changed')
+  }
+  if (!planContentBlockIdsEqual(slideContentBlockIds(slide), snapshot.contentBlockIds)) {
+    reasons.push('content-bindings-changed')
+  }
+  if (deck.canvasPreset.id !== snapshot.canvasPresetId) reasons.push('canvas-changed')
+  return reasons
+}
+
 function findElement(
   deck: DeckSnapshot,
   slideId: string,
@@ -1956,6 +2408,16 @@ function applyHistoryOperation(deck: DeckSnapshot, operation: HistoryOperation, 
     }
     return next
   }
+  if (operation.type === 'designOption.replace') {
+    const slide = findSlide(next, operation.payload.slideId)
+    if (!slide) throw new Error('Slide does not exist')
+    const designOptionId = assertIdentity(operation.payload.designOption.id, 'Design Option identity', 256)
+    const optionIndex = slide.designOptions?.findIndex((option) => option.id === designOptionId) ?? -1
+    if (optionIndex < 0) throw new Error('Design Option does not exist')
+    const designOptions = slide.designOptions as DesignOption[]
+    designOptions[optionIndex] = clone(operation.payload.designOption)
+    return next
+  }
   if (operation.type === 'designOption.activate.set') {
     const slide = findSlide(next, operation.payload.slideId)
     if (!slide) throw new Error('Slide does not exist')
@@ -1993,6 +2455,50 @@ function applyHistoryOperation(deck: DeckSnapshot, operation: HistoryOperation, 
       delete element.crop
     } else {
       element.crop = clone(operation.payload.crop)
+    }
+    return next
+  }
+  if (operation.type === 'element.gradient.set') {
+    const element = findElement(
+      next,
+      operation.payload.slideId,
+      operation.payload.designOptionId,
+      operation.payload.elementId,
+    )
+    if (!element) throw new Error('Element does not exist in Design Option')
+    if (element.kind !== 'shape') throw new Error('Only a Shape Element can carry a gradient')
+    element.gradient = clone(assertElementGradient(operation.payload.gradient))
+    return next
+  }
+  if (operation.type === 'element.textSize.set') {
+    const element = findElement(
+      next,
+      operation.payload.slideId,
+      operation.payload.designOptionId,
+      operation.payload.elementId,
+    )
+    if (!element) throw new Error('Element does not exist in Design Option')
+    if (element.kind !== 'text') throw new Error('Only a Text Element can carry textSize')
+    if (operation.payload.textSize === null) {
+      delete element.textSize
+    } else {
+      element.textSize = assertElementTextSize(operation.payload.textSize)
+    }
+    return next
+  }
+  if (operation.type === 'element.imageFit.set') {
+    const element = findElement(
+      next,
+      operation.payload.slideId,
+      operation.payload.designOptionId,
+      operation.payload.elementId,
+    )
+    if (!element) throw new Error('Element does not exist in Design Option')
+    if (element.kind !== 'image') throw new Error('Only an Image Element can carry imageFit')
+    if (operation.payload.imageFit === null) {
+      delete element.imageFit
+    } else {
+      element.imageFit = assertElementImageFit(operation.payload.imageFit)
     }
     return next
   }
@@ -2039,9 +2545,13 @@ const HISTORY_OPERATION_TYPES = new Set([
   'curate.slotManifest.set',
   'designOption.insert',
   'designOption.remove',
+  'designOption.replace',
   'designOption.activate.set',
   'element.frame.set',
   'element.crop.set',
+  'element.gradient.set',
+  'element.textSize.set',
+  'element.imageFit.set',
 ])
 
 function assertSafeIdentityFields(
@@ -2340,7 +2850,11 @@ function createWritingImportCheckpoint(deckId: string, rawImport: unknown): Chec
         role: 'workbench-plan',
         value: importedRichText(JSON.stringify(metadata)),
       })
-      return { id: slide.id, intent: slide.style, contentBlocks: blocks }
+      return {
+        id: slide.id,
+        intent: slide.style === 'undecided' ? 'full-bleed' : slide.style,
+        contentBlocks: blocks,
+      }
     }),
   }))
   const checkpoint: Checkpoint = {
@@ -2389,7 +2903,7 @@ function createInitialCheckpoint(seed: JsonObject): Checkpoint {
           slides: [
             {
               id: slideId,
-              intent: 'cover',
+              intent: 'full-bleed',
               contentBlocks: [
                 {
                   id: blockId,
@@ -2662,6 +3176,9 @@ function query(session: KernelSession, name: string, params: JsonObject = {}): J
         if (selectedDesignOptionId && !designOption) {
           return failure('InvalidCommand', 'Design Option does not exist')
         }
+        const planReviewReasons = designOption
+          ? planAssemblyReviewReasons(checkpoint.deck, slide, designOption)
+          : []
         return {
           deckId: checkpoint.deck.deckId,
           deckTitle: checkpoint.deck.title,
@@ -2697,6 +3214,11 @@ function query(session: KernelSession, name: string, params: JsonObject = {}): J
             ? {
                 id: designOption.id,
                 name: designOption.name,
+                source: designOption.planSnapshot
+                  ? 'plan'
+                  : designOption.patternSnapshot
+                    ? 'pattern'
+                    : 'manual',
                 pattern: designOption.patternSnapshot
                   ? {
                       id: designOption.patternSnapshot.id,
@@ -2705,9 +3227,25 @@ function query(session: KernelSession, name: string, params: JsonObject = {}): J
                       canvasPresetId: designOption.patternSnapshot.canvasPresetId ?? 'cinemascope-2576x1080',
                     }
                   : null,
+                planAtCreation: designOption.planSnapshot
+                  ? {
+                      visualStyle: designOption.planSnapshot.visualStyle,
+                      contentPattern: designOption.planSnapshot.contentPattern,
+                      canvasPresetId: designOption.planSnapshot.canvasPresetId,
+                      curateSlotCount: designOption.planSnapshot.curateSlotManifest.length,
+                    }
+                  : null,
+                planReviewRequired: planReviewReasons.length > 0,
+                planReviewReasons,
                 canvasReviewRequired: Boolean(
-                  designOption.patternSnapshot
-                  && (designOption.patternSnapshot.canvasPresetId ?? 'cinemascope-2576x1080') !== checkpoint.deck.canvasPreset.id,
+                  (
+                    designOption.patternSnapshot
+                    && (designOption.patternSnapshot.canvasPresetId ?? 'cinemascope-2576x1080') !== checkpoint.deck.canvasPreset.id
+                  )
+                  || (
+                    designOption.planSnapshot
+                    && designOption.planSnapshot.canvasPresetId !== checkpoint.deck.canvasPreset.id
+                  ),
                 ),
               }
             : null,
@@ -3428,6 +3966,90 @@ function prepare(session: KernelSession, command: CommandEnvelope): PrepareResul
       }
       label = `Apply Pattern: ${pattern.name}`
       projectionHints = ['slide.activeProjection', 'history']
+    } else if (command.type === 'designOption.createFromPlan') {
+      const slideId = assertIdentity(command.payload.slideId, 'slideId', 256)
+      const slide = findSlide(session.checkpoint.deck, slideId)
+      if (!slide) throw new Error('Slide does not exist')
+      if ((slide.designOptions?.length ?? 0) > 0) {
+        throw new Error('Assembly already exists for this Slide')
+      }
+      const designOptionId = assertIdentity(command.payload.designOptionId, 'designOptionId', 256)
+      if (designOptionIdentityExists(session.checkpoint.deck, designOptionId)) {
+        throw new Error('Design Option identity already exists')
+      }
+      const forwardOperations: HistoryOperation[] = []
+      const inverseOperations: HistoryOperation[] = []
+      appendCurateReconciliation(
+        session.checkpoint.deck,
+        session.checkpoint.deck,
+        slideId,
+        forwardOperations,
+        inverseOperations,
+      )
+      const stagedDeck = forwardOperations.length > 0
+        ? applyHistoryOperation(session.checkpoint.deck, operationList(forwardOperations))
+        : session.checkpoint.deck
+      const stagedSlide = findSlide(stagedDeck, slideId)
+      if (!stagedSlide) throw new Error('Slide does not exist after Curate reconciliation')
+      const designOption = instantiatePlanAssembly(
+        stagedDeck,
+        stagedSlide,
+        designOptionId,
+      )
+      appendOperationPair(
+        forwardOperations,
+        inverseOperations,
+        {
+          type: 'designOption.insert',
+          payload: { slideId, designOption, afterDesignOptionId: null, activeDesignOptionId: designOptionId },
+        },
+        {
+          type: 'designOption.remove',
+          payload: { slideId, designOptionId, activeDesignOptionId: null },
+        },
+      )
+      forward = operationList(forwardOperations)
+      inverse = operationList(inverseOperations)
+      label = 'Create Assembly from Plan'
+      projectionHints = ['curate.queue', 'curate.slide', 'curate.assetStates', 'slide.activeProjection', 'history']
+    } else if (command.type === 'designOption.rebuildFromPlan') {
+      const slideId = assertIdentity(command.payload.slideId, 'slideId', 256)
+      const designOptionId = assertIdentity(command.payload.designOptionId, 'designOptionId', 256)
+      const slide = findSlide(session.checkpoint.deck, slideId)
+      if (!slide) throw new Error('Slide does not exist')
+      const currentDesignOption = slide.designOptions?.find((option) => option.id === designOptionId)
+      if (!currentDesignOption) throw new Error('Design Option does not exist')
+      const forwardOperations: HistoryOperation[] = []
+      const inverseOperations: HistoryOperation[] = []
+      appendCurateReconciliation(
+        session.checkpoint.deck,
+        session.checkpoint.deck,
+        slideId,
+        forwardOperations,
+        inverseOperations,
+      )
+      const stagedDeck = forwardOperations.length > 0
+        ? applyHistoryOperation(session.checkpoint.deck, operationList(forwardOperations))
+        : session.checkpoint.deck
+      const stagedSlide = findSlide(stagedDeck, slideId)
+      if (!stagedSlide) throw new Error('Slide does not exist after Curate reconciliation')
+      const rebuiltDesignOption = instantiatePlanAssembly(stagedDeck, stagedSlide, designOptionId)
+      appendOperationPair(
+        forwardOperations,
+        inverseOperations,
+        {
+          type: 'designOption.replace',
+          payload: { slideId, designOption: rebuiltDesignOption },
+        },
+        {
+          type: 'designOption.replace',
+          payload: { slideId, designOption: clone(currentDesignOption) },
+        },
+      )
+      forward = operationList(forwardOperations)
+      inverse = operationList(inverseOperations)
+      label = 'Rebuild Assembly from Plan'
+      projectionHints = ['curate.queue', 'curate.slide', 'curate.assetStates', 'slide.activeProjection', 'history']
     } else if (command.type === 'designOption.activate') {
       const slideId = assertIdentity(command.payload.slideId, 'slideId', 256)
       const slide = findSlide(session.checkpoint.deck, slideId)
@@ -3490,6 +4112,61 @@ function prepare(session: KernelSession, command: CommandEnvelope): PrepareResul
         payload: { slideId, designOptionId, elementId, crop: clone(element.crop ?? null) },
       }
       label = 'Update Image crop'
+      projectionHints = ['slide.activeProjection', 'history']
+    } else if (command.type === 'element.gradient.update') {
+      const slideId = assertIdentity(command.payload.slideId, 'slideId', 256)
+      const designOptionId = assertIdentity(command.payload.designOptionId, 'designOptionId', 256)
+      const elementId = assertIdentity(command.payload.elementId, 'elementId', 512)
+      const gradient = assertElementGradient(command.payload.gradient)
+      const element = findElement(session.checkpoint.deck, slideId, designOptionId, elementId)
+      if (!element) throw new Error('Element does not exist in Design Option')
+      if (element.kind !== 'shape') throw new Error('Only a Shape Element can carry a gradient')
+      if (!element.gradient) throw new Error('Shape Element does not contain a gradient')
+      forward = {
+        type: 'element.gradient.set',
+        payload: { slideId, designOptionId, elementId, gradient },
+      }
+      inverse = {
+        type: 'element.gradient.set',
+        payload: { slideId, designOptionId, elementId, gradient: clone(element.gradient) },
+      }
+      label = 'Update Gradient'
+      projectionHints = ['slide.activeProjection', 'history']
+    } else if (command.type === 'element.textSize.update') {
+      const slideId = assertIdentity(command.payload.slideId, 'slideId', 256)
+      const designOptionId = assertIdentity(command.payload.designOptionId, 'designOptionId', 256)
+      const elementId = assertIdentity(command.payload.elementId, 'elementId', 512)
+      const textSize = assertElementTextSize(command.payload.textSize)
+      const element = findElement(session.checkpoint.deck, slideId, designOptionId, elementId)
+      if (!element) throw new Error('Element does not exist in Design Option')
+      if (element.kind !== 'text') throw new Error('Only a Text Element can carry textSize')
+      forward = {
+        type: 'element.textSize.set',
+        payload: { slideId, designOptionId, elementId, textSize },
+      }
+      inverse = {
+        type: 'element.textSize.set',
+        payload: { slideId, designOptionId, elementId, textSize: element.textSize ?? null },
+      }
+      label = `Set Text size: ${textSize}`
+      projectionHints = ['slide.activeProjection', 'history']
+    } else if (command.type === 'element.imageFit.update') {
+      const slideId = assertIdentity(command.payload.slideId, 'slideId', 256)
+      const designOptionId = assertIdentity(command.payload.designOptionId, 'designOptionId', 256)
+      const elementId = assertIdentity(command.payload.elementId, 'elementId', 512)
+      const imageFit = assertElementImageFit(command.payload.imageFit)
+      const element = findElement(session.checkpoint.deck, slideId, designOptionId, elementId)
+      if (!element) throw new Error('Element does not exist in Design Option')
+      if (element.kind !== 'image') throw new Error('Only an Image Element can carry imageFit')
+      forward = {
+        type: 'element.imageFit.set',
+        payload: { slideId, designOptionId, elementId, imageFit },
+      }
+      inverse = {
+        type: 'element.imageFit.set',
+        payload: { slideId, designOptionId, elementId, imageFit: element.imageFit ?? null },
+      }
+      label = `Set Image fit: ${imageFit}`
       projectionHints = ['slide.activeProjection', 'history']
     } else {
       return failure('InvalidCommand', `Unsupported command type: ${String(command.type)}`)

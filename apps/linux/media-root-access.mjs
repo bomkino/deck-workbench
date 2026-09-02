@@ -22,6 +22,18 @@ const MAX_RESOURCE_BYTES = 32 * 1024 * 1024
 const MAX_DECODED_PIXELS = 64_000_000
 const MAX_DIMENSION = 32_768
 const MAX_METADATA_BYTES = 4 * 1024 * 1024
+const PREVIEW_PROFILES = Object.freeze({
+  gridStandard: Object.freeze({
+    id: 'grid_standard',
+    maxLongestSide: 512,
+    maxOutputBytes: 8 * 1024 * 1024,
+  }),
+  previewStandard: Object.freeze({
+    id: 'preview_standard',
+    maxLongestSide: 2048,
+    maxOutputBytes: 32 * 1024 * 1024,
+  }),
+})
 
 function failure(name, message, cause) {
   return Object.assign(new Error(message, cause ? { cause } : undefined), { name })
@@ -361,5 +373,6 @@ export const mediaRootAccessContract = Object.freeze({
   maxFingerprintBytes: MAX_FINGERPRINT_BYTES,
   maxResourceBytes: MAX_RESOURCE_BYTES,
   maxDecodedPixels: MAX_DECODED_PIXELS,
-  previewProfile: 'grid_standard',
+  previewProfile: PREVIEW_PROFILES.gridStandard.id,
+  previewProfiles: PREVIEW_PROFILES,
 })

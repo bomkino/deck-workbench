@@ -34,7 +34,7 @@ test('large Interface Scale reflows the phased workspace instead of clipping it'
   assert.match(styles, /plan-phase:has\(#plan-empty:not\(\[hidden\]\)\) #plan-empty \{ gap: var\(--space-1\); padding-block: var\(--space-2\); \}/)
   assert.match(styles, /data-workspace-layout="single-column"\] \.curate-phase \{[\s\S]+?grid-template-areas: "wall" "queue" "brief" "tray";[\s\S]+?grid-template-rows: minmax\(45rem, auto\) minmax\(24rem, auto\) minmax\(24rem, auto\) minmax\(32rem, auto\)/)
   assert.match(styles, /data-workspace-layout="single-column"\] \.curate-tray \{[\s\S]+?grid-template-rows: repeat\(4, minmax\(7rem, auto\)\)/)
-  assert.match(styles, /data-workspace-layout="single-column"\] \.stage-scroll \{[\s\S]+?overflow: visible/)
+  assert.match(styles, /data-workspace-layout="single-column"\] \.stage-scroll \{[\s\S]+?overflow: auto; place-items: start/)
   assert.match(styles, /data-workspace-layout="single-column"\] \.handoff-review \{ overflow: visible; \}/)
   assert.match(styles, /\.artboard-shell \{ position: relative;/)
   assert.match(styles, /\.artboard \{[\s\S]+?width: 1088px/)

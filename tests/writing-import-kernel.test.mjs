@@ -63,6 +63,7 @@ test('writing import creates one canonical revision-zero checkpoint and reopens 
   ])
   assert.equal(new Set(idsBefore).size, idsBefore.length)
   assert.equal(session.query('deck.summary').canvas.id, 'widescreen-1920x1080')
+  assert.equal(storyBefore.sections[0].slides[0].intent, 'full-bleed')
   assert.equal(storyBefore.sections[0].slides[0].contentBlocks[0].role, 'headline')
   assert.equal(storyBefore.sections[0].slides[0].contentBlocks.at(-1).role, 'workbench-plan')
   const firstPlan = JSON.parse(storyBefore.sections[0].slides[0].contentBlocks.at(-1).plainText)

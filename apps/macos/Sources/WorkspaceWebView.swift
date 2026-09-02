@@ -108,6 +108,7 @@ enum WorkspaceWebViewFactory {
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = coordinator
+        webView.uiDelegate = coordinator
         webView.allowsMagnification = false
         coordinator.attach(webView: webView)
         webView.load(URLRequest(url: URL(string: "pitchdog-ui://app/index.html")!))

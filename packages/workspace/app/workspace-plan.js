@@ -133,6 +133,7 @@ function bindPlanEvents() {
     event.preventDefault()
     void savePlanSlide()
   })
+  elements.savePlanAndCurate.addEventListener('click', () => void savePlanAndContinueToCurate())
   elements.planForm.addEventListener('input', captureCurrentPlanDraft)
   elements.planForm.addEventListener('change', captureCurrentPlanDraft)
   elements.commitHeadline.addEventListener('click', commitHeadline)
@@ -272,6 +273,7 @@ function renderPlanEditor() {
     elements.commitHeadline.disabled = true
     elements.slideIntent.disabled = true
     elements.savePlan.disabled = true
+    elements.savePlanAndCurate.disabled = true
     updatePlanDraftPresentation(false)
     return
   }
@@ -314,6 +316,7 @@ function renderPlanEditor() {
   }
   renderSupportingItems()
   elements.savePlan.disabled = false
+  elements.savePlanAndCurate.disabled = false
   elements.cutSlide.textContent = record.metadata.lifecycle === 'cut' ? 'Restore from Cut Bin' : 'Move to Cut Bin'
   syncPlanEditorVisibility()
   updatePlanDraftPresentation(planDraftIsDirty(delta))
@@ -428,6 +431,17 @@ async function savePlanSlide() {
   if (!record) return false
   captureCurrentPlanDraft()
   return savePlanDraftById(record.slide.id, { announce: true })
+}
+
+async function savePlanAndContinueToCurate() {
+  const record = selectedPlanRecord()
+  if (!record) return false
+  const slideId = record.slide.id
+  captureCurrentPlanDraft()
+  if (!await savePlanDraftById(slideId)) return false
+  const entered = await enterPhaseForSlide('curate', slideId)
+  if (entered) setStatus('Slide plan saved · ready to Curate')
+  return entered
 }
 
 function preparePlanDraftOperations(record, draft) {
@@ -707,7 +721,7 @@ async function addSlide() {
     sectionId: section.id,
     slideId,
     blockId: crypto.randomUUID(),
-    intent: 'undecided',
+    intent: 'full-bleed',
     headline: richText('Untitled Slide'),
     afterSlideId: section.slides.at(-1)?.id ?? null,
   }, slideId, { focus: { slideId } })

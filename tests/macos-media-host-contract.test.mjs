@@ -34,6 +34,8 @@ test('macOS portable catalogue is Deck-bound while native locators stay in Appli
   assert.match(media, /sourceRevisions: \[PortableSourceRevision\]/)
   assert.match(media, /guard data\.count <= maximumCatalogBytes/)
   assert.match(media, /encoder\.outputFormatting = \[\.sortedKeys, \.withoutEscapingSlashes\]/)
+  assert.match(media, /static func canonicalPath\(_ path: String\)[^]*Darwin\.realpath/)
+  assert.match(media, /let path = candidate\.path[^]*let canonical = try MediaFilesystem\.canonicalPath\(path\)/)
 })
 
 test('macOS native media pages bound their final enriched JSON and pin both generations', async () => {
@@ -50,6 +52,11 @@ test('macOS native media pages bound their final enriched JSON and pin both gene
   assert.match(media, /items\.removeLast\(\)/)
   assert.match(media, /var fileIdentities: \[String: MediaFileIdentity\]/)
   assert.match(media, /Dictionary\(uniqueKeysWithValues: try catalog\.roots\.map/)
+  assert.match(media, /let assetIds = try requestedAssetIds\(params\)/)
+  assert.match(media, /defaultLimit: assetIds\?\.count \?\? 100/)
+  assert.match(media, /if let assetIds, !assetIds\.contains\(asset\.id\)/)
+  assert.match(media, /assetIds must contain between 1 and 250 opaque identities/)
+  assert.match(media, /assetIds must contain unique opaque identities/)
 })
 
 test('macOS catalogue revisions use the portable safe-integer ceiling without trapping', async () => {
@@ -70,14 +77,77 @@ test('macOS asset scheme is nonce-bound and opens Root-relative files without fo
     source('WorkspaceWebView.swift'),
   ])
   assert.match(webView, /forURLScheme: "pitchdog-asset"/)
-  assert.match(handler, /profile == "grid_standard"/)
+  assert.match(handler, /\["grid_standard", "preview_standard"\]\.contains\(profile\)/)
   assert.match(handler, /Cache-Control": "private, no-store"/)
   assert.match(handler, /width <= 64_000_000 \/ height/)
+  assert.match(handler, /case "grid_standard":[^]*maximumLongestSide = 512[^]*maximumOutputBytes = 8 \* 1024 \* 1024/)
+  assert.match(handler, /case "preview_standard":[^]*maximumLongestSide = 2048[^]*maximumOutputBytes = 32 \* 1024 \* 1024/)
+  assert.match(handler, /kCGImageSourceCreateThumbnailWithTransform: true/)
+  assert.match(handler, /kCGImageSourceThumbnailMaxPixelSize: maximumLongestSide/)
+  assert.match(handler, /max\(thumbnail\.width, thumbnail\.height\) <= maximumLongestSide/)
+  assert.match(media, /"gridStandard": gridRendition,[^]*"previewStandard": previewRendition/)
   assert.match(media, /lease\.matches\(nonce\)/)
   assert.match(media, /O_RDONLY \| O_DIRECTORY \| O_NOFOLLOW/)
   assert.match(media, /Darwin\.openat\(parentDescriptor, segments\.last!, O_RDONLY \| O_NOFOLLOW\)/)
   assert.match(media, /maximumResourceBytes = 32 \* 1024 \* 1024/)
   assert.match(media, /maximumDecodedPixels = 64_000_000/)
   assert.match(media, /metadata\.byteSize <= maximumResourceBytes/)
+  assert.match(media, /javaScriptURIComponentAllowed = CharacterSet/)
+  assert.match(media, /asset\.id\.addingPercentEncoding\([^]*withAllowedCharacters: Self\.javaScriptURIComponentAllowed/)
   assert.match(media, /nonisolated func revoke\(\)[^]*lease\.revoke\(\)/)
+})
+
+test('macOS asset scheme decodes one opaque path component exactly once', async () => {
+  const handler = await source('MediaAssetSchemeHandler.swift')
+  const parseStart = handler.indexOf('guard let encodedPath = URLComponents(')
+  const parseEnd = handler.indexOf('let source = try await controller.mediaResourceData', parseStart)
+  assert.ok(parseStart >= 0 && parseEnd > parseStart)
+  const parser = handler.slice(parseStart, parseEnd)
+  assert.match(parser, /\)\?\.percentEncodedPath/)
+  assert.match(parser, /split\(separator: "\/", omittingEmptySubsequences: false\)/)
+  assert.match(parser, /components\.count == 3/)
+  assert.match(parser, /!Self\.containsEncodedSlash\(components\[1\]\)/)
+  assert.match(parser, /let assetId = components\[1\]\.removingPercentEncoding/)
+  assert.match(parser, /let profile = components\[2\]\.removingPercentEncoding/)
+  assert.ok(
+    parser.indexOf('containsEncodedSlash(components[1])') < parser.indexOf('components[1].removingPercentEncoding'),
+    'encoded path separators must be rejected before the one permitted decode',
+  )
+  assert.doesNotMatch(parser, /url\.path\.split/)
+
+  function parseRuntimeEquivalent(value) {
+    const url = new URL(value)
+    if (url.protocol !== 'pitchdog-asset:' || url.username || url.password || url.port || url.search || url.hash) return null
+    const components = url.pathname.split('/')
+    if (
+      components.length !== 3
+      || components[0] !== ''
+      || !components[1]
+      || !components[2]
+      || /%2f/i.test(components[1])
+      || /%2f/i.test(components[2])
+    ) return null
+    try {
+      const assetId = decodeURIComponent(components[1])
+      const profile = decodeURIComponent(components[2])
+      return ['grid_standard', 'preview_standard'].includes(profile)
+        ? { nonce: url.hostname, assetId, profile }
+        : null
+    } catch {
+      return null
+    }
+  }
+
+  for (const assetId of ['asset-%', 'asset-%2F', 'asset-?', 'asset-#']) {
+    for (const profile of ['grid_standard', 'preview_standard']) {
+      const parsed = parseRuntimeEquivalent(
+        `pitchdog-asset://session/${encodeURIComponent(assetId)}/${profile.replace('_', '%5F')}`,
+      )
+      assert.deepEqual(parsed, { nonce: 'session', assetId, profile })
+    }
+  }
+  assert.equal(parseRuntimeEquivalent('pitchdog-asset://session/asset-%2F-child/grid_standard'), null)
+  assert.equal(parseRuntimeEquivalent('pitchdog-asset://session/asset/child/grid_standard'), null)
+  assert.equal(parseRuntimeEquivalent('pitchdog-asset://session/asset/grid_standard?query=1'), null)
+  assert.equal(parseRuntimeEquivalent('pitchdog-asset://session/asset/grid_standard#fragment'), null)
 })

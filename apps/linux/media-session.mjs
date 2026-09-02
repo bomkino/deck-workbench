@@ -22,6 +22,9 @@ const MAX_CATALOG_BYTES = 64 * 1024 * 1024
 const MAX_CONTROL_FRAME_BYTES = 1024 * 1024
 const MAX_QUERY_LIMIT = 250
 const GRID_CAPABILITIES = new Set(['still-image', 'animated-image'])
+const PREVIEW_PROFILE_IDS = new Set(
+  Object.values(mediaRootAccessContract.previewProfiles).map((profile) => profile.id),
+)
 
 function failure(name, message, cause) {
   return Object.assign(new Error(message, cause ? { cause } : undefined), { name })
@@ -305,13 +308,13 @@ export class LinuxMediaSession {
   async readGridResource({ nonce, assetId, profile }) {
     this.#requireOpen()
     if (nonce !== this.#nonce) throw failure('StaleMediaSession', 'This media resource session is no longer active')
-    if (profile !== mediaRootAccessContract.previewProfile) {
+    if (!PREVIEW_PROFILE_IDS.has(profile)) {
       throw failure('UnsupportedMediaPreview', 'Unknown media preview profile')
     }
     const asset = this.#catalog.assets.find((candidate) => candidate.id === assetId)
     if (!asset) throw failure('MissingMedia', 'Media Asset does not exist')
     if (asset.availability !== 'available' || !GRID_CAPABILITIES.has(asset.previewCapability)) {
-      throw failure('UnsupportedMediaPreview', 'This Media Asset has no safe grid preview')
+      throw failure('UnsupportedMediaPreview', 'This Media Asset has no safe preview')
     }
     const grant = this.#grantStore.get(this.#deckId, asset.rootId)
     if (!grant) throw failure('MediaRootNeedsPermission', 'This media Root needs permission')
@@ -399,7 +402,8 @@ export class LinuxMediaSession {
       delete requested.rootId
     }
     const offset = requested.offset ?? 0
-    const limit = requested.limit ?? 100
+    const limit = requested.limit
+      ?? (Array.isArray(requested.assetIds) ? requested.assetIds.length : 100)
     const availabilityEntries = []
     for (const root of catalog.roots) {
       availabilityEntries.push([root.id, await this.#rootAvailability(root.id)])
@@ -425,7 +429,10 @@ export class LinuxMediaSession {
           previewCapability: publicCapability(asset.previewCapability),
           renditions: {
             gridStandard: grid && available
-              ? `pitchdog-asset://${this.#nonce}/${encodeURIComponent(asset.id)}/${mediaRootAccessContract.previewProfile}`
+              ? `pitchdog-asset://${this.#nonce}/${encodeURIComponent(asset.id)}/${mediaRootAccessContract.previewProfiles.gridStandard.id}`
+              : null,
+            previewStandard: grid && available
+              ? `pitchdog-asset://${this.#nonce}/${encodeURIComponent(asset.id)}/${mediaRootAccessContract.previewProfiles.previewStandard.id}`
               : null,
           },
         }
@@ -569,4 +576,5 @@ export const linuxMediaSessionContract = Object.freeze({
   queryNames: Object.freeze(['media.roots', 'media.assets']),
   commandTypes: Object.freeze(['media.root.authorize', 'media.root.reconnect', 'media.root.scan']),
   previewProfile: mediaRootAccessContract.previewProfile,
+  previewProfiles: mediaRootAccessContract.previewProfiles,
 })

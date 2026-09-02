@@ -22,7 +22,7 @@ import { SerialOperationQueue } from './serial-operation-queue.mjs'
 import { UtilityKernelClient } from './utility-client.mjs'
 import { defaultPreferences, interfaceScaleSteps, loadPreferencesFile, themeValues } from './preferences.mjs'
 import { MediaGrantStore } from './media-grants.mjs'
-import { LinuxMediaSession } from './media-session.mjs'
+import { LinuxMediaSession, linuxMediaSessionContract } from './media-session.mjs'
 import { settleRuntimeViewport } from './runtime-viewport.mjs'
 import { seedWritingImport, validateWritingImport } from './writing-import.mjs'
 
@@ -385,6 +385,9 @@ async function exportOnePagePDF(destination) {
   }
   if (frame?.error === 'ExportBusy') throw namedError('ExportBusy', 'Another PDF export is already in progress')
   if (frame?.error === 'ExportStale') throw namedError('ExportStale', 'The active Slide changed while preparing export')
+  if (frame?.error === 'AssemblyUnavailable' || frame?.error === 'AssemblyMediaUnavailable') {
+    throw namedError(frame.error, typeof frame.message === 'string' ? frame.message : 'The active Slide Assembly is unavailable for export')
+  }
   if (typeof frame?.token !== 'string' || !frame.token) {
     throw namedError('WorkspaceUnavailable', 'Slide export frame is invalid')
   }
@@ -703,6 +706,9 @@ async function registerMediaProtocol() {
       if (parts.length !== 2) return new Response('Not found', { status: 404 })
       const assetId = decodeURIComponent(parts[0])
       const profile = decodeURIComponent(parts[1])
+      const profileDefinition = Object.values(linuxMediaSessionContract.previewProfiles)
+        .find((candidate) => candidate.id === profile)
+      if (!profileDefinition) throw namedError('UnsupportedMediaPreview', 'Unknown media preview profile')
       const activeMedia = requiredMediaSession()
       const { bytes } = await activeMedia.readGridResource({
         nonce: url.hostname,
@@ -718,16 +724,25 @@ async function registerMediaProtocol() {
       if (size.width <= 0 || size.height <= 0) {
         throw namedError('UnsupportedMediaPreview', 'Image dimensions are invalid')
       }
-      const scale = Math.min(1, 512 / Math.max(size.width, size.height))
-      const rendition = scale < 1
+      const longestSide = Math.max(size.width, size.height)
+      const rendition = longestSide > profileDefinition.maxLongestSide
         ? decoded.resize({
-            width: Math.max(1, Math.round(size.width * scale)),
-            height: Math.max(1, Math.round(size.height * scale)),
+            ...(size.width >= size.height
+              ? { width: profileDefinition.maxLongestSide }
+              : { height: profileDefinition.maxLongestSide }),
             quality: 'best',
           })
         : decoded
+      const renditionSize = rendition.getSize()
+      if (
+        renditionSize.width <= 0
+        || renditionSize.height <= 0
+        || Math.max(renditionSize.width, renditionSize.height) > profileDefinition.maxLongestSide
+      ) {
+        throw namedError('UnsupportedMediaPreview', 'Image rendering exceeded its profile bounds')
+      }
       const png = rendition.toPNG()
-      if (png.byteLength === 0 || png.byteLength > 8 * 1024 * 1024) {
+      if (png.byteLength === 0 || png.byteLength > profileDefinition.maxOutputBytes) {
         throw namedError('UnsupportedMediaPreview', 'Image rendering failed or exceeded output limits')
       }
       return new Response(png, {
@@ -2198,11 +2213,13 @@ async function start() {
         const segments = url.pathname.split('/').filter(Boolean)
         allowed = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(url.hostname)
           && segments.length === 2
-          && segments[1] === 'grid_standard'
+          && Object.values(linuxMediaSessionContract.previewProfiles)
+            .some((profile) => profile.id === segments[1])
           && !url.username
           && !url.password
           && !url.port
           && !url.search
+          && !url.hash
       }
     } catch {
       allowed = false

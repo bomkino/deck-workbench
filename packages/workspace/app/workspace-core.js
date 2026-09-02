@@ -231,6 +231,7 @@ function defaultCopyState(block) {
 }
 
 function visualStyleFromIntent(intent) {
+  if (intent === 'undecided') return 'full-bleed'
   if (VISUAL_STYLE_IDS.includes(intent)) return intent
   if (intent === 'cover' || intent === 'statement') return 'full-bleed-overlay'
   if (intent === 'editorial-body') return 'image-text'
@@ -238,20 +239,25 @@ function visualStyleFromIntent(intent) {
 }
 
 function defaultPlanMetadata(slide) {
-  const headline = blockByRole(slide, 'headline')
+  const copyBlocks = Object.fromEntries(
+    ['headline', 'subheadline', 'body'].map((role) => [role, blockByRole(slide, role)]),
+  )
+  const headline = copyBlocks.headline
   const headlineText = String(headline?.plainText ?? '').trim()
+  const hasVisibleText = Object.values(copyBlocks)
+    .some((block) => String(block?.plainText ?? '').length > 0)
   return {
     format: PLAN_FORMAT,
     version: PLAN_VERSION,
     internalTitle: headlineText.split('\n')[0] || 'Untitled Slide',
-    purpose: '',
+    purpose: 'Unreviewed',
     lifecycle: 'included',
-    textPresence: headlineText ? 'visible' : 'undecided',
+    textPresence: hasVisibleText ? 'visible' : 'undecided',
     contentPattern: 'simple-copy',
     copyFieldStates: {
       headline: defaultCopyState(headline),
-      subheadline: defaultCopyState(blockByRole(slide, 'subheadline')),
-      body: defaultCopyState(blockByRole(slide, 'body')),
+      subheadline: defaultCopyState(copyBlocks.subheadline),
+      body: defaultCopyState(copyBlocks.body),
     },
     supportingItems: [],
     mediaSlotCount: 0,
@@ -407,6 +413,7 @@ const elements = {
   conversionPromptStatus: document.querySelector('#conversion-prompt-status'),
   conversionPromptFallback: document.querySelector('#conversion-prompt-fallback'),
   writingImportDialog: document.querySelector('#writing-import-dialog'),
+  writingImportFile: document.querySelector('#writing-import-file'),
   writingImportSource: document.querySelector('#writing-import-source'),
   writingImportPreview: document.querySelector('#writing-import-preview'),
   previewWritingImport: document.querySelector('#preview-writing-import'),
@@ -441,6 +448,7 @@ const elements = {
   addSupportingItem: document.querySelector('#add-supporting-item'),
   cutSlide: document.querySelector('#cut-slide'),
   savePlan: document.querySelector('#save-plan'),
+  savePlanAndCurate: document.querySelector('#save-plan-and-curate'),
   curateQueueFilters: [...document.querySelectorAll('[data-curate-queue-filter]')],
   nextCurateIssue: document.querySelector('#next-curate-issue'),
   curateSlideQueue: document.querySelector('#curate-slide-queue'),
@@ -477,6 +485,8 @@ const elements = {
   mediaWallState: document.querySelector('#media-wall-state'),
   curateBriefHeading: document.querySelector('#curate-brief-heading'),
   curateBriefContent: document.querySelector('#curate-brief-content'),
+  curateBack: document.querySelector('#curate-back'),
+  curateNext: document.querySelector('#curate-next'),
   findMorePanel: document.querySelector('#find-more-panel'),
   findMoreSummaryTrigger: document.querySelector('#find-more-summary-trigger'),
   findMoreForm: document.querySelector('#find-more-form'),
@@ -485,6 +495,7 @@ const elements = {
   findMorePrimaryStatus: document.querySelector('#find-more-primary-status'),
   findMoreBrief: document.querySelector('#find-more-brief'),
   saveFindMore: document.querySelector('#save-find-more'),
+  projectPickTray: document.querySelector('#project-pick-tray'),
   primaryTray: document.querySelector('#primary-tray'),
   alternateTray: document.querySelector('#alternate-tray'),
   shortlistTray: document.querySelector('#shortlist-tray'),
@@ -495,10 +506,22 @@ const elements = {
   previewMediaImage: document.querySelector('#preview-media-image'),
   previewCapabilityState: document.querySelector('#preview-capability-state'),
   previewMediaDetails: document.querySelector('#preview-media-details'),
+  previewMediaPrevious: document.querySelector('#preview-media-previous'),
+  previewMediaNext: document.querySelector('#preview-media-next'),
+  previewRating: document.querySelector('#preview-rating'),
+  previewProjectPick: document.querySelector('#preview-project-pick'),
+  previewShortlist: document.querySelector('#preview-shortlist'),
+  previewAlternate: document.querySelector('#preview-alternate'),
+  previewAssign: document.querySelector('#preview-assign'),
+  mediaAssignmentDialog: document.querySelector('#media-assignment-dialog'),
+  mediaAssignmentAsset: document.querySelector('#media-assignment-asset'),
+  mediaAssignmentTargets: document.querySelector('#media-assignment-targets'),
+  cancelMediaAssignment: document.querySelector('#cancel-media-assignment'),
   mediaCompare: document.querySelector('#media-compare'),
   compareMediaGrid: document.querySelector('#compare-media-grid'),
   mediaContextMenu: document.querySelector('#media-context-menu'),
   stageScroll: document.querySelector('#stage-scroll'),
+  assemblySlideRail: document.querySelector('#assembly-slide-rail'),
   artboardShell: document.querySelector('#artboard-shell'),
   artboard: document.querySelector('#artboard'),
   artboardIntent: document.querySelector('#artboard-intent'),
@@ -511,12 +534,28 @@ const elements = {
   artboardZoom: document.querySelector('#artboard-zoom'),
   zoomLabel: document.querySelector('#zoom-label'),
   fitArtboard: document.querySelector('#fit-artboard'),
-  patternChoice: document.querySelector('#pattern-choice'),
-  patternBodyBlock: document.querySelector('#pattern-body-block'),
-  applyPattern: document.querySelector('#apply-pattern'),
+  assemblyBack: document.querySelector('#assembly-back'),
+  assemblyNext: document.querySelector('#assembly-next'),
+  assemblyLayoutSource: document.querySelector('#assembly-layout-source'),
+  editAssemblyPlan: document.querySelector('#edit-assembly-plan'),
+  rebuildAssembly: document.querySelector('#rebuild-assembly'),
   visualElement: document.querySelector('#visual-element'),
   alignActions: document.querySelector('.align-actions'),
+  textControls: document.querySelector('#text-controls'),
+  textSizeActions: [...document.querySelectorAll('[data-text-size]')],
+  imageControls: document.querySelector('#image-controls'),
+  imageFitActions: [...document.querySelectorAll('[data-image-fit]')],
+  imageSwapRole: document.querySelector('#image-swap-role'),
+  imageSwapCandidates: document.querySelector('#image-swap-candidates'),
+  gradientControls: document.querySelector('#gradient-controls'),
+  editGradient: document.querySelector('#edit-gradient'),
+  gradientDirectionActions: [...document.querySelectorAll('[data-gradient-direction]')],
+  gradientStrength: document.querySelector('#gradient-strength'),
+  gradientStrengthOutput: document.querySelector('#gradient-strength-output'),
+  gradientStartColor: document.querySelector('#gradient-start-color'),
+  gradientEndColor: document.querySelector('#gradient-end-color'),
   cropControls: document.querySelector('.crop-controls'),
+  cropHelp: document.querySelector('#crop-help'),
   cropX: document.querySelector('#crop-x'),
   cropY: document.querySelector('#crop-y'),
   cropWidth: document.querySelector('#crop-width'),
