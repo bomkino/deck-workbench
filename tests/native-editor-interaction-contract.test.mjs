@@ -2,10 +2,11 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
-const [html, styles, workspace, curate, visual] = await Promise.all([
+const [html, styles, workspace, core, curate, visual] = await Promise.all([
   readFile(new URL('../packages/workspace/app/index.html', import.meta.url), 'utf8'),
   readFile(new URL('../packages/workspace/app/styles.css', import.meta.url), 'utf8'),
   readFile(new URL('../packages/workspace/app/workspace.js', import.meta.url), 'utf8'),
+  readFile(new URL('../packages/workspace/app/workspace-core.js', import.meta.url), 'utf8'),
   readFile(new URL('../packages/workspace/app/workspace-curate.js', import.meta.url), 'utf8'),
   readFile(new URL('../packages/workspace/app/workspace-visual.js', import.meta.url), 'utf8'),
 ])
@@ -33,4 +34,7 @@ test('static editor chrome cannot be selected or browser-dragged while editing s
 test('an unopened native document reports an honest empty session instead of a kernel failure', () => {
   assert.match(workspace, /error\?\.name === 'KernelUnavailable' && errorMessage\.includes\('No Deck is open'\)/)
   assert.match(workspace, /\? 'No document session'/)
+  assert.match(html, /id="deck-title">No Deck<\/h1>/)
+  assert.match(html, /id="save-state"[^>]*hidden>No document session<\/p>/)
+  assert.match(core, /elements\.saveState\.hidden = message === 'No document session'/)
 })

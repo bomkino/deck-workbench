@@ -612,6 +612,7 @@ function applyThemePreference(preference) {
 function setStatus(message) {
   if (elements.saveState.textContent !== message) elements.saveState.textContent = message
   elements.saveState.title = message
+  elements.saveState.hidden = message === 'No document session'
 }
 
 function setBusy(message) {
@@ -674,7 +675,7 @@ function renderAll() {
     view.classList.toggle('is-active', active)
     view.setAttribute('aria-hidden', String(!active))
   })
-  elements.deckTitle.textContent = storyDocument?.deckTitle ?? projection?.deckTitle ?? 'No Deck open'
+  elements.deckTitle.textContent = storyDocument?.deckTitle ?? projection?.deckTitle ?? 'No Deck'
   elements.revision.textContent = projection ? `Revision ${projection.revision}` : 'Revision —'
   elements.undo.disabled = !projection?.history?.canUndo
   elements.redo.disabled = !projection?.history?.canRedo
