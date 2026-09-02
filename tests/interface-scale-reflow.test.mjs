@@ -24,8 +24,8 @@ test('large Interface Scale reflows the phased workspace instead of clipping it'
   for (const scale of [0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75]) {
     assert.ok(Math.max(Number(control[1]) * 16 * scale, Number(control[2])) >= 44)
   }
-  assert.match(styles, /data-workspace-layout="two-column"\] \.plan-phase \{[\s\S]+?grid-template-areas: "sequence map" "editor editor"/)
-  assert.match(styles, /data-workspace-layout="single-column"\] \.plan-phase \{[\s\S]+?grid-template-areas: "sequence" "map" "editor"/)
+  assert.match(styles, /data-workspace-layout="two-column"\] \.plan-phase \{[\s\S]+?grid-template-areas: "tools tools" "sequence map" "editor editor"/)
+  assert.match(styles, /data-workspace-layout="single-column"\] \.plan-phase \{[\s\S]+?grid-template-areas: "tools" "sequence" "map" "editor"/)
   assert.match(styles, /data-workspace-layout="single-column"\] \.curate-phase \{[\s\S]+?grid-template-areas: "wall" "queue" "brief" "tray";[\s\S]+?grid-template-rows: minmax\(45rem, auto\) minmax\(24rem, auto\) minmax\(24rem, auto\) minmax\(32rem, auto\)/)
   assert.match(styles, /data-workspace-layout="single-column"\] \.curate-tray \{[\s\S]+?grid-template-rows: repeat\(4, minmax\(7rem, auto\)\)/)
   assert.match(styles, /data-workspace-layout="single-column"\] \.stage-scroll \{[\s\S]+?overflow: visible/)

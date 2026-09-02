@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url'
 import {
   app,
   BrowserWindow,
+  clipboard,
   dialog,
   ipcMain,
   Menu,
@@ -23,6 +24,7 @@ import { defaultPreferences, interfaceScaleSteps, loadPreferencesFile, themeValu
 import { MediaGrantStore } from './media-grants.mjs'
 import { LinuxMediaSession } from './media-session.mjs'
 import { settleRuntimeViewport } from './runtime-viewport.mjs'
+import { seedWritingImport, validateWritingImport } from './writing-import.mjs'
 
 const repositoryRoot = resolve(import.meta.dirname, '../..')
 const sharedWorkspaceRoot = resolve(repositoryRoot, 'apps/macos/Resources/Workspace')
@@ -171,6 +173,21 @@ async function flushWorkspaceDrafts() {
   return result
 }
 
+async function ensureNoWorkspaceDrafts() {
+  if (!activePackagePath || !mainWindow || mainWindow.isDestroyed()) return { plan: 0, findMore: 0, total: 0 }
+  const result = await mainWindow.webContents.executeJavaScript(
+    'globalThis.deckWorkbench.draftSummary()',
+    true,
+  )
+  if (!result || !Number.isSafeInteger(result.total) || result.total < 0) {
+    throw namedError('WorkspaceUnavailable', 'Workspace draft state is invalid')
+  }
+  if (result.total > 0) {
+    throw namedError('UnsavedWorkspaceDraft', 'Save or discard every pending workspace draft before importing writing')
+  }
+  return result
+}
+
 async function saveDocument() {
   await flushWorkspaceDrafts()
   return utility.request('document.save')
@@ -193,6 +210,70 @@ async function createDocument(packagePath) {
   activePackagePath = packagePath
   await renderProjection(projection)
   return projection
+}
+
+async function createImportedDocument(packagePath, rawWritingImport) {
+  const seed = seedWritingImport(rawWritingImport)
+  const previousPath = activePackagePath
+  const previousMedia = mediaSession
+  const projection = await utility.request('document.create', {
+    packagePath,
+    seed,
+    saveCurrent: false,
+  })
+  let candidateMedia = null
+  try {
+    candidateMedia = await LinuxMediaSession.open({
+      packagePath,
+      deckId: seed.deckId,
+      grantStore: mediaGrantStore,
+    })
+    mediaSession = candidateMedia
+    processedMediaCommands = new Map()
+    activePackagePath = packagePath
+    await renderProjection(projection)
+    previousMedia?.close()
+    const partCount = seed.writingImport.parts.length
+    const slideCount = seed.writingImport.parts.reduce((sum, part) => sum + part.slides.length, 0)
+    return {
+      projection,
+      import: { filename: basename(packagePath), partCount, slideCount },
+    }
+  } catch (error) {
+    candidateMedia?.close()
+    await utility.request('document.close', { save: false }).catch(() => {})
+    let restoreFailure = null
+    if (previousPath) {
+      try {
+        const restored = await utility.request('document.open', { packagePath: previousPath })
+        mediaSession = previousMedia
+        activePackagePath = previousPath
+        await renderProjection(restored)
+      } catch (restoreError) {
+        restoreFailure = restoreError
+      }
+    } else {
+      mediaSession = null
+      activePackagePath = null
+    }
+    let cleanupFailure = null
+    try {
+      await rm(packagePath, { recursive: true, force: false })
+    } catch (candidateCleanupError) {
+      cleanupFailure = candidateCleanupError
+    }
+    if (restoreFailure && cleanupFailure) throw namedError(
+      'CheckpointWriteFailure',
+      `Writing import failed, original Deck restore failed as ${restoreFailure.message}, and candidate cleanup failed at ${packagePath}: ${cleanupFailure.message}`,
+    )
+    if (cleanupFailure) {
+      throw namedError('CheckpointWriteFailure', `Writing import failed; candidate cleanup failed at ${packagePath}: ${cleanupFailure.message}`)
+    }
+    if (restoreFailure) {
+      throw namedError('KernelUnavailable', `Writing import failed and original Deck restore failed: ${restoreFailure.message}`)
+    }
+    throw error
+  }
 }
 
 async function openDocument(packagePath) {
@@ -220,6 +301,20 @@ async function presentNewDocument() {
   })
   if (result.canceled || !result.filePath) throw namedError('JobCancelled', 'Create Deck was cancelled')
   return createDocument(normalizeCreatePath(result.filePath))
+}
+
+async function presentWritingImport(rawWritingImport) {
+  const validated = validateWritingImport(rawWritingImport)
+  await ensureNoWorkspaceDrafts()
+  const safeTitle = validated.title.replaceAll('/', '-').replaceAll('\\', '-').replaceAll('\0', '') || 'Imported Deck'
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: 'Import Writing into New Deck',
+    defaultPath: `${safeTitle}.pitchdeck`,
+    filters: [{ name: 'Pitch Deck', extensions: ['pitchdeck'] }],
+    properties: ['createDirectory', 'showOverwriteConfirmation'],
+  })
+  if (result.canceled || !result.filePath) throw namedError('JobCancelled', 'Writing import was cancelled')
+  return createImportedDocument(normalizeCreatePath(result.filePath), rawWritingImport)
 }
 
 async function presentOpenDocument() {
@@ -503,7 +598,15 @@ async function executeMediaCommand(rawCommand) {
 async function dispatchBridge(method, rawPayload = {}) {
   const payload = assertPayload(rawPayload)
   switch (method) {
-    case 'deck.create': return presentNewDocument()
+    case 'deck.create': {
+      const keys = Object.keys(payload)
+      if (payload.writingImport === undefined) {
+        if (keys.length !== 0) throw namedError('InvalidCommand', 'deck.create accepts only optional writingImport')
+        return presentNewDocument()
+      }
+      if (keys.length !== 1) throw namedError('InvalidCommand', 'deck.create writingImport accepts no other fields')
+      return presentWritingImport(payload.writingImport)
+    }
     case 'deck.open': return presentOpenDocument()
     case 'deck.query': {
       if (typeof payload.name !== 'string') throw namedError('InvalidCommand', 'Named query is required')
@@ -525,6 +628,19 @@ async function dispatchBridge(method, rawPayload = {}) {
     case 'deck.redo': return utility.request('document.redo')
     case 'deck.exportPDF': return presentPDFExport()
     case 'ui.getPreferences': return { ...preferences }
+    case 'ui.copyText': {
+      if (Object.keys(payload).length !== 1 || typeof payload.text !== 'string') {
+        throw namedError('InvalidCommand', 'ui.copyText requires only a text string')
+      }
+      if (Buffer.byteLength(payload.text, 'utf8') > 262144) {
+        throw namedError('InvalidCommand', 'Clipboard text exceeds 262144 bytes')
+      }
+      clipboard.writeText(payload.text)
+      if (clipboard.readText() !== payload.text) {
+        throw namedError('ClipboardWriteFailed', 'Native clipboard did not retain the full text')
+      }
+      return { copied: true }
+    }
     case 'ui.setTheme': {
       const value = String(payload.value ?? '')
       if (!themeValues.includes(value)) {

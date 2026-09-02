@@ -11,6 +11,7 @@ extension UTType {
 protocol WorkspaceProjectionSink: AnyObject {
     func renderProjection(_ projection: [String: Any]) async throws
     func clearProjection() async throws
+    func draftSummary() async throws -> [String: Any]
     func saveDrafts() async throws -> [String: Any]
     func writeOnePagePDF(to destination: URL) async throws
 }
@@ -35,6 +36,7 @@ final class DeckSessionController: ObservableObject {
     private var mediaSession: MediaCatalogSession?
     private var processedMediaCommands: [String: Data] = [:]
     private weak var workspace: WorkspaceProjectionSink?
+    private var writingImportTracerPanel: (destination: URL, cancel: Bool)?
 
     init(bundle: Bundle = .main, requiresWorkspaceDraftFlush: Bool = true) throws {
         self.requiresWorkspaceDraftFlush = requiresWorkspaceDraftFlush
@@ -112,6 +114,63 @@ final class DeckSessionController: ObservableObject {
         } catch {
             candidateMedia?.revoke()
             try? createdStore.close()
+            throw error
+        }
+    }
+
+    func createImportedDocument(at url: URL, seed: [String: Any]) async throws -> [String: Any] {
+        guard let writingImport = seed["writingImport"] as? [String: Any],
+              let title = writingImport["title"] as? String
+        else {
+            throw WorkbenchFailure(name: "InvalidCommand", message: "Validated writingImport seed is missing")
+        }
+        let candidateKernel = try DeckKernelHost(kernelURL: kernelURL)
+        var candidateMedia: MediaCatalogSession?
+        let checkpoint = try candidateKernel.createInitialCheckpoint(seed: seed)
+        let createdStore = try PitchDeckDocumentStore.create(at: url, checkpoint: checkpoint)
+        var presentedCandidate = false
+        do {
+            try candidateKernel.open(checkpoint: checkpoint)
+            let projection = try candidateKernel.query("slide.activeProjection")
+            let media = try MediaCatalogSession(
+                packageURL: createdStore.packageURL,
+                deckId: createdStore.manifest.deckId
+            )
+            candidateMedia = media
+            if let workspace {
+                try await workspace.renderProjection(projection)
+                presentedCandidate = true
+            }
+            try activate(
+                kernel: candidateKernel,
+                store: createdStore,
+                mediaSession: media,
+                title: title,
+                status: "Imported \(createdStore.packageURL.lastPathComponent)",
+                projection: projection,
+                saveCurrentCheckpoint: false
+            )
+            return projection
+        } catch {
+            if presentedCandidate {
+                if hasDocument {
+                    if let currentProjection = try? query(name: "slide.activeProjection", params: [:]) {
+                        try? await workspace?.renderProjection(currentProjection)
+                    }
+                } else {
+                    try? await workspace?.clearProjection()
+                }
+            }
+            candidateMedia?.revoke()
+            do {
+                try createdStore.close()
+                try FileManager.default.removeItem(at: createdStore.packageURL)
+            } catch {
+                throw WorkbenchFailure(
+                    name: "CheckpointWriteFailure",
+                    message: "Writing import failed; candidate cleanup failed at \(createdStore.packageURL.path): \(error.localizedDescription)"
+                )
+            }
             throw error
         }
     }
@@ -353,6 +412,25 @@ final class DeckSessionController: ObservableObject {
         ["theme": theme, "interfaceScale": interfaceScale, "artboardZoom": artboardZoom]
     }
 
+    func copyText(_ text: String) throws -> [String: Any] {
+        guard text.lengthOfBytes(using: .utf8) <= 262_144 else {
+            throw WorkbenchFailure(name: "InvalidCommand", message: "Clipboard text exceeds 262144 bytes")
+        }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        guard pasteboard.setString(text, forType: .string), pasteboard.string(forType: .string) == text else {
+            throw WorkbenchFailure(name: "ClipboardWriteFailed", message: "Native clipboard did not retain the full text")
+        }
+        return ["copied": true]
+    }
+
+    func configureWritingImportTracerPanel(destination: URL, cancel: Bool) throws {
+        guard CommandLine.arguments.contains("--tracer-writing-import") else {
+            throw WorkbenchFailure(name: "InvalidCommand", message: "Writing-import tracer controls are unavailable")
+        }
+        writingImportTracerPanel = (destination, cancel)
+    }
+
     func presentNewDocument(tracerDestination: URL? = nil) async throws -> [String: Any] {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.pitchDeckPackage]
@@ -371,6 +449,49 @@ final class DeckSessionController: ObservableObject {
         let projection = try createDocument(at: url)
         try await workspace?.renderProjection(projection)
         return projection
+    }
+
+    func presentWritingImport(_ rawWritingImport: Any) async throws -> [String: Any] {
+        let writingImport = try WritingImportSeedBuilder.validate(rawWritingImport)
+        try await ensureNoWorkspaceDrafts()
+        guard let title = writingImport["title"] as? String,
+              let parts = writingImport["parts"] as? [[String: Any]]
+        else {
+            throw WorkbenchFailure(name: "InvalidCommand", message: "Validated writingImport seed is invalid")
+        }
+        let safeTitle = title.components(separatedBy: CharacterSet(charactersIn: "/\\:")).joined(separator: "-")
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.pitchDeckPackage]
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        panel.nameFieldStringValue = "\(safeTitle.isEmpty ? "Imported Deck" : safeTitle).pitchdeck"
+        panel.title = "Import Writing into New Deck"
+        let tracerPanel = writingImportTracerPanel
+        writingImportTracerPanel = nil
+        if let tracerPanel {
+            panel.directoryURL = tracerPanel.destination.deletingLastPathComponent()
+            panel.nameFieldStringValue = tracerPanel.destination.lastPathComponent
+        }
+        guard await response(
+            for: panel,
+            tracerDestination: tracerPanel?.destination,
+            tracerCancellation: tracerPanel?.cancel == true
+        ) == .OK, let url = panel.url else {
+            throw WorkbenchFailure(name: "JobCancelled", message: "Writing import was cancelled")
+        }
+        let seed = try WritingImportSeedBuilder.seed(writingImport)
+        let projection = try await createImportedDocument(at: url, seed: seed)
+        let slideCount = parts.reduce(0) { count, part in
+            count + ((part["slides"] as? [[String: Any]])?.count ?? 0)
+        }
+        return [
+            "projection": projection,
+            "import": [
+                "filename": documentURL?.lastPathComponent ?? url.lastPathComponent,
+                "partCount": parts.count,
+                "slideCount": slideCount,
+            ],
+        ]
     }
 
     func presentOpenDocument() async throws -> [String: Any] {
@@ -528,6 +649,23 @@ final class DeckSessionController: ObservableObject {
         ]
     }
 
+    private func ensureNoWorkspaceDrafts() async throws {
+        guard hasDocument else { return }
+        guard let workspace else {
+            throw WorkbenchFailure(name: "WorkspaceUnavailable", message: "Workspace is not ready to inspect pending drafts")
+        }
+        let result = try await workspace.draftSummary()
+        guard let total = result["total"] as? Int, total >= 0 else {
+            throw WorkbenchFailure(name: "WorkspaceUnavailable", message: "Workspace draft state is invalid")
+        }
+        guard total == 0 else {
+            throw WorkbenchFailure(
+                name: "UnsavedWorkspaceDraft",
+                message: "Save or discard every pending workspace draft before importing writing"
+            )
+        }
+    }
+
     private func flushWorkspaceDrafts() async throws {
         guard hasDocument else { return }
         guard let workspace else {
@@ -549,11 +687,12 @@ final class DeckSessionController: ObservableObject {
         mediaSession candidateMediaSession: MediaCatalogSession,
         title: String,
         status candidateStatus: String,
-        projection: [String: Any]
+        projection: [String: Any],
+        saveCurrentCheckpoint: Bool = true
     ) throws {
         if let currentStore = store {
             do {
-                try currentStore.saveCheckpoint(kernel.serialize())
+                if saveCurrentCheckpoint { try currentStore.saveCheckpoint(kernel.serialize()) }
                 try currentStore.close()
             } catch {
                 candidateMediaSession.revoke()
@@ -584,12 +723,21 @@ final class DeckSessionController: ObservableObject {
 
     private func response(
         for panel: NSSavePanel,
-        tracerDestination: URL? = nil
+        tracerDestination: URL? = nil,
+        tracerCancellation: Bool = false
     ) async -> NSApplication.ModalResponse {
         await withCheckedContinuation { continuation in
             NSApplication.shared.activate(ignoringOtherApps: true)
             panel.begin { continuation.resume(returning: $0) }
-            if tracerDestination != nil {
+            if tracerCancellation {
+                print("DW-T00 native writing-import save panel presented for cancellation")
+                fflush(stdout)
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(750))
+                    guard panel.isVisible else { return }
+                    panel.cancel(nil)
+                }
+            } else if tracerDestination != nil {
                 print("DW-T00 native save panel presented")
                 fflush(stdout)
                 Task { @MainActor in

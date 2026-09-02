@@ -7,7 +7,7 @@ A local-first, story-first application for prototyping, reviewing and handing of
 
 ## Status
 
-Pre-alpha. `main` is the canonical source branch. The shared Workbench now centres four task workspaces: Plan, Curate, Assemble and Handoff. Production Plan uses the durable Deck command seam and protects unsaved work per Slide. The bounded Production Curate source slice adds an authorised, progressively loaded media workflow while keeping project judgment separate from per-Slide decisions. Assemble supports six durable canvas presets, proportionally scales existing Assemblies with exact undo, and authors new Pattern geometry for landscape, square or portrait canvases. Handoff reviews readiness and exports the active Slide PDF at the selected canvas ratio only. The application chrome uses the pinned pitch.dog v13 Head, Body and Eyebrow families by default, with Phosphor for authored action icons; artboard/export typography remains an independent Deck concern.
+Pre-alpha. `main` is the canonical source branch. The shared Workbench now centres four task workspaces: Plan, Curate, Assemble and Handoff. Production Plan uses the durable Deck command seam, protects unsaved work per Slide, and can paste, strictly preview and import Workbench Markdown v1 into a new local `.pitchdeck`. Its conversion prompt is copied through the native clipboard; conversion itself stays outside the app. No model, upload, account or network service is built in. The bounded Production Curate source slice adds an authorised, progressively loaded media workflow while keeping project judgment separate from per-Slide decisions. Assemble supports six durable canvas presets, proportionally scales existing Assemblies with exact undo, and authors new Pattern geometry for landscape, square or portrait canvases. Handoff reviews readiness and exports the active Slide PDF at the selected canvas ratio only. The application chrome uses the pinned pitch.dog v13 Head, Body and Eyebrow families by default, with Phosphor for authored action icons; artboard/export typography remains an independent Deck concern.
 
 `DW-T00` proves the first integrated Apple-Silicon Story Document tracer. `DW-W01` adds durable Deck/Section/Slide structure, ordering, intent and semantic Content Blocks. `DW-G01` adds a sandboxed Electron/utility-process Linux shell and exact x86-64 tarball, Arch-package and AppImage gates on Ubuntu/X11. Production Curate's authentic packaged Root/reopen journey remains explicitly unverified, so this source state is not a production-readiness claim.
 
@@ -17,7 +17,7 @@ The tracer creates a native `.pitchdeck`, edits one canonical Story headline thr
 
 ## Download and run
 
-Use the CI-built assets on the [`v0.0.3` release](https://github.com/bomkino/deck-workbench/releases/tag/v0.0.3). Verify the adjacent `.sha256` file before opening an asset.
+Use the CI-built assets on the [`v0.0.4` release](https://github.com/bomkino/deck-workbench/releases/tag/v0.0.4). Verify the adjacent `.sha256` file before opening an asset.
 
 - **Apple-Silicon macOS 26+:** download the `.app.zip`, extract it, then open `Deck Workbench.app`. The build is ad-hoc signed, not notarized, so macOS may require Control-click → Open on first launch.
 - **Garuda/Arch x86-64:** download the `.pkg.tar.zst` and install it with `sudo pacman -U ./deck-workbench-*.pkg.tar.zst`.

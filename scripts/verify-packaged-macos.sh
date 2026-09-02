@@ -58,7 +58,8 @@ fi
 codesign --verify --deep --strict --verbose=2 "$APP"
 test "$(plutil -extract LSMinimumSystemVersion raw "$APP/Contents/Info.plist")" = "26.0"
 test "$(plutil -extract DeckWorkbenchCommit raw "$APP/Contents/Info.plist")" = "$COMMIT_SHA"
-test "$(plutil -extract CFBundleShortVersionString raw "$APP/Contents/Info.plist")" = "0.0.3"
+test "$(plutil -extract CFBundleShortVersionString raw "$APP/Contents/Info.plist")" = "0.0.4"
+test "$(plutil -extract CFBundleVersion raw "$APP/Contents/Info.plist")" = "4"
 test "$(plutil -extract CFBundleIconFile raw "$APP/Contents/Info.plist")" = "DeckWorkbench.icns"
 test "$(plutil -extract ATSApplicationFontsPath raw "$APP/Contents/Info.plist")" = "Fonts"
 test -s "$APP/Contents/Resources/DeckWorkbench.icns"
@@ -104,6 +105,34 @@ test "$(wc -l < "$STORY_DOCUMENT/journal.ndjson" | tr -d ' ')" = "46"
 node "$REPOSITORY_ROOT/scripts/verify-story-tracer-output.mjs" \
   "$STORY_DOCUMENT" "$STORY_CREATE_RESULT" "$STORY_REOPEN_RESULT"
 
+WRITING_DOCUMENT="$JOURNEY_ROOT/Writing-Import.pitchdeck"
+WRITING_RESULT="$JOURNEY_ROOT/writing-import-result.json"
+"$BINARY" --tracer-writing-import "$WRITING_DOCUMENT" "$WRITING_RESULT"
+test -f "$WRITING_DOCUMENT/manifest.json"
+test -f "$WRITING_DOCUMENT/checkpoint.json"
+test -f "$WRITING_DOCUMENT/journal.ndjson"
+test ! -s "$WRITING_DOCUMENT/journal.ndjson"
+node --input-type=module - "$WRITING_RESULT" <<'NODE'
+import { readFileSync } from 'node:fs'
+
+const receipt = JSON.parse(readFileSync(process.argv[2], 'utf8'))
+if (receipt.phase !== 'writing-import') throw new Error('Writing-import tracer phase mismatch')
+if (receipt.promptVersion !== 'workbench-conversion-prompt/1' || receipt.clipboard !== true) {
+  throw new Error('Canonical conversion prompt did not pass through the native clipboard')
+}
+if (receipt.canvas !== 'widescreen-1920x1080' || receipt.revision !== 0 || receipt.stableIDs !== true) {
+  throw new Error('Writing-import checkpoint or reopen contract failed')
+}
+for (const field of [
+  'exactSemanticContent',
+  'duplicateClickCreatedOneDeck',
+  'malformedInputPreservedDeck',
+  'saveCancellationPreservedDeck',
+]) {
+  if (receipt[field] !== true) throw new Error(`Writing-import tracer failed: ${field}`)
+}
+NODE
+
 mkdir -p "$REPOSITORY_ROOT/artifacts/evidence"
 CURATE_RESULT="$JOURNEY_ROOT/curate-journey-result.json"
 CURATE_GATE_STATUS="$REPOSITORY_ROOT/artifacts/evidence/curate-gate-status.txt"
@@ -122,6 +151,7 @@ cp "$CREATE_RESULT" "$REPOSITORY_ROOT/artifacts/evidence/create-result.json"
 cp "$REOPEN_RESULT" "$REPOSITORY_ROOT/artifacts/evidence/reopen-result.json"
 cp "$STORY_CREATE_RESULT" "$REPOSITORY_ROOT/artifacts/evidence/story-create-result.json"
 cp "$STORY_REOPEN_RESULT" "$REPOSITORY_ROOT/artifacts/evidence/story-reopen-result.json"
+cp "$WRITING_RESULT" "$REPOSITORY_ROOT/artifacts/evidence/writing-import-result.json"
 cp "$PDF" "$REPOSITORY_ROOT/artifacts/evidence/tracer.pdf"
 (
   cd "$REPOSITORY_ROOT/artifacts/evidence"

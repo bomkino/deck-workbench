@@ -12,11 +12,14 @@
     <link rel="icon" href="workbench-mark.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="styles.css" />
     <script src="bridge.generated.js" defer></script>
+    <script src="workspace-conversion-prompt-v1.js" defer></script>
+    <script src="workspace-writing-import.js" defer></script>
     <script src="workspace-core.js" defer></script>
     <script src="workspace-plan.js" defer></script>
     <script src="workspace-curate.js" defer></script>
     <script src="workspace-visual.js" defer></script>
     <script src="workspace-handoff.js" defer></script>
+    <script src="workspace-writing-import-ui.js" defer></script>
     <script src="workspace.js" defer></script>
   </head>
   <body>
@@ -72,6 +75,16 @@
 
       <section id="phase-workspaces" class="editorial-spine phase-workspaces" tabindex="-1">
         <section class="phase-view plan-phase" data-phase-view="plan" aria-label="Plan phase" tabindex="-1">
+          <section class="plan-import-tools" aria-label="Writing import tools">
+            <div>
+              <p class="panel-label">01 / Plan · Writing intake</p>
+              <p>Convert copy elsewhere, then inspect every field before creating a new local Deck.</p>
+            </div>
+            <div class="plan-import-actions">
+              <button id="copy-conversion-prompt" type="button">Copy conversion prompt</button>
+              <button id="open-writing-import" class="primary-action" type="button">Import writing…</button>
+            </div>
+          </section>
           <nav class="sequence panel" aria-label="Deck sequence">
             <div class="panel-heading sequence-heading">
               <div>
@@ -466,6 +479,37 @@
         <button type="button" role="menuitem" data-media-context-action="compare">Add to Compare</button>
         <button type="button" role="menuitem" data-media-context-action="reveal">Reveal source</button>
       </div>
+
+      <dialog id="conversion-prompt-dialog" class="writing-dialog" aria-labelledby="conversion-prompt-heading">
+        <form method="dialog">
+          <header class="writing-dialog-heading">
+            <div><p class="panel-label">Copy conversion prompt</p><h2 id="conversion-prompt-heading">Prompt was not copied</h2></div>
+            <button id="close-conversion-prompt" type="submit" value="cancel">Close</button>
+          </header>
+          <p id="conversion-prompt-status" class="writing-dialog-status" role="status">Select and copy this prompt manually.</p>
+          <textarea id="conversion-prompt-fallback" readonly spellcheck="false" aria-label="Conversion prompt fallback"></textarea>
+        </form>
+      </dialog>
+
+      <dialog id="writing-import-dialog" class="writing-dialog writing-import-dialog" aria-labelledby="writing-import-heading">
+        <form method="dialog">
+          <header class="writing-dialog-heading">
+            <div><p class="panel-label">Workbench Markdown v1</p><h2 id="writing-import-heading">Import writing</h2></div>
+            <button id="cancel-writing-import" type="submit" value="cancel">Cancel</button>
+          </header>
+          <label class="writing-import-source">
+            <span>Paste the contents of a Workbench Markdown `.md` file here. Workbench does not upload the file.</span>
+            <textarea id="writing-import-source" rows="18" spellcheck="false" autocomplete="off"></textarea>
+          </label>
+          <section id="writing-import-preview" class="writing-import-preview" aria-live="polite">
+            <p>Paste writing, then Preview. Import stays locked until these exact bytes pass.</p>
+          </section>
+          <footer class="writing-dialog-actions">
+            <button id="preview-writing-import" type="button">Preview</button>
+            <button id="import-writing" class="primary-action" type="button" disabled>Import</button>
+          </footer>
+        </form>
+      </dialog>
     </main>
   </body>
 </html>

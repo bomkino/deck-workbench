@@ -6,7 +6,13 @@ import Foundation
 enum PackagedTracer {
     static func runIfRequested(controller: DeckSessionController) async {
         let arguments = CommandLine.arguments
-        let modes = ["--tracer-create", "--tracer-reopen", "--tracer-story-create", "--tracer-story-reopen"]
+        let modes = [
+            "--tracer-create",
+            "--tracer-reopen",
+            "--tracer-story-create",
+            "--tracer-story-reopen",
+            "--tracer-writing-import",
+        ]
         guard let modeIndex = arguments.firstIndex(where: { modes.contains($0) }) else {
             return
         }
@@ -52,7 +58,7 @@ enum PackagedTracer {
                     documentURL: URL(fileURLWithPath: arguments[modeIndex + 1]),
                     resultURL: URL(fileURLWithPath: arguments[modeIndex + 2])
                 )
-            } else {
+            } else if mode == "--tracer-story-reopen" {
                 guard arguments.count > modeIndex + 3 else {
                     throw WorkbenchFailure(name: "InvalidCommand", message: "--tracer-story-reopen requires Deck, create-result and reopen-result paths")
                 }
@@ -61,6 +67,15 @@ enum PackagedTracer {
                     documentURL: URL(fileURLWithPath: arguments[modeIndex + 1]),
                     createResultURL: URL(fileURLWithPath: arguments[modeIndex + 2]),
                     resultURL: URL(fileURLWithPath: arguments[modeIndex + 3])
+                )
+            } else {
+                guard arguments.count > modeIndex + 2 else {
+                    throw WorkbenchFailure(name: "InvalidCommand", message: "--tracer-writing-import requires Deck and result paths")
+                }
+                try await writingImportPhase(
+                    controller: controller,
+                    documentURL: URL(fileURLWithPath: arguments[modeIndex + 1]),
+                    resultURL: URL(fileURLWithPath: arguments[modeIndex + 2])
                 )
             }
             watchdog.cancel()
@@ -72,6 +87,372 @@ enum PackagedTracer {
             fputs("\(failure.name): \(failure.message)\n", stderr)
             fflush(stderr)
             Darwin.exit(1)
+        }
+    }
+
+    private static let writingImportFixture = """
+    # Deck
+
+    Format: workbench-markdown/1
+    Title: Aurora’s Field Notes — 東京
+    Canvas: widescreen-1920x1080
+
+    ## Part: Arrival
+
+    Purpose: Establish the place
+
+    ### Slide: First Light
+
+    Purpose: Open on the landscape
+    Style: undecided
+    Content pattern: simple-copy
+
+    #### Headline
+
+    State: present
+    Light arrives — quietly.
+
+    #### Subheadline
+
+    State: unreviewed
+
+    #### Body
+
+    State: present
+    Read the [field notes](https://example.test/notes).
+
+    Then listen.
+    \\Purpose: this is visible copy, not metadata.
+
+    ### Slide: The Pause
+
+    Purpose: Hold an authored blank
+    Style: undecided
+    Content pattern: no-on-slide-text
+
+    #### Headline
+
+    State: intentionally-blank
+
+    #### Subheadline
+
+    State: present
+    Nothing is missing.
+
+    #### Body
+
+    State: unreviewed
+
+    ## Part: Return
+
+    Purpose: Bring the thought home
+
+    ### Slide: What Remains
+
+    Purpose: Close without rewriting
+    Style: undecided
+    Content pattern: simple-copy
+
+    #### Headline
+
+    State: present
+    We return as ourselves.
+
+    #### Subheadline
+
+    State: intentionally-blank
+
+    #### Body
+
+    State: present
+    Spelling, punctuation, and order stay put.
+    """
+
+    private static func writingImportPhase(
+        controller: DeckSessionController,
+        documentURL: URL,
+        resultURL: URL
+    ) async throws {
+        let files = FileManager.default
+        guard !files.fileExists(atPath: documentURL.path) else {
+            throw WorkbenchFailure(name: "AlreadyExists", message: "Writing-import tracer destination already exists")
+        }
+        let controls = try await controller.invokeWorkspaceForTracer(
+            "return { copyVisible: !!document.getElementById('copy-conversion-prompt')?.offsetParent, importVisible: !!document.getElementById('open-writing-import')?.offsetParent, hasDeck: !!deckWorkbench.projection() }"
+        )
+        guard let controlState = controls as? [String: Any],
+              controlState["copyVisible"] as? Bool == true,
+              controlState["importVisible"] as? Bool == true,
+              controlState["hasDeck"] as? Bool == false
+        else {
+            throw WorkbenchFailure(name: "WorkspaceUnavailable", message: "Plan writing controls were not visible with no Deck open")
+        }
+
+        let canonicalPromptResult = try await controller.invokeWorkspaceForTracer(
+            "return { version: WORKBENCH_CONVERSION_PROMPT_V1.version, text: WORKBENCH_CONVERSION_PROMPT_V1.text }"
+        )
+        guard let canonicalPrompt = canonicalPromptResult as? [String: Any],
+              canonicalPrompt["version"] as? String == "workbench-conversion-prompt/1",
+              let expectedPrompt = canonicalPrompt["text"] as? String
+        else {
+            throw WorkbenchFailure(name: "WorkspaceUnavailable", message: "Canonical conversion prompt is unavailable")
+        }
+        let copyResult = try await controller.invokeWorkspaceForTracer(
+            """
+            const button = document.getElementById('copy-conversion-prompt')
+            button.click()
+            for (let attempt = 0; attempt < 40 && button.textContent !== 'Copied' && !document.getElementById('conversion-prompt-dialog').open; attempt += 1) {
+              await new Promise((resolve) => setTimeout(resolve, 50))
+            }
+            return { label: button.textContent, fallbackOpen: document.getElementById('conversion-prompt-dialog').open }
+            """
+        )
+        let prompt = NSPasteboard.general.string(forType: .string) ?? ""
+        guard let copied = copyResult as? [String: Any],
+              copied["label"] as? String == "Copied",
+              copied["fallbackOpen"] as? Bool == false,
+              prompt == expectedPrompt
+        else {
+            throw WorkbenchFailure(name: "ClipboardWriteFailed", message: "Installed writing-import prompt did not reach the native clipboard truthfully")
+        }
+
+        let previewResult = try await controller.invokeWorkspaceForTracer(
+            """
+            document.getElementById('open-writing-import').click()
+            const sourceElement = document.getElementById('writing-import-source')
+            const preview = document.getElementById('writing-import-preview')
+            sourceElement.value = source
+            sourceElement.dispatchEvent(new Event('input', { bubbles: true }))
+            document.getElementById('preview-writing-import').click()
+            return {
+              source: sourceElement.value,
+              preview: preview.textContent,
+              warnings: preview.querySelectorAll('.import-warnings li').length,
+              errors: preview.querySelectorAll('.import-errors li').length,
+              importDisabled: document.getElementById('import-writing').disabled,
+            }
+            """,
+            arguments: ["source": writingImportFixture]
+        )
+        guard let preview = previewResult as? [String: Any],
+              preview["source"] as? String == writingImportFixture,
+              preview["warnings"] as? Int == 0,
+              preview["errors"] as? Int == 0,
+              preview["importDisabled"] as? Bool == false,
+              let previewText = preview["preview"] as? String,
+              previewText.contains("Aurora’s Field Notes — 東京"),
+              previewText.contains("Canvas: widescreen-1920x1080"),
+              previewText.contains("2 Parts · 3 Slides · 5 present · 2 intentionally blank · 2 unreviewed"),
+              previewText.contains("Arrival"),
+              previewText.contains("First Light"),
+              previewText.contains("The Pause"),
+              previewText.contains("Return"),
+              previewText.contains("What Remains")
+        else {
+            throw WorkbenchFailure(name: "InvalidCommand", message: "Installed writing-import Preview did not preserve the fixture contract")
+        }
+
+        try controller.configureWritingImportTracerPanel(destination: documentURL, cancel: false)
+        let importResult = try await controller.invokeWorkspaceForTracer(
+            """
+            const dialog = document.getElementById('writing-import-dialog')
+            const button = document.getElementById('import-writing')
+            button.click()
+            button.click()
+            const status = document.getElementById('save-state')
+            for (let attempt = 0; attempt < 240 && (dialog.open || !status.textContent.includes('Imported')); attempt += 1) {
+              await new Promise((resolve) => setTimeout(resolve, 250))
+            }
+            return { dialogOpen: dialog.open, phase: deckWorkbench.phase(), status: status.textContent }
+            """
+        )
+        guard let importedUI = importResult as? [String: Any],
+              importedUI["dialogOpen"] as? Bool == false,
+              importedUI["phase"] as? String == "plan",
+              (importedUI["status"] as? String)?.contains("Imported \(documentURL.lastPathComponent) · 2 Parts · 3 Slides") == true,
+              controller.documentURL?.standardizedFileURL == documentURL.standardizedFileURL
+        else {
+            throw WorkbenchFailure(name: "CheckpointWriteFailure", message: "Installed writing import did not create and activate exactly one Deck")
+        }
+
+        let summaryBefore = try controller.query(name: "deck.summary", params: [:])
+        let storyBefore = try controller.query(name: "story.document", params: [:])
+        try verifyWritingImportStory(storyBefore)
+        guard summaryBefore["revision"] as? Int == 0,
+              summaryBefore["sectionCount"] as? Int == 2,
+              summaryBefore["slideCount"] as? Int == 3,
+              (summaryBefore["canvas"] as? [String: Any])?["id"] as? String == "widescreen-1920x1080"
+        else {
+            throw WorkbenchFailure(name: "JournalCorruption", message: "Imported Deck summary is not the canonical revision-zero fixture")
+        }
+        let idsBefore = try writingImportIDs(storyBefore)
+        let checkpointBeforeClose = try JSONSerialization.data(
+            withJSONObject: readJSON(from: documentURL.appendingPathComponent("checkpoint.json")),
+            options: [.sortedKeys, .withoutEscapingSlashes]
+        )
+        guard (try Data(contentsOf: documentURL.appendingPathComponent("journal.ndjson"))).isEmpty else {
+            throw WorkbenchFailure(name: "JournalCorruption", message: "Imported Deck was not created with empty history")
+        }
+
+        try await controller.closeDocument()
+        _ = try controller.openDocument(at: documentURL)
+        try await controller.renderCurrentProjection()
+        let summaryAfter = try controller.query(name: "deck.summary", params: [:])
+        let storyAfter = try controller.query(name: "story.document", params: [:])
+        try verifyWritingImportStory(storyAfter)
+        guard try writingImportIDs(storyAfter) == idsBefore,
+              summaryAfter["revision"] as? Int == 0,
+              (summaryAfter["canvas"] as? [String: Any])?["id"] as? String == "widescreen-1920x1080",
+              try JSONSerialization.data(
+                withJSONObject: readJSON(from: documentURL.appendingPathComponent("checkpoint.json")),
+                options: [.sortedKeys, .withoutEscapingSlashes]
+              ) == checkpointBeforeClose
+        else {
+            throw WorkbenchFailure(name: "JournalCorruption", message: "Close and reopen changed imported IDs, copy, states, order, or Canvas")
+        }
+
+        let manifestBeforeNegative = try Data(contentsOf: documentURL.appendingPathComponent("manifest.json"))
+        let checkpointBeforeNegative = try Data(contentsOf: documentURL.appendingPathComponent("checkpoint.json"))
+        let journalBeforeNegative = try Data(contentsOf: documentURL.appendingPathComponent("journal.ndjson"))
+        let malformedResult = try await controller.invokeWorkspaceForTracer(
+            """
+            document.getElementById('open-writing-import').click()
+            const sourceElement = document.getElementById('writing-import-source')
+            const preview = document.getElementById('writing-import-preview')
+            sourceElement.value = '# Deck\\n\\nFormat: wrong\\nTitle: Broken'
+            sourceElement.dispatchEvent(new Event('input', { bubbles: true }))
+            document.getElementById('preview-writing-import').click()
+            const result = { disabled: document.getElementById('import-writing').disabled, errors: preview.querySelectorAll('.import-errors li').length }
+            document.getElementById('writing-import-dialog').close('tracer-malformed')
+            return result
+            """
+        )
+        guard let malformed = malformedResult as? [String: Any],
+              malformed["disabled"] as? Bool == true,
+              (malformed["errors"] as? Int ?? 0) > 0
+        else {
+            throw WorkbenchFailure(name: "InvalidCommand", message: "Malformed installed input was not blocked")
+        }
+
+        let cancelledURL = documentURL.deletingLastPathComponent().appendingPathComponent("Cancelled.pitchdeck")
+        if files.fileExists(atPath: cancelledURL.path) { try files.removeItem(at: cancelledURL) }
+        _ = try await controller.invokeWorkspaceForTracer(
+            """
+            document.getElementById('open-writing-import').click()
+            const sourceElement = document.getElementById('writing-import-source')
+            sourceElement.value = source
+            sourceElement.dispatchEvent(new Event('input', { bubbles: true }))
+            document.getElementById('preview-writing-import').click()
+            return { ready: !document.getElementById('import-writing').disabled }
+            """,
+            arguments: ["source": writingImportFixture]
+        )
+        try controller.configureWritingImportTracerPanel(destination: cancelledURL, cancel: true)
+        let cancellationResult = try await controller.invokeWorkspaceForTracer(
+            """
+            const button = document.getElementById('import-writing')
+            button.click()
+            const started = button.disabled
+            for (let attempt = 0; attempt < 80 && button.disabled; attempt += 1) {
+              await new Promise((resolve) => setTimeout(resolve, 250))
+            }
+            const result = { started, settled: !button.disabled }
+            document.getElementById('writing-import-dialog').close('tracer-cancelled')
+            return result
+            """
+        )
+        let summaryAfterNegative = try controller.query(name: "deck.summary", params: [:])
+        guard let cancellation = cancellationResult as? [String: Any],
+              cancellation["started"] as? Bool == true,
+              cancellation["settled"] as? Bool == true,
+              !files.fileExists(atPath: cancelledURL.path),
+              controller.documentURL?.standardizedFileURL == documentURL.standardizedFileURL,
+              summaryAfterNegative["deckId"] as? String == summaryBefore["deckId"] as? String,
+              summaryAfterNegative["revision"] as? Int == 0,
+              try Data(contentsOf: documentURL.appendingPathComponent("manifest.json")) == manifestBeforeNegative,
+              try Data(contentsOf: documentURL.appendingPathComponent("checkpoint.json")) == checkpointBeforeNegative,
+              try Data(contentsOf: documentURL.appendingPathComponent("journal.ndjson")) == journalBeforeNegative
+        else {
+            throw WorkbenchFailure(name: "CheckpointWriteFailure", message: "Malformed input or save cancellation changed the active Deck or filesystem")
+        }
+
+        try writeJSON([
+            "phase": "writing-import",
+            "clipboard": true,
+            "promptVersion": canonicalPrompt["version"] as? String ?? "",
+            "promptBytes": prompt.lengthOfBytes(using: .utf8),
+            "preview": ["parts": 2, "slides": 3, "present": 5, "intentionallyBlank": 2, "unreviewed": 2, "warnings": 0],
+            "canvas": "widescreen-1920x1080",
+            "revision": 0,
+            "stableIDs": true,
+            "exactSemanticContent": true,
+            "duplicateClickCreatedOneDeck": true,
+            "malformedInputPreservedDeck": true,
+            "saveCancellationPreservedDeck": true,
+            "document": documentURL.path,
+        ], to: resultURL)
+        print("DW-T00 writing-import tracer passed")
+    }
+
+    private static func writingImportIDs(_ story: [String: Any]) throws -> [String] {
+        guard let sections = story["sections"] as? [[String: Any]] else {
+            throw WorkbenchFailure(name: "JournalCorruption", message: "Writing-import Story has no Parts")
+        }
+        return try sections.flatMap { section -> [String] in
+            guard let sectionID = section["id"] as? String,
+                  let slides = section["slides"] as? [[String: Any]]
+            else { throw WorkbenchFailure(name: "JournalCorruption", message: "Writing-import Part identity is invalid") }
+            return try [sectionID] + slides.flatMap { slide -> [String] in
+                guard let slideID = slide["id"] as? String,
+                      let blocks = slide["contentBlocks"] as? [[String: Any]]
+                else { throw WorkbenchFailure(name: "JournalCorruption", message: "Writing-import Slide identity is invalid") }
+                return [slideID] + blocks.compactMap { $0["id"] as? String }
+            }
+        }
+    }
+
+    private static func verifyWritingImportStory(_ story: [String: Any]) throws {
+        guard story["deckTitle"] as? String == "Aurora’s Field Notes — 東京",
+              let sections = story["sections"] as? [[String: Any]],
+              sections.count == 2,
+              sections[0]["title"] as? String == "Arrival",
+              sections[0]["purpose"] as? String == "Establish the place",
+              sections[1]["title"] as? String == "Return",
+              sections[1]["purpose"] as? String == "Bring the thought home",
+              let arrivalSlides = sections[0]["slides"] as? [[String: Any]],
+              let returnSlides = sections[1]["slides"] as? [[String: Any]],
+              arrivalSlides.count == 2,
+              returnSlides.count == 1
+        else {
+            throw WorkbenchFailure(name: "JournalCorruption", message: "Writing-import Part and Slide order changed")
+        }
+        let slides = arrivalSlides + returnSlides
+        let expectedTitles = ["First Light", "The Pause", "What Remains"]
+        let expectedPurposes = ["Open on the landscape", "Hold an authored blank", "Close without rewriting"]
+        let expectedStates: [[String: String]] = [
+            ["headline": "present", "subheadline": "unreviewed", "body": "present"],
+            ["headline": "intentionally-blank", "subheadline": "present", "body": "unreviewed"],
+            ["headline": "present", "subheadline": "intentionally-blank", "body": "present"],
+        ]
+        for index in slides.indices {
+            guard let blocks = slides[index]["contentBlocks"] as? [[String: Any]],
+                  let planText = blocks.first(where: { $0["role"] as? String == "workbench-plan" })?["plainText"] as? String,
+                  let planData = planText.data(using: .utf8),
+                  let plan = try JSONSerialization.jsonObject(with: planData) as? [String: Any],
+                  plan["format"] as? String == "pitchdog.workbench-plan",
+                  plan["version"] as? Int == 1,
+                  plan["internalTitle"] as? String == expectedTitles[index],
+                  plan["purpose"] as? String == expectedPurposes[index],
+                  plan["copyFieldStates"] as? [String: String] == expectedStates[index]
+            else {
+                throw WorkbenchFailure(name: "JournalCorruption", message: "Writing-import metadata or copy states changed on Slide \(index + 1)")
+            }
+        }
+        guard let firstBlocks = slides[0]["contentBlocks"] as? [[String: Any]],
+              firstBlocks.first(where: { $0["role"] as? String == "headline" })?["plainText"] as? String == "Light arrives — quietly.",
+              firstBlocks.first(where: { $0["role"] as? String == "body" })?["plainText"] as? String == "Read the [field notes](https://example.test/notes).\n\nThen listen.\nPurpose: this is visible copy, not metadata."
+        else {
+            throw WorkbenchFailure(name: "JournalCorruption", message: "Writing-import Unicode, Markdown, blanks, or reserved copy changed")
         }
     }
 

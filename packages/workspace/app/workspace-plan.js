@@ -88,6 +88,7 @@ function clearPlanDrafts() {
 }
 
 function bindPlanEvents() {
+  bindWritingImportEvents()
   elements.addSection.addEventListener('click', addSection)
   elements.addSlide.addEventListener('click', addSlide)
   elements.renameDeck.addEventListener('click', renameDeck)

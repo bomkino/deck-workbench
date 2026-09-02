@@ -12,10 +12,10 @@
   authentic packaged Root/reopen and visual journeys remain.
 - `DW-W09`: bounded local CLI source-ready.
 - `DW-W10`: privacy-safe support-report seam source-ready.
-- `v0.0.3` candidate: the `v0.0.2` font, layout, disclosure and appearance work
-  plus six durable canvas presets, reversible proportional Assembly conversion,
-  orientation-aware Pattern geometry and ratio-correct native PDF proof export;
-  exact-head CI still controls promotion and release.
+- `v0.0.4` candidate: native conversion-prompt copying plus strict paste, Preview
+  and import into a new local `.pitchdeck`; malformed, cancelled or refused
+  creation cannot mutate the open Deck. There is no file upload or built-in AI.
+  Exact-head CI still controls promotion and release.
 - Repository hardening: strict journal record boundaries, durable/live-state fencing, dead utility-process rejection, recoverable Linux preferences, atomic Linux PDF publication and one canonical repository verification gate.
 
 Target-machine Garuda and interactive macOS accessibility checks are waived for
