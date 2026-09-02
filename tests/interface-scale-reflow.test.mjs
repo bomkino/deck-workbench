@@ -19,6 +19,7 @@ const { workspaceLayoutMode } = Function(
 
 test('large Interface Scale reflows the phased workspace instead of clipping it', () => {
   assert.match(styles, /\.workbench \{ min-width: 0;/)
+  assert.match(styles, /\.plan-phase\.is-active \.plan-editor \{ visibility: visible; \}/)
   const control = styles.match(/--control-size:\s*max\(([\d.]+)rem,\s*([\d.]+)px\)/)
   assert.ok(control)
   for (const scale of [0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75]) {
