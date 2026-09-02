@@ -48,13 +48,17 @@ manufacture evidence.
 ## Current public status
 
 Deck Workbench is pre-alpha source with bounded integrated tracers. It is not a
-public v1, notarized distribution or production-ready editor. On 2026-08-30 the
-owner explicitly authorized `v0.0.3` as a normal public GitHub Release marked
-Latest. That release must target its exact CI-passed `main` commit, use artifacts
-produced for that same commit, and keep the unverified Curate and target-machine
-boundaries explicit. Normal release status does not manufacture production
-readiness. Source text or a tag alone does not prove publication; the GitHub
-Release and its attached exact-commit artifacts are the authority.
+public v1, notarized distribution or production-ready editor. The owner has
+authorized `v0.0.4` as a normal public GitHub Release marked Latest. It adds
+native conversion-prompt copying and strict paste, Preview and import into a new
+local `.pitchdeck`; it does not add upload or built-in AI. The release must target
+its exact CI-passed `main` commit, use artifacts produced for that same commit,
+and keep the unverified Curate and target-machine boundaries explicit. Normal
+release status does not manufacture production readiness. Source text or a tag
+alone does not prove publication; the GitHub Release and its attached exact-commit
+artifacts are the authority. The existing unpublished `v0.0.3` draft is historical
+and must be retargeted to `c6736ef6c20e1e5d5e6bdfd4f40c5ce062280512`
+before anyone publishes it.
 
 ## First serious release
 

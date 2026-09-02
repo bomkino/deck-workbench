@@ -84,6 +84,20 @@ final class BridgeCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDel
         return result
     }
 
+    func draftSummary() async throws -> [String: Any] {
+        guard let webView else { throw WorkbenchFailure(name: "WorkspaceUnavailable", message: "WebView is unavailable") }
+        let raw = try await webView.callAsyncJavaScript(
+            "return deckWorkbench.draftSummary()",
+            arguments: [:],
+            in: nil,
+            contentWorld: .page
+        )
+        guard let result = raw as? [String: Any] else {
+            throw WorkbenchFailure(name: "WorkspaceUnavailable", message: "Workspace draft summary is invalid")
+        }
+        return result
+    }
+
     func writeOnePagePDF(to destination: URL) async throws {
         guard let webView else { throw WorkbenchFailure(name: "WorkspaceUnavailable", message: "WebView is unavailable") }
         let rawFrame = try await webView.callAsyncJavaScript(
@@ -229,6 +243,15 @@ final class BridgeCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDel
     private func handle(_ method: BridgeMethod, payload: [String: Any]) async throws -> Any {
         switch method {
         case .deckCreate:
+            if let writingImport = payload["writingImport"] {
+                guard payload.count == 1 else {
+                    throw WorkbenchFailure(name: "InvalidCommand", message: "deck.create writingImport accepts no other fields")
+                }
+                return try await controller.presentWritingImport(writingImport)
+            }
+            guard payload.isEmpty else {
+                throw WorkbenchFailure(name: "InvalidCommand", message: "deck.create accepts only optional writingImport")
+            }
             return try await controller.presentNewDocument()
         case .deckOpen:
             return try await controller.presentOpenDocument()
@@ -261,6 +284,11 @@ final class BridgeCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDel
             return ["url": try await controller.presentPDFExport().path]
         case .uiGetPreferences:
             return controller.preferences()
+        case .uiCopyText:
+            guard payload.count == 1, let text = payload["text"] as? String else {
+                throw WorkbenchFailure(name: "InvalidCommand", message: "ui.copyText requires only a text string")
+            }
+            return try controller.copyText(text)
         case .uiSetTheme:
             guard let value = payload["value"] as? String else {
                 throw WorkbenchFailure(name: "InvalidCommand", message: "Theme value is required")

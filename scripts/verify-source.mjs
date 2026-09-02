@@ -7,14 +7,20 @@ const required = [
   'apps/macos/Info.plist',
   'apps/macos/Sources/DeckWorkbenchApp.swift',
   'apps/macos/Sources/DeckKernelHost.swift',
+  'apps/macos/Sources/DeckSessionController.swift',
   'apps/macos/Sources/PitchDeckDocumentStore.swift',
   'apps/macos/Sources/BridgeCoordinator.swift',
+  'apps/macos/Sources/WritingImport.swift',
   'apps/macos/Sources/WorkspaceSchemeHandler.swift',
   'apps/linux/main.mjs',
+  'apps/linux/writing-import.mjs',
   'packages/workspace/app/index.html',
   'packages/workspace/app/styles.css',
+  'packages/workspace/app/workspace-conversion-prompt-v1.js',
   'packages/workspace/app/workspace-core.js',
   'packages/workspace/app/workspace-plan.js',
+  'packages/workspace/app/workspace-writing-import.js',
+  'packages/workspace/app/workspace-writing-import-ui.js',
   'packages/workspace/app/workspace-curate.js',
   'packages/workspace/app/workspace-visual.js',
   'packages/workspace/app/workspace-handoff.js',
@@ -48,7 +54,17 @@ const workspacePlan = contents.get('packages/workspace/app/workspace-plan.js')
 const workspaceCurate = contents.get('packages/workspace/app/workspace-curate.js')
 const workspaceVisual = contents.get('packages/workspace/app/workspace-visual.js')
 const workspaceBoot = contents.get('packages/workspace/app/workspace.js')
-const workspaceAll = [workspaceCore, workspacePlan, workspaceCurate, workspaceVisual, contents.get('packages/workspace/app/workspace-handoff.js'), workspaceBoot].join('\n')
+const workspaceAll = [
+  contents.get('packages/workspace/app/workspace-writing-import.js'),
+  contents.get('packages/workspace/app/workspace-conversion-prompt-v1.js'),
+  workspaceCore,
+  workspacePlan,
+  contents.get('packages/workspace/app/workspace-writing-import-ui.js'),
+  workspaceCurate,
+  workspaceVisual,
+  contents.get('packages/workspace/app/workspace-handoff.js'),
+  workspaceBoot,
+].join('\n')
 const kernel = contents.get('packages/deck-kernel/src/deck-kernel.ts')
 
 await verifyWorkspaceTypeAssets({
@@ -63,7 +79,7 @@ verifyWorkspaceFontHostRoutes({
 })
 
 assert.deepEqual(packageJSON.dependencies, { electron: '44.0.0' })
-assert.equal(packageJSON.version, '0.0.3')
+assert.equal(packageJSON.version, '0.0.4')
 assert.equal(JSON.parse(contents.get('scripts/linux/runtime-package.json')).version, packageJSON.version)
 assert.equal(packageJSON.devDependencies, undefined)
 assert.equal(
@@ -73,7 +89,8 @@ assert.equal(
 assert.match(contents.get('LICENSE'), /GNU AFFERO GENERAL PUBLIC LICENSE/)
 assert.match(contents.get('apps/macos/Info.plist'), /<string>26\.0<\/string>/)
 assert.match(contents.get('apps/macos/Info.plist'), /dog\.pitch\.deck/)
-assert.match(contents.get('apps/macos/Info.plist'), /<key>CFBundleShortVersionString<\/key>\s*<string>0\.0\.3<\/string>/)
+assert.match(contents.get('apps/macos/Info.plist'), /<key>CFBundleShortVersionString<\/key>\s*<string>0\.0\.4<\/string>/)
+assert.match(contents.get('apps/macos/Info.plist'), /<key>CFBundleVersion<\/key>\s*<string>4<\/string>/)
 assert.match(contents.get('apps/macos/Info.plist'), /<key>CFBundleIconFile<\/key>\s*<string>DeckWorkbench\.icns<\/string>/)
 assert.match(contents.get('scripts/build-macos-icon.sh'), /iconutil -c icns/)
 assert.match(workspaceHTML, /connect-src 'none'/)
@@ -89,8 +106,15 @@ assert.match(workspaceHTML, /id="primary-tray"/)
 assert.doesNotMatch(workspaceHTML, /type="file"/)
 assert.doesNotMatch(nativeSource, /URLSession|NWConnection|Network\.framework/)
 assert.doesNotMatch(nativeSource, /runShell|querySQL|openArbitraryURL|genericIPC/)
-assert.equal(bridge.methods.length, 11)
-assert.equal(new Set(bridge.methods.map((method) => method.name)).size, 11)
+assert.equal(bridge.methods.length, 12)
+assert.equal(new Set(bridge.methods.map((method) => method.name)).size, 12)
+assert.match(workspaceHTML, /id="copy-conversion-prompt"/)
+assert.match(workspaceHTML, /id="open-writing-import"/)
+assert.match(workspaceHTML, /Paste the contents of a Workbench Markdown `\.md` file here\. Workbench does not upload the file\./)
+assert.match(contents.get('packages/workspace/app/workspace-writing-import-ui.js'), /copyText\(\{ text: WORKBENCH_CONVERSION_PROMPT_V1\.text \}\)/)
+assert.doesNotMatch(contents.get('packages/workspace/app/workspace-writing-import-ui.js'), /innerHTML/)
+assert.match(nativeSource, /NSPasteboard\.general/)
+assert.match(contents.get('apps/linux/main.mjs'), /clipboard\.writeText/)
 assert.match(contents.get('THIRD_PARTY.md'), /\| Electron \| 44\.0\.0 \|/)
 assert.match(kernel, /'content\.remove'/)
 assert.match(workspaceCore, /PLAN_BLOCK_ROLE = 'workbench-plan'/)

@@ -148,7 +148,42 @@ type Slide = {
 type Section = {
   id: string
   title: string
+  purpose?: string
   slides: Slide[]
+}
+
+type WritingImportCopy = {
+  state: 'present' | 'intentionally-blank' | 'unreviewed'
+  value: string
+  blockId?: string
+}
+
+type WritingImportSlide = {
+  id: string
+  title: string
+  purpose: string
+  style: string
+  contentPattern: string
+  planBlockId: string
+  copies: {
+    headline: WritingImportCopy
+    subheadline: WritingImportCopy
+    body: WritingImportCopy
+  }
+}
+
+type WritingImportPart = {
+  id: string
+  title: string
+  purpose: string
+  slides: WritingImportSlide[]
+}
+
+type WritingImportSeed = {
+  format: 'workbench-markdown/1'
+  title: string
+  canvas: CanvasPresetId
+  parts: WritingImportPart[]
 }
 
 type CanvasPresetId =
@@ -437,6 +472,41 @@ const CANVAS_PRESETS: CanvasPresetDefinition[] = [
   { id: 'a4-portrait', label: 'A4 · Portrait', width: 2480, height: 3508, pageWidthMm: 210, pageHeightMm: 297 },
   { id: 'letter-portrait', label: 'US Letter · Portrait', width: 2550, height: 3300, pageWidthMm: 215.9, pageHeightMm: 279.4 },
 ]
+
+const WRITING_IMPORT_LIMITS = Object.freeze({
+  payloadBytes: 786432,
+  deckTitleCharacters: 240,
+  partTitleCharacters: 240,
+  slideTitleCharacters: 240,
+  purposeCharacters: 4096,
+  copyFieldCharacters: 262144,
+  partCount: 200,
+  slideCount: 1000,
+})
+
+const WRITING_IMPORT_STYLES = new Set([
+  'undecided',
+  'text-only',
+  'full-bleed',
+  'full-bleed-overlay',
+  'image-text',
+  'diptych',
+  'triptych',
+  'gallery',
+  'custom',
+])
+
+const WRITING_IMPORT_CONTENT_PATTERNS = new Set([
+  'simple-copy',
+  'quote',
+  'repeater',
+  'comparison',
+  'gallery-captions',
+  'no-on-slide-text',
+  'custom',
+])
+
+const WRITING_IMPORT_COPY_STATES = new Set(['present', 'intentionally-blank', 'unreviewed'])
 
 const BASE_AUTHORED_PATTERNS: LayoutPatternSnapshot[] = [
   {
@@ -1066,6 +1136,9 @@ function assertDeckMediaIntegrity(deck: DeckSnapshot): void {
     if (sectionIds.has(sectionId)) throw new Error(`Duplicate Section identity: ${sectionId}`)
     sectionIds.add(sectionId)
     assertString(section.title, `Deck Section ${sectionIndex + 1} title`)
+    if (section.purpose !== undefined) {
+      assertString(section.purpose, `Deck Section ${sectionIndex + 1} purpose`, WRITING_IMPORT_LIMITS.purposeCharacters)
+    }
     if (!Array.isArray(section.slides)) throw new Error(`Deck Section ${sectionId} Slides must be an array`)
 
     for (const [slideIndex, rawSlide] of section.slides.entries()) {
@@ -2086,8 +2159,213 @@ function validateCheckpoint(input: unknown): Checkpoint | KernelError {
   }
 }
 
+function assertExactRecordKeys(value: Record<string, unknown>, allowed: readonly string[], field: string): void {
+  const allowedKeys = new Set(allowed)
+  for (const key of Object.keys(value)) {
+    if (!allowedKeys.has(key)) throw new Error(`${field} contains unknown field ${key}`)
+  }
+}
+
+function assertWritingImportCopy(value: unknown, role: string): WritingImportCopy {
+  const copy = assertRecord(value, `writingImport ${role}`)
+  assertExactRecordKeys(copy, ['state', 'value', 'blockId'], `writingImport ${role}`)
+  if (!WRITING_IMPORT_COPY_STATES.has(copy.state as string)) {
+    throw new Error(`writingImport ${role} state is unsupported`)
+  }
+  if (typeof copy.value !== 'string') throw new Error(`writingImport ${role} value must be a string`)
+  if (copy.value.length > WRITING_IMPORT_LIMITS.copyFieldCharacters) {
+    throw new Error(`writingImport ${role} exceeds copy-field limit`)
+  }
+  if (copy.state === 'present' && !/\S/u.test(copy.value)) {
+    throw new Error(`writingImport ${role} is present but empty`)
+  }
+  if (copy.state !== 'present' && copy.value !== '') {
+    throw new Error(`writingImport ${role} ${String(copy.state)} state cannot contain copy`)
+  }
+  if (role === 'headline' || copy.state === 'present') {
+    assertIdentity(copy.blockId, `writingImport ${role} blockId`, 256)
+  } else if (copy.blockId !== undefined) {
+    throw new Error(`writingImport ${role} blockId is only allowed for present copy`)
+  }
+  return {
+    state: copy.state as WritingImportCopy['state'],
+    value: copy.value,
+    ...(copy.blockId === undefined ? {} : { blockId: copy.blockId as string }),
+  }
+}
+
+function assertWritingImportSeed(value: unknown): WritingImportSeed {
+  const payload = assertRecord(value, 'writingImport')
+  assertExactRecordKeys(payload, ['format', 'title', 'canvas', 'parts'], 'writingImport')
+  const serialized = JSON.stringify(payload)
+  if (utf8ByteLength(serialized) > WRITING_IMPORT_LIMITS.payloadBytes) {
+    throw new Error(`writingImport exceeds payload byte limit of ${WRITING_IMPORT_LIMITS.payloadBytes}`)
+  }
+  if (payload.format !== 'workbench-markdown/1') {
+    throw new Error('writingImport format must be workbench-markdown/1')
+  }
+  const title = assertString(payload.title, 'writingImport title', WRITING_IMPORT_LIMITS.deckTitleCharacters)
+  const canvas = canvasPresetDefinition(payload.canvas, 'writingImport canvas').id
+  if (!Array.isArray(payload.parts) || payload.parts.length === 0) {
+    throw new Error('writingImport must contain at least one Part')
+  }
+  if (payload.parts.length > WRITING_IMPORT_LIMITS.partCount) {
+    throw new Error(`writingImport exceeds Part limit of ${WRITING_IMPORT_LIMITS.partCount}`)
+  }
+  let slideCount = 0
+  const parts = payload.parts.map((rawPart, partIndex): WritingImportPart => {
+    const part = assertRecord(rawPart, `writingImport Part ${partIndex + 1}`)
+    assertExactRecordKeys(part, ['id', 'title', 'purpose', 'slides'], `writingImport Part ${partIndex + 1}`)
+    const id = assertIdentity(part.id, `writingImport Part ${partIndex + 1} id`, 256)
+    const partTitle = assertString(
+      part.title,
+      `writingImport Part ${partIndex + 1} title`,
+      WRITING_IMPORT_LIMITS.partTitleCharacters,
+    )
+    const purpose = assertString(
+      part.purpose,
+      `writingImport Part ${partIndex + 1} purpose`,
+      WRITING_IMPORT_LIMITS.purposeCharacters,
+    )
+    if (!Array.isArray(part.slides) || part.slides.length === 0) {
+      throw new Error(`writingImport Part ${partIndex + 1} must contain at least one Slide`)
+    }
+    const slides = part.slides.map((rawSlide, slideIndex): WritingImportSlide => {
+      slideCount += 1
+      if (slideCount > WRITING_IMPORT_LIMITS.slideCount) {
+        throw new Error(`writingImport exceeds Slide limit of ${WRITING_IMPORT_LIMITS.slideCount}`)
+      }
+      const slide = assertRecord(rawSlide, `writingImport Slide ${slideCount}`)
+      assertExactRecordKeys(
+        slide,
+        ['id', 'title', 'purpose', 'style', 'contentPattern', 'planBlockId', 'copies'],
+        `writingImport Slide ${slideCount}`,
+      )
+      const slideId = assertIdentity(slide.id, `writingImport Slide ${slideCount} id`, 256)
+      const slideTitle = assertString(
+        slide.title,
+        `writingImport Slide ${slideCount} title`,
+        WRITING_IMPORT_LIMITS.slideTitleCharacters,
+      )
+      const slidePurpose = assertString(
+        slide.purpose,
+        `writingImport Slide ${slideCount} purpose`,
+        WRITING_IMPORT_LIMITS.purposeCharacters,
+      )
+      const style = assertString(slide.style, `writingImport Slide ${slideCount} style`, 128)
+      if (!WRITING_IMPORT_STYLES.has(style)) throw new Error(`writingImport Slide ${slideCount} Style is unsupported`)
+      const contentPattern = assertString(
+        slide.contentPattern,
+        `writingImport Slide ${slideCount} contentPattern`,
+        128,
+      )
+      if (!WRITING_IMPORT_CONTENT_PATTERNS.has(contentPattern)) {
+        throw new Error(`writingImport Slide ${slideCount} Content pattern is unsupported`)
+      }
+      const copies = assertRecord(slide.copies, `writingImport Slide ${slideCount} copies`)
+      assertExactRecordKeys(copies, ['headline', 'subheadline', 'body'], `writingImport Slide ${slideCount} copies`)
+      return {
+        id: slideId,
+        title: slideTitle,
+        purpose: slidePurpose,
+        style,
+        contentPattern,
+        planBlockId: assertIdentity(slide.planBlockId, `writingImport Slide ${slideCount} planBlockId`, 256),
+        copies: {
+          headline: assertWritingImportCopy(copies.headline, 'headline'),
+          subheadline: assertWritingImportCopy(copies.subheadline, 'subheadline'),
+          body: assertWritingImportCopy(copies.body, 'body'),
+        },
+      }
+    })
+    return { id, title: partTitle, purpose, slides }
+  })
+  return { format: 'workbench-markdown/1', title, canvas, parts }
+}
+
+function importedRichText(value: string): RichTextDocument {
+  return {
+    type: 'doc',
+    content: value.split('\n').map((text) => ({
+      type: 'paragraph',
+      content: text.length > 0 ? [{ type: 'text', text }] : [],
+    })),
+  }
+}
+
+function createWritingImportCheckpoint(deckId: string, rawImport: unknown): Checkpoint {
+  const writingImport = assertWritingImportSeed(rawImport)
+  const canvas = canvasPresetDefinition(writingImport.canvas, 'writingImport canvas')
+  const sections: Section[] = writingImport.parts.map((part) => ({
+    id: part.id,
+    title: part.title,
+    purpose: part.purpose,
+    slides: part.slides.map((slide) => {
+      const blocks: ContentBlock[] = [{
+        id: slide.copies.headline.blockId as string,
+        semanticKey: 'workbench.copy.headline',
+        role: 'headline',
+        value: importedRichText(slide.copies.headline.value),
+      }]
+      for (const role of ['subheadline', 'body'] as const) {
+        const copy = slide.copies[role]
+        if (copy.state !== 'present') continue
+        blocks.push({
+          id: copy.blockId as string,
+          semanticKey: `workbench.copy.${role}`,
+          role,
+          value: importedRichText(copy.value),
+        })
+      }
+      const metadata = {
+        format: 'pitchdog.workbench-plan',
+        version: 1,
+        internalTitle: slide.title,
+        purpose: slide.purpose,
+        lifecycle: 'included',
+        textPresence: slide.contentPattern === 'no-on-slide-text' ? 'no-on-slide-text' : 'visible',
+        contentPattern: slide.contentPattern,
+        copyFieldStates: {
+          headline: slide.copies.headline.state,
+          subheadline: slide.copies.subheadline.state,
+          body: slide.copies.body.state,
+        },
+        supportingItems: [],
+        mediaSlotCount: 0,
+        textHint: '',
+      }
+      blocks.push({
+        id: slide.planBlockId,
+        semanticKey: 'workbench.plan.v1',
+        role: 'workbench-plan',
+        value: importedRichText(JSON.stringify(metadata)),
+      })
+      return { id: slide.id, intent: slide.style, contentBlocks: blocks }
+    }),
+  }))
+  const checkpoint: Checkpoint = {
+    format: 'pitchdog.deck-checkpoint',
+    schemaVersion: 1,
+    revision: 0,
+    deck: {
+      schemaVersion: 1,
+      deckId,
+      title: writingImport.title,
+      canvasPreset: { id: canvas.id, width: canvas.width, height: canvas.height },
+      sections,
+    },
+    undoStack: [],
+    redoStack: [],
+    processedCommands: {},
+  }
+  const validated = validateCheckpoint(checkpoint)
+  if ('ok' in validated && validated.ok === false) throw new Error(validated.error.message)
+  return validated as Checkpoint
+}
+
 function createInitialCheckpoint(seed: JsonObject): Checkpoint {
   const deckId = assertIdentity(seed.deckId, 'deckId', 256)
+  if (seed.writingImport !== undefined) return createWritingImportCheckpoint(deckId, seed.writingImport)
   const sectionId = assertIdentity(seed.sectionId, 'sectionId', 256)
   const slideId = assertIdentity(seed.slideId, 'slideId', 256)
   const blockId = assertIdentity(seed.blockId, 'blockId', 256)
@@ -2342,6 +2620,7 @@ function query(session: KernelSession, name: string, params: JsonObject = {}): J
       sections: checkpoint.deck.sections.map((section) => ({
         id: section.id,
         title: section.title,
+        ...(section.purpose === undefined ? {} : { purpose: section.purpose }),
         slides: section.slides.map((slide) => {
           const headline = slide.contentBlocks.find((block) => block.role === 'headline')
           return {

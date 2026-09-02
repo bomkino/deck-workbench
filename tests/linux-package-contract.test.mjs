@@ -331,7 +331,7 @@ const [
 
 test('Linux package pins and notices the exact Electron production runtime', () => {
   assert.equal(packageJSON.dependencies.electron, '44.0.0')
-  assert.equal(packageJSON.version, '0.0.3')
+  assert.equal(packageJSON.version, '0.0.4')
   assert.equal(lockJSON.version, packageJSON.version)
   assert.equal(runtimePackage.version, packageJSON.version)
   assert.equal(lockJSON.packages['node_modules/electron'].version, '44.0.0')

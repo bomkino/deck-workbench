@@ -6,11 +6,14 @@ const root = resolve(import.meta.dirname, '..')
 const sourceRoot = resolve(root, 'packages/workspace/app')
 const outputRoot = resolve(root, 'build/generated/workspace')
 const sourceScriptNames = [
+  'workspace-conversion-prompt-v1.js',
+  'workspace-writing-import.js',
   'workspace-core.js',
   'workspace-plan.js',
   'workspace-curate.js',
   'workspace-visual.js',
   'workspace-handoff.js',
+  'workspace-writing-import-ui.js',
   'workspace.js',
 ]
 const packagedScriptNames = [

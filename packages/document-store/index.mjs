@@ -677,9 +677,18 @@ export class DurableDeckSession {
     const store = await PitchDeckDocumentStore.create(packagePath, checkpoint, { now })
     try {
       const kernelSession = kernelValue(kernel.open(checkpoint))
-      return new DurableDeckSession(kernel, kernelSession, store)
+      return new DurableDeckSession(kernel, kernelSession, store, undefined, true)
     } catch (error) {
-      await store.close()
+      try {
+        await store.close()
+        await rm(store.packagePath, { recursive: true, force: false })
+      } catch (cleanupError) {
+        throw failure(
+          'CheckpointWriteFailure',
+          `Deck creation failed; candidate cleanup failed at ${store.packagePath}: ${cleanupError.message}`,
+          cleanupError,
+        )
+      }
       throw error
     }
   }
@@ -706,13 +715,14 @@ export class DurableDeckSession {
     }
   }
 
-  constructor(kernel, kernelSession, store, recovery = undefined) {
+  constructor(kernel, kernelSession, store, recovery = undefined, created = false) {
     this.kernel = kernel
     this.kernelSession = kernelSession
     this.store = store
     this.recovery = recovery
     this.requiresReopen = false
     this.closed = false
+    this.created = created
   }
 
   get packagePath() { return this.store.packagePath }
@@ -810,6 +820,21 @@ export class DurableDeckSession {
       this.kernelSession = undefined
     }
     if (pendingError) throw pendingError
+  }
+
+  async discardCreated() {
+    if (!this.created) throw failure('InvalidCommand', 'Only a newly created Deck may be discarded')
+    const candidatePath = this.packagePath
+    await this.close({ save: false })
+    try {
+      await rm(candidatePath, { recursive: true, force: false })
+    } catch (error) {
+      throw failure(
+        'CheckpointWriteFailure',
+        `Candidate cleanup failed at ${candidatePath}: ${error.message}`,
+        error,
+      )
+    }
   }
 }
 
