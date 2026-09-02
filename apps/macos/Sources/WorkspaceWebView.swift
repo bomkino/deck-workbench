@@ -26,6 +26,10 @@ struct WorkspaceWebView: NSViewRepresentable {
     }
 }
 
+final class WorkbenchWKWebView: WKWebView {
+    override var mouseDownCanMoveWindow: Bool { false }
+}
+
 final class WorkbenchWebContainer: NSView {
     let webView: WKWebView
     private let dragRegion = WorkbenchWindowDragRegion(frame: .zero)
@@ -56,7 +60,7 @@ final class WorkbenchWebContainer: NSView {
         fatalError("init(coder:) is unavailable")
     }
 
-    override var mouseDownCanMoveWindow: Bool { false }
+    override var mouseDownCanMoveWindow: Bool { true }
 
     func positionDragRegion(at x: CGFloat) {
         dragLeadingConstraint.constant = x
@@ -193,7 +197,7 @@ enum WorkspaceWebViewFactory {
             forMainFrameOnly: true
         ))
 
-        let webView = WKWebView(frame: .zero, configuration: configuration)
+        let webView = WorkbenchWKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = coordinator
         webView.uiDelegate = coordinator
         webView.allowsMagnification = false
