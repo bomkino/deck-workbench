@@ -15,8 +15,9 @@ test('Plan writing controls stay visible without a Deck and the paste surface st
   assert.match(html, /<textarea id="writing-import-source"[^>]*><\/textarea>/)
   assert.doesNotMatch(html, /id="writing-import-source"[^>]*>[^<]+<\/textarea>/)
   assert.match(html, /Paste the contents of a Workbench Markdown `\.md` file here\. Workbench does not upload the file\./)
-  assert.match(css, /\.plan-phase:has\(#plan-empty:not\(\[hidden\]\)\)[^{]*\{[^}]*grid-template-areas: "tools" "editor"/)
-  assert.match(css, /\.plan-import-tools \{ grid-area: tools/)
+  assert.match(css, /\.plan-phase:has\(#plan-empty:not\(\[hidden\]\)\)[^{]*\{[^}]*grid-template-areas: "sequence" "editor"/)
+  assert.match(html, /class="sequence-actions">[\s\S]*id="copy-conversion-prompt"[\s\S]*id="open-writing-import"/)
+  assert.match(css, /\.plan-phase:has\(#plan-empty:not\(\[hidden\]\)\) \.sequence-list/)
 })
 
 test('preview is byte-locked, invalidated on input, reparsed before import and duplicate clicks are guarded', () => {
