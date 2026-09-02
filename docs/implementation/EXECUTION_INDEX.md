@@ -25,6 +25,11 @@
   toolbar and leaves document commands in the system menu bar. Exact-head CI
   controls artifact production, and the public GitHub Release is the release
   authority; source version text alone is not release evidence.
+- `v0.0.6`: complete Curate fullscreen as a keyboard-only loop. Arrows browse,
+  `0–5` rate, `P` toggles Project Pick, `S` toggles the current-Slide Shortlist,
+  `A` toggles Alternate, `M` opens role-aware assignment and `Esc` closes.
+  Assignment focuses the first available role and returns to the same Asset
+  after assign or cancel.
 - Repository hardening: strict journal record boundaries, durable/live-state fencing, dead utility-process rejection, recoverable Linux preferences, atomic Linux PDF publication and one canonical repository verification gate.
 
 Target-machine Garuda and interactive macOS accessibility checks are waived for

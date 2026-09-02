@@ -116,6 +116,7 @@ let curateTrayAssetLoadGeneration = 0
 let curateTrayAssetLoadPromise = null
 let curatePreviewMediaId = null
 let curateAssignmentAssetId = null
+let curateAssignmentReturnPreviewId = null
 let curateAssignmentTargets = []
 let curateAssignmentTargetGeneration = 0
 let curateAssignmentPending = false
@@ -1618,11 +1619,26 @@ async function toggleCuratePreviewDecision(state) {
 async function assignCuratePreviewAsset() {
   const assetId = curatePreviewMediaId
   if (!assetId || curateAssignmentPending || curatePreviewActionPending) return false
-  return openCurateAssignmentChooser(assetId)
+  curateAssignmentReturnPreviewId = assetId
+  const opened = await openCurateAssignmentChooser(assetId)
+  if (!opened && !elements.mediaAssignmentDialog.open) curateAssignmentReturnPreviewId = null
+  return opened
 }
 
 function handleCuratePreviewKeydown(event) {
   if (event.isComposing || event.metaKey || event.ctrlKey || event.altKey) return
+  const key = event.key.toLowerCase()
+  const repeatedButtonToggle = event.repeat
+    && (event.key === 'Enter' || event.key === ' ')
+    && event.target?.matches?.('#preview-project-pick, #preview-shortlist, #preview-alternate, #preview-assign')
+  if (repeatedButtonToggle) {
+    event.preventDefault()
+    return
+  }
+  if (event.repeat && ['p', 's', 'a', 'm'].includes(key)) {
+    event.preventDefault()
+    return
+  }
   if (event.key === 'ArrowLeft') {
     event.preventDefault()
     moveCuratePreview(-1)
@@ -1632,6 +1648,21 @@ function handleCuratePreviewKeydown(event) {
   } else if (/^[0-5]$/.test(event.key)) {
     event.preventDefault()
     void setCuratePreviewRating(Number(event.key))
+  } else if (key === 'p') {
+    event.preventDefault()
+    void toggleCuratePreviewProjectPick()
+  } else if (key === 's') {
+    event.preventDefault()
+    void toggleCuratePreviewDecision('shortlisted')
+  } else if (key === 'a') {
+    event.preventDefault()
+    void toggleCuratePreviewDecision('alternate')
+  } else if (key === 'm') {
+    event.preventDefault()
+    void assignCuratePreviewAsset()
+  } else if (event.key === 'Escape') {
+    event.preventDefault()
+    if (elements.mediaPreview.open) elements.mediaPreview.close('cancel')
   }
 }
 
@@ -1710,7 +1741,31 @@ function renderCurateAssignmentTargets(assetId, targets = curateAssignmentTarget
   }
   if (!targetCount) {
     elements.mediaAssignmentTargets.append(createCurateTrayEmpty('No media roles', 'Choose a Visual Style in Plan first.'))
+  } else if (elements.mediaAssignmentDialog.open && document.activeElement === elements.mediaAssignmentDialog) {
+    elements.mediaAssignmentTargets
+      .querySelector('[data-assignment-slide-id][data-assignment-slot-key]:not(:disabled)')
+      ?.focus({ preventScroll: true })
   }
+}
+
+function handleCurateAssignmentKeydown(event) {
+  if (event.isComposing || event.metaKey || event.ctrlKey || event.altKey) return
+  if (curateAssignmentPending && event.key === 'Escape') {
+    event.preventDefault()
+    return
+  }
+  if (!['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return
+  const targets = [...elements.mediaAssignmentTargets.querySelectorAll(
+    '[data-assignment-slide-id][data-assignment-slot-key]:not(:disabled)',
+  )]
+  if (!targets.length) return
+  const current = targets.indexOf(document.activeElement)
+  let next = 0
+  if (event.key === 'End') next = targets.length - 1
+  else if (event.key === 'ArrowUp') next = current < 0 ? targets.length - 1 : (current - 1 + targets.length) % targets.length
+  else if (event.key === 'ArrowDown') next = current < 0 ? 0 : (current + 1) % targets.length
+  targets[next].focus({ preventScroll: true })
+  event.preventDefault()
 }
 
 async function openCurateAssignmentChooser(assetId = curateFocusedMediaId) {
@@ -1724,8 +1779,12 @@ async function openCurateAssignmentChooser(assetId = curateFocusedMediaId) {
   const generation = ++curateAssignmentTargetGeneration
   const expectedRevision = projection.revision
   elements.mediaAssignmentAsset.textContent = asset.label
+  elements.cancelMediaAssignment.disabled = false
   elements.mediaAssignmentTargets.replaceChildren(createCurateTrayEmpty('Loading Slides…', 'Finding every named media role.'))
-  if (!elements.mediaAssignmentDialog.open) elements.mediaAssignmentDialog.showModal()
+  if (!elements.mediaAssignmentDialog.open) {
+    elements.mediaAssignmentDialog.showModal()
+    elements.mediaAssignmentDialog.focus({ preventScroll: true })
+  }
   try {
     const targets = await queryCurateAssignmentTargets(expectedRevision, generation)
     if (generation !== curateAssignmentTargetGeneration || curateAssignmentAssetId !== asset.id) return false
@@ -1747,6 +1806,7 @@ async function assignCurateAssetToTarget(slideId, slotKey) {
   const decision = { state: 'selected', slotKey: slot.key }
   if (!slot.selected) decision.mediaAssignmentId = crypto.randomUUID()
   curateAssignmentPending = true
+  elements.cancelMediaAssignment.disabled = true
   renderCurateAssignmentTargets(asset.id)
   const currentSlideId = selectedSlideId
   try {
@@ -1770,7 +1830,9 @@ async function assignCurateAssetToTarget(slideId, slotKey) {
     return true
   } finally {
     curateAssignmentPending = false
+    elements.cancelMediaAssignment.disabled = false
     if (elements.mediaAssignmentDialog.open) renderCurateAssignmentTargets(asset.id)
+    if (elements.mediaPreview.open) renderCuratePreview()
   }
 }
 
@@ -1813,6 +1875,7 @@ function openCurateCompare() {
 }
 
 function closeCurateOverlays() {
+  curateAssignmentReturnPreviewId = null
   if (elements?.mediaPreview?.open) elements.mediaPreview.close()
   if (elements?.mediaCompare?.open) elements.mediaCompare.close()
   if (elements?.mediaAssignmentDialog?.open) elements.mediaAssignmentDialog.close()
@@ -1821,6 +1884,7 @@ function closeCurateOverlays() {
   if (elements?.findMorePanel?.open) elements.findMorePanel.open = false
   curatePreviewMediaId = null
   curateAssignmentAssetId = null
+  curateAssignmentReturnPreviewId = null
   curateAssignmentTargets = []
   curateAssignmentTargetGeneration += 1
 }
@@ -2293,7 +2357,7 @@ function bindCurateEvents() {
   elements.previewMediaImage.addEventListener('contextmenu', (event) => {
     event.preventDefault()
     if (curatePreviewMediaId && !curateAssignmentPending && !curatePreviewActionPending) {
-      void openCurateAssignmentChooser(curatePreviewMediaId)
+      void assignCuratePreviewAsset()
     }
   })
   elements.previewMediaPrevious.addEventListener('click', () => moveCuratePreview(-1))
@@ -2308,8 +2372,9 @@ function bindCurateEvents() {
   elements.previewAssign.addEventListener('click', () => void assignCuratePreviewAsset())
   elements.mediaPreview.addEventListener('keydown', handleCuratePreviewKeydown)
   elements.mediaPreview.addEventListener('close', () => {
+    if (elements.mediaPreview.open) return
     curatePreviewMediaId = null
-    restoreCurateMediaFocus()
+    if (!curateAssignmentReturnPreviewId) restoreCurateMediaFocus()
   })
   elements.mediaCompare.addEventListener('close', restoreCurateMediaFocus)
   elements.compareMediaGrid.addEventListener('click', (event) => {
@@ -2336,11 +2401,21 @@ function bindCurateEvents() {
     if (!button || button.disabled) return
     void assignCurateAssetToTarget(button.dataset.assignmentSlideId, button.dataset.assignmentSlotKey)
   })
+  elements.mediaAssignmentDialog.addEventListener('keydown', handleCurateAssignmentKeydown)
+  elements.mediaAssignmentDialog.addEventListener('cancel', (event) => {
+    if (curateAssignmentPending) event.preventDefault()
+  })
   elements.mediaAssignmentDialog.addEventListener('close', () => {
+    const returnPreviewId = curateAssignmentReturnPreviewId
     curateAssignmentAssetId = null
+    curateAssignmentReturnPreviewId = null
     curateAssignmentTargets = []
     curateAssignmentTargetGeneration += 1
-    restoreCurateMediaFocus()
+    if (returnPreviewId && activePhase === 'curate' && curateAssetById(returnPreviewId)) {
+      openFocusedPreview(returnPreviewId)
+    } else {
+      restoreCurateMediaFocus()
+    }
   })
   document.addEventListener('pointerdown', (event) => {
     if (!elements.mediaContextMenu.hidden && !elements.mediaContextMenu.contains(event.target)) {

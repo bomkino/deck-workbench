@@ -448,6 +448,8 @@ details > summary:focus-visible .disclosure-caret { transition: none; }
 .preview-rating-buttons { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.3rem; }
 .preview-rating-buttons button { min-width: 0; padding-inline: 0.35rem; color: var(--warning); }
 .preview-rating-buttons button[aria-pressed="true"] { background: #f1c14f; color: #17130b; }
+.preview-keyboard-help { margin: var(--space-1) 0 0; color: var(--ink-muted); font-size: max(0.75rem, 11px); line-height: 1.55; }
+.preview-keyboard-help kbd { display: inline-flex; min-width: 1.45rem; min-height: 1.45rem; align-items: center; justify-content: center; padding: 0 0.3rem; border: 1px solid var(--rule); border-radius: 0.35rem; background: var(--paper); color: var(--ink); font: inherit; font-weight: 700; }
 .media-assignment-dialog { width: min(56rem, calc(100vw - 2rem)); height: min(44rem, calc(100vh - 2rem)); }
 .media-assignment-content { min-height: 0; overflow: auto; padding: 1rem; }
 .media-assignment-content > p { margin-bottom: 1rem; color: var(--ink-muted); }

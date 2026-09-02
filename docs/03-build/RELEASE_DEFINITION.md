@@ -49,7 +49,7 @@ manufacture evidence.
 
 Deck Workbench is pre-alpha source with bounded integrated tracers. It is not a
 public v1, notarized distribution or production-ready editor. GitHub's public
-Latest state is authoritative: if `v0.0.5` is not yet public, `v0.0.4` remains
+Latest state is authoritative: if `v0.0.6` is not yet public, `v0.0.5` remains
 the last normal release. `v0.0.4` added native conversion-prompt copying and
 strict paste, Preview and import into a new local `.pitchdeck`; it did not add
 upload or built-in AI. Normal release status does not manufacture production readiness.
@@ -60,15 +60,13 @@ its attached exact-commit artifacts are the authority. The existing unpublished
 
 ## Current source and release line
 
-The current source and intended Latest release line is `v0.0.5`. Its bounded repair scope makes Full Bleed the
-new-work default and makes Plan's visual decision drive the initial Assembly. Assembly renders assigned images
-without distortion, exposes Fit/Fill, three text sizes, direct Element movement and resizing, role-specific image
-swaps, visual gradient controls, an image-backed Slide rail, and working canvas changes. Curate exposes a clear
-Primary action, real thumbnail trays, a local fullscreen rated preview, and role-aware assignment to any Slide.
+The current source and intended Latest release line is `v0.0.6`. It retains the v0.0.5 visual-workflow repair
+and completes Curate's fullscreen keyboard loop for browsing, rating, Project Pick, current-Slide Shortlist,
+Alternate, assign-to-Slide and close. Assignment focuses its first available role and returns to the same Asset.
 The macOS shell uses one full-content frame: native traffic lights share the compact Workbench toolbar, document
 commands remain in the system menu bar, and no duplicate title or action strip consumes canvas height. It is
 not released, Latest, packaged or installed merely because the source version
-is `0.0.5`. Release status comes from the public GitHub Release targeting an
+is `0.0.6`. Release status comes from the public GitHub Release targeting an
 exact canonical-main commit whose package workflows passed, with its public
 artifacts downloaded and read back. Curate and target-machine behavior outside
 repository CI must be reported from direct acceptance rather than assumed.
