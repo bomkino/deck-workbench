@@ -512,29 +512,30 @@
         </section>
       </section>
 
-      <dialog id="media-preview" class="media-dialog media-preview-dialog" aria-labelledby="preview-media-title">
+      <dialog id="media-preview" class="media-dialog media-preview-dialog" aria-labelledby="preview-media-title" aria-describedby="preview-keyboard-help">
         <form method="dialog">
-          <header class="media-dialog-heading"><div><p class="panel-label">Media Preview</p><h2 id="preview-media-title">Asset</h2></div><div class="preview-navigation"><button id="preview-media-previous" type="button" aria-label="Previous image">Previous</button><button id="preview-media-next" type="button" aria-label="Next image">Next</button><button type="submit" value="cancel" aria-label="Close Preview">Close</button></div></header>
+          <header class="media-dialog-heading"><div><p class="panel-label">Media Preview</p><h2 id="preview-media-title">Asset</h2></div><div class="preview-navigation"><button id="preview-media-previous" type="button" aria-label="Previous image" aria-keyshortcuts="ArrowLeft">Previous</button><button id="preview-media-next" type="button" aria-label="Next image" aria-keyshortcuts="ArrowRight">Next</button><button type="submit" value="cancel" aria-label="Close Preview" aria-keyshortcuts="Escape">Close</button></div></header>
           <div class="media-preview-layout">
             <div class="media-preview-stage"><img id="preview-media-image" alt="" draggable="false" hidden /><p id="preview-capability-state">Preview unavailable.</p></div>
             <aside class="preview-media-sidebar">
               <div id="preview-media-details" class="preview-media-details"></div>
               <div class="preview-media-actions">
-                <fieldset id="preview-rating"><legend>Rating</legend><div class="preview-rating-buttons" role="group" aria-label="Project rating"><button type="button" data-preview-rating="0">None</button><button type="button" data-preview-rating="1" aria-label="1 star">&#x2605;</button><button type="button" data-preview-rating="2" aria-label="2 stars">&#x2605;&#x2605;</button><button type="button" data-preview-rating="3" aria-label="3 stars">&#x2605;&#x2605;&#x2605;</button><button type="button" data-preview-rating="4" aria-label="4 stars">&#x2605;&#x2605;&#x2605;&#x2605;</button><button type="button" data-preview-rating="5" aria-label="5 stars">&#x2605;&#x2605;&#x2605;&#x2605;&#x2605;</button></div></fieldset>
-                <button id="preview-project-pick" type="button">Project Pick</button>
-                <button id="preview-shortlist" type="button">Shortlist for this Slide</button>
-                <button id="preview-alternate" type="button">Use as alternate</button>
-                <button id="preview-assign" class="primary-action" type="button">Assign to Slide…</button>
+                <fieldset id="preview-rating"><legend>Rating</legend><div class="preview-rating-buttons" role="group" aria-label="Project rating"><button type="button" data-preview-rating="0" aria-keyshortcuts="0">None</button><button type="button" data-preview-rating="1" aria-label="1 star" aria-keyshortcuts="1">&#x2605;</button><button type="button" data-preview-rating="2" aria-label="2 stars" aria-keyshortcuts="2">&#x2605;&#x2605;</button><button type="button" data-preview-rating="3" aria-label="3 stars" aria-keyshortcuts="3">&#x2605;&#x2605;&#x2605;</button><button type="button" data-preview-rating="4" aria-label="4 stars" aria-keyshortcuts="4">&#x2605;&#x2605;&#x2605;&#x2605;</button><button type="button" data-preview-rating="5" aria-label="5 stars" aria-keyshortcuts="5">&#x2605;&#x2605;&#x2605;&#x2605;&#x2605;</button></div></fieldset>
+                <button id="preview-project-pick" type="button" aria-keyshortcuts="P">Project Pick</button>
+                <button id="preview-shortlist" type="button" aria-keyshortcuts="S">Shortlist for this Slide</button>
+                <button id="preview-alternate" type="button" aria-keyshortcuts="A">Use as alternate</button>
+                <button id="preview-assign" class="primary-action" type="button" aria-keyshortcuts="M">Assign to Slide…</button>
+                <p id="preview-keyboard-help" class="preview-keyboard-help"><kbd>←</kbd><kbd>→</kbd> Browse · <kbd>0–5</kbd> Rate · <kbd>P</kbd> Pick · <kbd>S</kbd> Shortlist · <kbd>A</kbd> Alternate · <kbd>M</kbd> Assign · <kbd>Esc</kbd> Close</p>
               </div>
             </aside>
           </div>
         </form>
       </dialog>
 
-      <dialog id="media-assignment-dialog" class="media-dialog media-assignment-dialog" aria-labelledby="media-assignment-heading">
+      <dialog id="media-assignment-dialog" class="media-dialog media-assignment-dialog" aria-labelledby="media-assignment-heading" aria-describedby="media-assignment-asset media-assignment-keyboard-help" tabindex="-1">
         <form method="dialog">
           <header class="media-dialog-heading"><div><p class="panel-label">Assign image</p><h2 id="media-assignment-heading">Choose a Slide and slot</h2></div><button id="cancel-media-assignment" type="submit" value="cancel">Cancel</button></header>
-          <div class="media-assignment-content"><p id="media-assignment-asset"></p><div id="media-assignment-targets" class="media-assignment-targets"></div></div>
+          <div class="media-assignment-content"><p id="media-assignment-asset"></p><p id="media-assignment-keyboard-help" class="preview-keyboard-help"><kbd>↑</kbd><kbd>↓</kbd> or <kbd>Tab</kbd> Move · <kbd>Return</kbd> Assign · <kbd>Esc</kbd> Back</p><div id="media-assignment-targets" class="media-assignment-targets"></div></div>
         </form>
       </dialog>
 

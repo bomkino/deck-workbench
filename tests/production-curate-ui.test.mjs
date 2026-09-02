@@ -86,10 +86,147 @@ test('full-screen Preview exposes direct project and current-Slide decisions', (
   assert.match(curate, /setProjectJudgmentForAsset\(assetId, \{ rating \}/)
   assert.match(curate, /toggleCuratePreviewDecision\('shortlisted'\)/)
   assert.match(curate, /toggleCuratePreviewDecision\('alternate'\)/)
-  assert.match(curate, /return openCurateAssignmentChooser\(assetId\)/)
-  assert.match(curate, /previewMediaImage\.addEventListener\('contextmenu'[\s\S]*openCurateAssignmentChooser\(curatePreviewMediaId\)/)
+  assert.match(curate, /curateAssignmentReturnPreviewId = assetId[\s\S]*await openCurateAssignmentChooser\(assetId\)/)
+  assert.match(curate, /previewMediaImage\.addEventListener\('contextmenu'[\s\S]*assignCuratePreviewAsset\(\)/)
   assert.match(curate, /function moveCuratePreview\(delta\) \{\s*if \(curateAssignmentPending \|\| curatePreviewActionPending\) return false/)
   assert.doesNotMatch(curate, /Full Preview is not available in this gate/)
+})
+
+test('full-screen Preview is keyboard-complete for browse, mark, assign, and close', () => {
+  for (const shortcut of ['ArrowLeft', 'ArrowRight', 'Escape', '0', '1', '2', '3', '4', '5', 'P', 'S', 'A', 'M']) {
+    assert.match(html, new RegExp(`aria-keyshortcuts="${shortcut}"`))
+  }
+  assert.match(html, /id="preview-keyboard-help"[\s\S]*Browse[\s\S]*Rate[\s\S]*Pick[\s\S]*Shortlist[\s\S]*Alternate[\s\S]*Assign[\s\S]*Close/)
+
+  const source = functionSource(curate, 'handleCuratePreviewKeydown', 'assignmentTargetRecords')
+  const calls = []
+  let closeCount = 0
+  const handler = Function(
+    'moveCuratePreview',
+    'setCuratePreviewRating',
+    'toggleCuratePreviewProjectPick',
+    'toggleCuratePreviewDecision',
+    'assignCuratePreviewAsset',
+    'elements',
+    `"use strict"; ${source}; return handleCuratePreviewKeydown`,
+  )(
+    (delta) => calls.push(['move', delta]),
+    (rating) => calls.push(['rating', rating]),
+    () => calls.push(['project-pick']),
+    (state) => calls.push(['decision', state]),
+    () => calls.push(['assign']),
+    { mediaPreview: { open: true, close: () => { closeCount += 1 } } },
+  )
+  const fire = (key, extras = {}) => {
+    let prevented = false
+    handler({
+      key,
+      isComposing: false,
+      metaKey: false,
+      ctrlKey: false,
+      altKey: false,
+      repeat: false,
+      target: { matches: () => false },
+      preventDefault: () => { prevented = true },
+      ...extras,
+    })
+    return prevented
+  }
+
+  for (const [key, expected] of [
+    ['ArrowLeft', ['move', -1]],
+    ['ArrowRight', ['move', 1]],
+    ['5', ['rating', 5]],
+    ['0', ['rating', 0]],
+    ['p', ['project-pick']],
+    ['S', ['decision', 'shortlisted']],
+    ['a', ['decision', 'alternate']],
+    ['M', ['assign']],
+  ]) {
+    const before = calls.length
+    assert.equal(fire(key), true)
+    assert.deepEqual(calls.at(-1), expected)
+    assert.equal(calls.length, before + 1)
+  }
+  assert.equal(fire('Escape'), true)
+  assert.equal(closeCount, 1)
+
+  const beforeRepeat = calls.length
+  assert.equal(fire('s', { repeat: true }), true)
+  assert.equal(calls.length, beforeRepeat)
+  assert.equal(fire('Enter', { repeat: true, target: { matches: () => true } }), true)
+  assert.equal(calls.length, beforeRepeat)
+  assert.equal(fire('p', { metaKey: true }), false)
+  assert.equal(calls.length, beforeRepeat)
+})
+
+test('assignment chooser supports arrow focus and returns to its originating Preview', () => {
+  const source = functionSource(curate, 'handleCurateAssignmentKeydown', 'openCurateAssignmentChooser')
+  const document = { activeElement: null }
+  const focused = []
+  const targets = ['first', 'second', 'third'].map((name) => ({
+    name,
+    focus() {
+      document.activeElement = this
+      focused.push(name)
+    },
+  }))
+  const handler = Function(
+    'elements',
+    'document',
+    'curateAssignmentPending',
+    `"use strict"; ${source}; return handleCurateAssignmentKeydown`,
+  )({ mediaAssignmentTargets: { querySelectorAll: () => targets } }, document, false)
+  const fire = (key) => {
+    let prevented = false
+    handler({
+      key,
+      isComposing: false,
+      metaKey: false,
+      ctrlKey: false,
+      altKey: false,
+      preventDefault: () => { prevented = true },
+    })
+    return prevented
+  }
+
+  assert.equal(fire('ArrowDown'), true)
+  assert.equal(document.activeElement, targets[0])
+  assert.equal(fire('ArrowDown'), true)
+  assert.equal(document.activeElement, targets[1])
+  assert.equal(fire('ArrowUp'), true)
+  assert.equal(document.activeElement, targets[0])
+  assert.equal(fire('End'), true)
+  assert.equal(document.activeElement, targets[2])
+  assert.equal(fire('Home'), true)
+  assert.equal(document.activeElement, targets[0])
+  assert.deepEqual(focused, ['first', 'second', 'first', 'third', 'first'])
+
+  let pendingEscapePrevented = false
+  const pendingHandler = Function(
+    'elements',
+    'document',
+    'curateAssignmentPending',
+    `"use strict"; ${source}; return handleCurateAssignmentKeydown`,
+  )({ mediaAssignmentTargets: { querySelectorAll: () => targets } }, document, true)
+  pendingHandler({
+    key: 'Escape',
+    isComposing: false,
+    metaKey: false,
+    ctrlKey: false,
+    altKey: false,
+    preventDefault: () => { pendingEscapePrevented = true },
+  })
+  assert.equal(pendingEscapePrevented, true)
+
+  assert.match(curate, /renderCurateAssignmentTargets[\s\S]*document\.activeElement === elements\.mediaAssignmentDialog[\s\S]*querySelector\('\[data-assignment-slide-id\]\[data-assignment-slot-key\]:not\(:disabled\)'\)[\s\S]*focus\(\{ preventScroll: true \}\)/)
+  assert.match(curate, /const returnPreviewId = curateAssignmentReturnPreviewId[\s\S]*openFocusedPreview\(returnPreviewId\)/)
+  assert.match(curate, /mediaAssignmentDialog\.addEventListener\('keydown', handleCurateAssignmentKeydown\)/)
+  assert.match(html, /id="media-assignment-keyboard-help"[\s\S]*Move[\s\S]*Assign[\s\S]*Back/)
+  assert.match(curate, /mediaPreview\.addEventListener\('close'[\s\S]*if \(elements\.mediaPreview\.open\) return/)
+  assert.match(curate, /cancelMediaAssignment\.disabled = true[\s\S]*finally \{[\s\S]*cancelMediaAssignment\.disabled = false/)
+  assert.match(curate, /mediaAssignmentDialog\.addEventListener\('cancel'[\s\S]*if \(curateAssignmentPending\) event\.preventDefault\(\)/)
+  assert.match(curate, /mediaAssignmentDialog\.showModal\(\)[\s\S]*mediaAssignmentDialog\.focus\(\{ preventScroll: true \}\)/)
 })
 
 test('right-click assignment chooser names every Slide role and preserves current focus', () => {
