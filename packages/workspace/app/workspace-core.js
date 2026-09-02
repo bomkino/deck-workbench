@@ -231,6 +231,7 @@ function defaultCopyState(block) {
 }
 
 function visualStyleFromIntent(intent) {
+  if (intent === 'undecided') return 'full-bleed'
   if (VISUAL_STYLE_IDS.includes(intent)) return intent
   if (intent === 'cover' || intent === 'statement') return 'full-bleed-overlay'
   if (intent === 'editorial-body') return 'image-text'
@@ -238,20 +239,25 @@ function visualStyleFromIntent(intent) {
 }
 
 function defaultPlanMetadata(slide) {
-  const headline = blockByRole(slide, 'headline')
+  const copyBlocks = Object.fromEntries(
+    ['headline', 'subheadline', 'body'].map((role) => [role, blockByRole(slide, role)]),
+  )
+  const headline = copyBlocks.headline
   const headlineText = String(headline?.plainText ?? '').trim()
+  const hasVisibleText = Object.values(copyBlocks)
+    .some((block) => String(block?.plainText ?? '').length > 0)
   return {
     format: PLAN_FORMAT,
     version: PLAN_VERSION,
     internalTitle: headlineText.split('\n')[0] || 'Untitled Slide',
-    purpose: '',
+    purpose: 'Unreviewed',
     lifecycle: 'included',
-    textPresence: headlineText ? 'visible' : 'undecided',
+    textPresence: hasVisibleText ? 'visible' : 'undecided',
     contentPattern: 'simple-copy',
     copyFieldStates: {
       headline: defaultCopyState(headline),
-      subheadline: defaultCopyState(blockByRole(slide, 'subheadline')),
-      body: defaultCopyState(blockByRole(slide, 'body')),
+      subheadline: defaultCopyState(copyBlocks.subheadline),
+      body: defaultCopyState(copyBlocks.body),
     },
     supportingItems: [],
     mediaSlotCount: 0,
@@ -397,6 +403,8 @@ const elements = {
   renameDeck: document.querySelector('#rename-deck'),
   undo: document.querySelector('#undo'),
   redo: document.querySelector('#redo'),
+  toggleNavigator: document.querySelector('#toggle-navigator'),
+  toggleInspector: document.querySelector('#toggle-inspector'),
   theme: document.querySelector('#theme'),
   interfaceScale: document.querySelector('#interface-scale'),
   saveState: document.querySelector('#save-state'),
@@ -407,6 +415,7 @@ const elements = {
   conversionPromptStatus: document.querySelector('#conversion-prompt-status'),
   conversionPromptFallback: document.querySelector('#conversion-prompt-fallback'),
   writingImportDialog: document.querySelector('#writing-import-dialog'),
+  writingImportFile: document.querySelector('#writing-import-file'),
   writingImportSource: document.querySelector('#writing-import-source'),
   writingImportPreview: document.querySelector('#writing-import-preview'),
   previewWritingImport: document.querySelector('#preview-writing-import'),
@@ -441,6 +450,7 @@ const elements = {
   addSupportingItem: document.querySelector('#add-supporting-item'),
   cutSlide: document.querySelector('#cut-slide'),
   savePlan: document.querySelector('#save-plan'),
+  savePlanAndCurate: document.querySelector('#save-plan-and-curate'),
   curateQueueFilters: [...document.querySelectorAll('[data-curate-queue-filter]')],
   nextCurateIssue: document.querySelector('#next-curate-issue'),
   curateSlideQueue: document.querySelector('#curate-slide-queue'),
@@ -477,6 +487,8 @@ const elements = {
   mediaWallState: document.querySelector('#media-wall-state'),
   curateBriefHeading: document.querySelector('#curate-brief-heading'),
   curateBriefContent: document.querySelector('#curate-brief-content'),
+  curateBack: document.querySelector('#curate-back'),
+  curateNext: document.querySelector('#curate-next'),
   findMorePanel: document.querySelector('#find-more-panel'),
   findMoreSummaryTrigger: document.querySelector('#find-more-summary-trigger'),
   findMoreForm: document.querySelector('#find-more-form'),
@@ -485,6 +497,7 @@ const elements = {
   findMorePrimaryStatus: document.querySelector('#find-more-primary-status'),
   findMoreBrief: document.querySelector('#find-more-brief'),
   saveFindMore: document.querySelector('#save-find-more'),
+  projectPickTray: document.querySelector('#project-pick-tray'),
   primaryTray: document.querySelector('#primary-tray'),
   alternateTray: document.querySelector('#alternate-tray'),
   shortlistTray: document.querySelector('#shortlist-tray'),
@@ -495,10 +508,22 @@ const elements = {
   previewMediaImage: document.querySelector('#preview-media-image'),
   previewCapabilityState: document.querySelector('#preview-capability-state'),
   previewMediaDetails: document.querySelector('#preview-media-details'),
+  previewMediaPrevious: document.querySelector('#preview-media-previous'),
+  previewMediaNext: document.querySelector('#preview-media-next'),
+  previewRating: document.querySelector('#preview-rating'),
+  previewProjectPick: document.querySelector('#preview-project-pick'),
+  previewShortlist: document.querySelector('#preview-shortlist'),
+  previewAlternate: document.querySelector('#preview-alternate'),
+  previewAssign: document.querySelector('#preview-assign'),
+  mediaAssignmentDialog: document.querySelector('#media-assignment-dialog'),
+  mediaAssignmentAsset: document.querySelector('#media-assignment-asset'),
+  mediaAssignmentTargets: document.querySelector('#media-assignment-targets'),
+  cancelMediaAssignment: document.querySelector('#cancel-media-assignment'),
   mediaCompare: document.querySelector('#media-compare'),
   compareMediaGrid: document.querySelector('#compare-media-grid'),
   mediaContextMenu: document.querySelector('#media-context-menu'),
   stageScroll: document.querySelector('#stage-scroll'),
+  assemblySlideRail: document.querySelector('#assembly-slide-rail'),
   artboardShell: document.querySelector('#artboard-shell'),
   artboard: document.querySelector('#artboard'),
   artboardIntent: document.querySelector('#artboard-intent'),
@@ -511,12 +536,28 @@ const elements = {
   artboardZoom: document.querySelector('#artboard-zoom'),
   zoomLabel: document.querySelector('#zoom-label'),
   fitArtboard: document.querySelector('#fit-artboard'),
-  patternChoice: document.querySelector('#pattern-choice'),
-  patternBodyBlock: document.querySelector('#pattern-body-block'),
-  applyPattern: document.querySelector('#apply-pattern'),
+  assemblyBack: document.querySelector('#assembly-back'),
+  assemblyNext: document.querySelector('#assembly-next'),
+  assemblyLayoutSource: document.querySelector('#assembly-layout-source'),
+  editAssemblyPlan: document.querySelector('#edit-assembly-plan'),
+  rebuildAssembly: document.querySelector('#rebuild-assembly'),
   visualElement: document.querySelector('#visual-element'),
   alignActions: document.querySelector('.align-actions'),
+  textControls: document.querySelector('#text-controls'),
+  textSizeActions: [...document.querySelectorAll('[data-text-size]')],
+  imageControls: document.querySelector('#image-controls'),
+  imageFitActions: [...document.querySelectorAll('[data-image-fit]')],
+  imageSwapRole: document.querySelector('#image-swap-role'),
+  imageSwapCandidates: document.querySelector('#image-swap-candidates'),
+  gradientControls: document.querySelector('#gradient-controls'),
+  editGradient: document.querySelector('#edit-gradient'),
+  gradientDirectionActions: [...document.querySelectorAll('[data-gradient-direction]')],
+  gradientStrength: document.querySelector('#gradient-strength'),
+  gradientStrengthOutput: document.querySelector('#gradient-strength-output'),
+  gradientStartColor: document.querySelector('#gradient-start-color'),
+  gradientEndColor: document.querySelector('#gradient-end-color'),
   cropControls: document.querySelector('.crop-controls'),
+  cropHelp: document.querySelector('#crop-help'),
   cropX: document.querySelector('#crop-x'),
   cropY: document.querySelector('#crop-y'),
   cropWidth: document.querySelector('#crop-width'),
@@ -535,6 +576,8 @@ let themePreference = 'system'
 let interfaceScale = 1
 let artboardZoom = 0.65
 let activePhase = 'plan'
+let navigatorCollapsed = false
+let inspectorCollapsed = false
 let planSearch = ''
 let planFilter = 'all'
 let draftSupportingItems = []
@@ -569,6 +612,7 @@ function applyThemePreference(preference) {
 function setStatus(message) {
   if (elements.saveState.textContent !== message) elements.saveState.textContent = message
   elements.saveState.title = message
+  elements.saveState.hidden = message === 'No document session'
 }
 
 function setBusy(message) {
@@ -597,7 +641,31 @@ function selectedPlanRecord() {
   return location ? planRecordForSlide(location.slide, location.section) : null
 }
 
+function renderWorkspacePanelVisibility() {
+  if (!projection) {
+    navigatorCollapsed = false
+    inspectorCollapsed = false
+  }
+  elements.workbench.dataset.navigatorCollapsed = String(navigatorCollapsed)
+  elements.workbench.dataset.inspectorCollapsed = String(inspectorCollapsed)
+  elements.toggleNavigator.setAttribute('aria-pressed', String(!navigatorCollapsed))
+  elements.toggleInspector.setAttribute('aria-pressed', String(!inspectorCollapsed))
+  elements.toggleNavigator.disabled = !projection || activePhase === 'handoff'
+  elements.toggleInspector.disabled = !projection
+  elements.toggleNavigator.title = navigatorCollapsed ? 'Show Navigator' : 'Hide Navigator'
+  elements.toggleInspector.title = inspectorCollapsed ? 'Show Inspector' : 'Hide Inspector'
+  elements.toggleNavigator.setAttribute('aria-label', elements.toggleNavigator.title)
+  elements.toggleInspector.setAttribute('aria-label', elements.toggleInspector.title)
+}
+
+function toggleWorkspacePanel(panel) {
+  if (panel === 'navigator' && activePhase !== 'handoff') navigatorCollapsed = !navigatorCollapsed
+  if (panel === 'inspector') inspectorCollapsed = !inspectorCollapsed
+  renderWorkspacePanelVisibility()
+}
+
 function renderAll() {
+  renderWorkspacePanelVisibility()
   elements.phaseButtons.forEach((button) => {
     const active = button.dataset.phase === activePhase
     button.setAttribute('aria-current', active ? 'page' : 'false')
@@ -607,7 +675,7 @@ function renderAll() {
     view.classList.toggle('is-active', active)
     view.setAttribute('aria-hidden', String(!active))
   })
-  elements.deckTitle.textContent = storyDocument?.deckTitle ?? projection?.deckTitle ?? 'No Deck open'
+  elements.deckTitle.textContent = storyDocument?.deckTitle ?? projection?.deckTitle ?? 'No Deck'
   elements.revision.textContent = projection ? `Revision ${projection.revision}` : 'Revision —'
   elements.undo.disabled = !projection?.history?.canUndo
   elements.redo.disabled = !projection?.history?.canRedo

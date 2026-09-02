@@ -45,19 +45,22 @@ for (const [field, expected] of Object.entries(expectedHeadlines)) {
 if (!Number.isInteger(checks.reopenedUndoDepth) || checks.reopenedUndoDepth < 1) {
   throw new Error(`${label}: reopened undo history is unavailable`)
 }
-if (checks.savedRevision !== 11 || checks.reopenSavedRevision !== 13 || checks.finalRevision !== 13) {
+if (checks.savedRevision !== 13 || checks.reopenSavedRevision !== 19 || checks.finalRevision !== 19) {
   throw new Error(`${label}: saved revision sequence mismatch`)
 }
-if (checks.reopenedUndoDepth !== 9 || checks.finalUndoDepth !== 9) {
+if (checks.reopenedUndoDepth !== 11 || checks.finalUndoDepth !== 11) {
   throw new Error(`${label}: structured Story undo history mismatch`)
 }
-if (checks.reopenedStoryRevision !== 11
+if (checks.reopenedStoryRevision !== 13
   || checks.reopenedSectionOrder?.length !== 2
   || checks.reopenedOpeningSlideOrder?.length !== 2
   || checks.reopenedBodyText !== 'A body block.\n\nThat survives design.'
   || checks.reopenedUndoBodyText !== 'A body block that survives design.'
   || checks.reopenedRedoBodyText !== 'A body block.\n\nThat survives design.') {
   throw new Error(`${label}: structured Story replay or history mismatch`)
+}
+if (checks.reopenedAssemblyReady !== true || checks.reopenedAssemblyStyle !== 'text-only') {
+  throw new Error(`${label}: packaged export Assembly was not restored before PDF export`)
 }
 if (checks.theme !== 'dark' || checks.persistedTheme !== 'dark'
   || checks.interfaceScale !== 1.25 || checks.artboardZoom !== 0.5
@@ -141,7 +144,7 @@ for (const entry of canvasPresets.cases) {
     || entry.canvas.height !== expected.height
     || entry.canvas.pageWidthMm !== expected.pageWidthMm
     || entry.canvas.pageHeightMm !== expected.pageHeightMm
-    || entry.designOption?.pattern?.canvasPresetId !== entry.canvas.id
+    || entry.designOption?.planAtCreation?.canvasPresetId !== entry.canvas.id
     || entry.designOption?.canvasReviewRequired !== false
     || pdf.file !== expected.file
     || !Number.isInteger(pdf.bytes)

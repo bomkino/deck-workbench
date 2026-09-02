@@ -10,6 +10,11 @@ function bindHandoffEvents() {
   })
   elements.exportPDF.addEventListener('click', async () => {
     if (!projection || elements.exportPDF.dataset.exporting === 'true') return
+    if (!projection.composition) {
+      renderHandoff()
+      setStatus('AssemblyUnavailable: Open this Slide in 03 Assemble first so Workbench can create its Assembly before export')
+      return
+    }
     const overflowCount = compositionOverflowCountForProjection(projection)
     if (overflowCount > 0) {
       renderHandoff()
@@ -42,13 +47,20 @@ function renderHandoff() {
   const exportLabel = projection
     ? `Export ${projection.slide?.internalTitle ?? projection.headline?.plainText ?? 'active Slide'} as a PDF`
     : 'Export active Slide PDF'
+  const assemblyUnavailable = Boolean(projection && !projection.composition)
   const overflowCount = compositionOverflowCountForProjection(projection)
-  elements.handoffExportState.hidden = overflowCount === 0
-  elements.handoffExportState.textContent = overflowCount
-    ? `${overflowCount} active-Slide element${overflowCount === 1 ? '' : 's'} exceed the authored frame. Shorten the copy or choose another Pattern before export.`
-    : ''
-  elements.exportPDF.disabled = !projection || overflowCount > 0 || elements.exportPDF.dataset.exporting === 'true'
-  elements.exportPDF.title = overflowCount ? 'Fix active-Slide composition overflow before export' : exportLabel
+  elements.handoffExportState.hidden = !assemblyUnavailable && overflowCount === 0
+  elements.handoffExportState.textContent = assemblyUnavailable
+    ? 'Open this Slide in 03 Assemble first so Workbench can create its Assembly before export.'
+    : overflowCount
+      ? `${overflowCount} active-Slide element${overflowCount === 1 ? '' : 's'} exceed the authored frame. Shorten the copy or adjust the Assembly before export.`
+      : ''
+  elements.exportPDF.disabled = !projection || assemblyUnavailable || overflowCount > 0 || elements.exportPDF.dataset.exporting === 'true'
+  elements.exportPDF.title = assemblyUnavailable
+    ? 'Open this Slide in 03 Assemble before export'
+    : overflowCount
+      ? 'Fix active-Slide composition overflow before export'
+      : exportLabel
   elements.exportPDF.setAttribute('aria-label', elements.exportPDF.title)
   elements.handoffSummary.innerHTML = [
     summaryChip(included.length, 'Included'),

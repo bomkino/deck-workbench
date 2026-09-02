@@ -3,9 +3,10 @@ import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
 const workspace = await readFile(new URL('../packages/workspace/app/workspace-core.js', import.meta.url), 'utf8')
+const planWorkspace = await readFile(new URL('../packages/workspace/app/workspace-plan.js', import.meta.url), 'utf8')
 const pureSource = workspace.slice(0, workspace.indexOf('const elements'))
-const { PLAN_FORMAT, PLAN_VERSION, parsePlanMetadata, serializePlanMetadata, planRecordForSlide, planReadiness } = Function(
-  `"use strict"; ${pureSource}; return { PLAN_FORMAT, PLAN_VERSION, parsePlanMetadata, serializePlanMetadata, planRecordForSlide, planReadiness };`,
+const { PLAN_FORMAT, PLAN_VERSION, parsePlanMetadata, serializePlanMetadata, planRecordForSlide, planReadiness, visualStyleFromIntent } = Function(
+  `"use strict"; ${pureSource}; return { PLAN_FORMAT, PLAN_VERSION, parsePlanMetadata, serializePlanMetadata, planRecordForSlide, planReadiness, visualStyleFromIntent };`,
 )()
 
 function slide(overrides = {}) {
@@ -26,9 +27,46 @@ test('schema-1 Slides receive conservative Plan defaults without migration', () 
   assert.equal(metadata.format, PLAN_FORMAT)
   assert.equal(metadata.version, PLAN_VERSION)
   assert.equal(metadata.internalTitle, 'Everything is fine.')
-  assert.equal(metadata.purpose, '')
+  assert.equal(metadata.purpose, 'Unreviewed')
+  assert.equal(metadata.textPresence, 'visible')
   assert.equal(metadata.copyFieldStates.headline, 'present')
   assert.equal(metadata.copyFieldStates.subheadline, 'unreviewed')
+})
+
+test('legacy undecided Slides resolve to Full Bleed without mutating their schema-1 intent', () => {
+  const source = slide({ intent: 'undecided' })
+  const record = planRecordForSlide(source, section)
+  assert.equal(visualStyleFromIntent(source.intent), 'full-bleed')
+  assert.equal(record.visualStyle, 'full-bleed')
+  assert.equal(source.intent, 'undecided')
+  assert.equal(planReadiness(record).state, 'review')
+  assert.equal(planReadiness(record).issues.every((issue) => issue.severity === 'warning'), true)
+})
+
+test('legacy copy outside the Headline still defaults Text presence truthfully', () => {
+  const metadata = parsePlanMetadata(slide({
+    intent: 'undecided',
+    contentBlocks: [
+      { id: 'body-1', semanticKey: 'workbench.copy.body', role: 'body', plainText: 'Body only — 東京' },
+    ],
+  }))
+  assert.equal(metadata.internalTitle, 'Untitled Slide')
+  assert.equal(metadata.purpose, 'Unreviewed')
+  assert.equal(metadata.textPresence, 'visible')
+  assert.deepEqual(metadata.copyFieldStates, {
+    headline: 'unreviewed',
+    subheadline: 'unreviewed',
+    body: 'present',
+  })
+})
+
+test('new Slides persist Full Bleed instead of an undecided placeholder', () => {
+  const addSlideSource = planWorkspace.slice(
+    planWorkspace.indexOf('async function addSlide()'),
+    planWorkspace.indexOf('async function renameSection'),
+  )
+  assert.match(addSlideSource, /intent: 'full-bleed'/)
+  assert.doesNotMatch(addSlideSource, /intent: 'undecided'/)
 })
 
 test('reserved Plan block round-trips intentional blanks, no-text state and stable repeaters', () => {
@@ -59,8 +97,10 @@ test('reserved Plan block round-trips intentional blanks, no-text state and stab
   assert.equal(planReadiness(planRecordForSlide(withBlock, section)).state, 'ready')
 })
 
-test('Plan readiness distinguishes blockers from reviewed intentional absence', () => {
+test('neutral defaults leave truthful copy warnings without blocking Plan progression', () => {
   const unplanned = planRecordForSlide(slide(), section)
-  assert.equal(planReadiness(unplanned).state, 'blocked')
-  assert.match(planReadiness(unplanned).issues[0].message, /Purpose/)
+  assert.equal(planReadiness(unplanned).state, 'review')
+  assert.deepEqual(planReadiness(unplanned).issues, [
+    { severity: 'warning', message: '2 copy fields remain unreviewed' },
+  ])
 })

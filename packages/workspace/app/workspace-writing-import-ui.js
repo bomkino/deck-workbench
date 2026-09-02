@@ -59,10 +59,50 @@ function invalidateWritingImportPreview(message = 'Text changed. Preview these e
 
 function setWritingImportBusy(value) {
   writingImportBusy = value
+  elements.writingImportFile.disabled = value
   elements.writingImportSource.disabled = value
   elements.previewWritingImport.disabled = value
   elements.importWriting.disabled = value || approvedWritingImportSource === null
   elements.cancelWritingImport.disabled = value
+}
+
+async function loadWritingImportFile() {
+  if (writingImportBusy) return false
+  const file = elements.writingImportFile.files?.[0]
+  if (!file) return false
+  elements.writingImportSource.value = ''
+  approvedWritingImportSource = null
+  elements.importWriting.disabled = true
+  if (!file.name.toLowerCase().endsWith('.md')) {
+    invalidateWritingImportPreview('Choose a Workbench Markdown file ending in .md.')
+    elements.writingImportFile.value = ''
+    return false
+  }
+  if (file.size > WorkbenchWritingImport.limits.inputBytes) {
+    invalidateWritingImportPreview(`File exceeds the ${WorkbenchWritingImport.limits.inputBytes}-byte writing-import limit.`)
+    elements.writingImportFile.value = ''
+    return false
+  }
+  setWritingImportBusy(true)
+  elements.writingImportPreview.replaceChildren(textElement('p', `Reading ${file.name} locally…`))
+  try {
+    const bytes = await file.arrayBuffer()
+    if (bytes.byteLength > WorkbenchWritingImport.limits.inputBytes) {
+      throw Object.assign(new Error(`File exceeds the ${WorkbenchWritingImport.limits.inputBytes}-byte writing-import limit.`), { name: 'WritingImportTooLarge' })
+    }
+    const source = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+    elements.writingImportSource.value = source
+    invalidateWritingImportPreview(`Loaded ${file.name} locally. Preview these exact bytes to continue.`)
+    elements.writingImportSource.focus()
+    return true
+  } catch (error) {
+    elements.writingImportSource.value = ''
+    invalidateWritingImportPreview(`${error?.name ?? 'FileReadFailed'}: ${error?.message ?? 'The Markdown file could not be read as UTF-8.'}`)
+    return false
+  } finally {
+    elements.writingImportFile.value = ''
+    setWritingImportBusy(false)
+  }
 }
 
 function previewWritingImport() {
@@ -138,8 +178,9 @@ async function copyConversionPrompt() {
 
 function openWritingImportDialog() {
   if (writingImportBusy) return
+  elements.writingImportFile.value = ''
   elements.writingImportSource.value = ''
-  invalidateWritingImportPreview('Paste writing, then Preview. Import stays locked until these exact bytes pass.')
+  invalidateWritingImportPreview('Paste writing or choose a local .md file, then Preview. Import stays locked until these exact bytes pass.')
   if (!elements.writingImportDialog.open) elements.writingImportDialog.showModal()
   elements.writingImportSource.focus()
 }
@@ -147,6 +188,7 @@ function openWritingImportDialog() {
 function bindWritingImportEvents() {
   elements.copyConversionPrompt.addEventListener('click', () => void copyConversionPrompt())
   elements.openWritingImport.addEventListener('click', openWritingImportDialog)
+  elements.writingImportFile.addEventListener('change', () => void loadWritingImportFile())
   elements.writingImportSource.addEventListener('input', () => invalidateWritingImportPreview())
   elements.previewWritingImport.addEventListener('click', previewWritingImport)
   elements.importWriting.addEventListener('click', () => void importWriting())
@@ -155,6 +197,7 @@ function bindWritingImportEvents() {
   })
   elements.writingImportDialog.addEventListener('close', () => {
     if (writingImportBusy) return
+    elements.writingImportFile.value = ''
     elements.writingImportSource.value = ''
     approvedWritingImportSource = null
   })

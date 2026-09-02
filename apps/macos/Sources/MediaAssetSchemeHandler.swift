@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import ImageIO
 import WebKit
 
 final class MediaAssetSchemeHandler: NSObject, WKURLSchemeHandler {
@@ -35,11 +36,25 @@ final class MediaAssetSchemeHandler: NSObject, WKURLSchemeHandler {
                     Self.finishUnavailable(urlSchemeTask, status: 404)
                     return
                 }
-                let components = url.path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
-                guard components.count == 2,
-                      let assetId = components[0].removingPercentEncoding,
-                      let profile = components[1].removingPercentEncoding,
-                      profile == "grid_standard"
+                guard let encodedPath = URLComponents(
+                    url: url,
+                    resolvingAgainstBaseURL: false
+                )?.percentEncodedPath else {
+                    Self.finishUnavailable(urlSchemeTask, status: 404)
+                    return
+                }
+                let components = encodedPath
+                    .split(separator: "/", omittingEmptySubsequences: false)
+                    .map(String.init)
+                guard components.count == 3,
+                      components[0].isEmpty,
+                      !components[1].isEmpty,
+                      !components[2].isEmpty,
+                      !Self.containsEncodedSlash(components[1]),
+                      !Self.containsEncodedSlash(components[2]),
+                      let assetId = components[1].removingPercentEncoding,
+                      let profile = components[2].removingPercentEncoding,
+                      ["grid_standard", "preview_standard"].contains(profile)
                 else {
                     Self.finishUnavailable(urlSchemeTask, status: 404)
                     return
@@ -50,7 +65,7 @@ final class MediaAssetSchemeHandler: NSObject, WKURLSchemeHandler {
                     profile: profile
                 )
                 try Task.checkCancellation()
-                let png = try Self.gridPNG(source)
+                let png = try Self.previewPNG(source, profile: profile)
                 guard let response = HTTPURLResponse(
                     url: url,
                     statusCode: 200,
@@ -99,47 +114,52 @@ final class MediaAssetSchemeHandler: NSObject, WKURLSchemeHandler {
         lock.unlock()
     }
 
+    private static func containsEncodedSlash(_ component: String) -> Bool {
+        component.range(of: "%2f", options: .caseInsensitive) != nil
+    }
+
     @MainActor
-    private static func gridPNG(_ source: Data) throws -> Data {
-        guard let image = NSImage(data: source),
-              image.isValid,
-              image.size.width > 0,
-              image.size.height > 0,
-              !image.representations.isEmpty,
-              image.representations.allSatisfy({ representation in
-                  let width = representation.pixelsWide
-                  let height = representation.pixelsHigh
-                  return width > 0
-                      && height > 0
-                      && width <= 32_768
-                      && height <= 32_768
-                      && width <= 64_000_000 / height
-              })
+    private static func previewPNG(_ data: Data, profile: String) throws -> Data {
+        let maximumLongestSide: Int
+        let maximumOutputBytes: Int
+        switch profile {
+        case "grid_standard":
+            maximumLongestSide = 512
+            maximumOutputBytes = 8 * 1024 * 1024
+        case "preview_standard":
+            maximumLongestSide = 2048
+            maximumOutputBytes = 32 * 1024 * 1024
+        default:
+            throw WorkbenchFailure(name: "UnsupportedMediaPreview", message: "Unknown media preview profile")
+        }
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              CGImageSourceGetCount(source) > 0,
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue,
+              let height = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue,
+              width > 0,
+              height > 0,
+              width <= 32_768,
+              height <= 32_768,
+              width <= 64_000_000 / height
         else {
             throw WorkbenchFailure(name: "UnsupportedMediaPreview", message: "Image decoding failed")
         }
-        let scale = min(1, 512 / max(image.size.width, image.size.height))
-        let targetSize = NSSize(
-            width: max(1, round(image.size.width * scale)),
-            height: max(1, round(image.size.height * scale))
-        )
-        let rendition = NSImage(size: targetSize)
-        rendition.lockFocus()
-        NSGraphicsContext.current?.imageInterpolation = .high
-        image.draw(
-            in: NSRect(origin: .zero, size: targetSize),
-            from: NSRect(origin: .zero, size: image.size),
-            operation: .copy,
-            fraction: 1
-        )
-        rendition.unlockFocus()
-        guard let tiff = rendition.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: tiff),
-              let png = bitmap.representation(using: .png, properties: [:]),
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: maximumLongestSide,
+        ]
+        guard let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary),
+              thumbnail.width > 0,
+              thumbnail.height > 0,
+              max(thumbnail.width, thumbnail.height) <= maximumLongestSide,
+              let png = NSBitmapImageRep(cgImage: thumbnail).representation(using: .png, properties: [:]),
               !png.isEmpty,
-              png.count <= 8 * 1024 * 1024
+              png.count <= maximumOutputBytes
         else {
-            throw WorkbenchFailure(name: "UnsupportedMediaPreview", message: "Image rendering failed")
+            throw WorkbenchFailure(name: "UnsupportedMediaPreview", message: "Image rendering failed or exceeded output limits")
         }
         return png
     }

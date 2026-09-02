@@ -276,7 +276,7 @@ function canvasPresetEvidence() {
       const bytes = canvasPresetPDFBytes(index)
       return {
         canvas: { id, width, height, pageWidthMm, pageHeightMm },
-        designOption: { pattern: { canvasPresetId: id }, canvasReviewRequired: false },
+        designOption: { planAtCreation: { canvasPresetId: id }, canvasReviewRequired: false },
         pdf: {
           file,
           bytes: bytes.byteLength,
@@ -331,7 +331,7 @@ const [
 
 test('Linux package pins and notices the exact Electron production runtime', () => {
   assert.equal(packageJSON.dependencies.electron, '44.0.0')
-  assert.equal(packageJSON.version, '0.0.4')
+  assert.equal(packageJSON.version, '0.0.5')
   assert.equal(lockJSON.version, packageJSON.version)
   assert.equal(runtimePackage.version, packageJSON.version)
   assert.equal(lockJSON.packages['node_modules/electron'].version, '44.0.0')
@@ -435,17 +435,19 @@ test('journey evidence accepts distinct process instances and rejects a reused i
       reopenedHeadline: 'Linux Story Traced',
       reopenedUndoHeadline: 'Linux Story Traced',
       reopenedRedoHeadline: 'Linux Story Traced',
-      reopenedUndoDepth: 9,
-      finalRevision: 13,
-      finalUndoDepth: 9,
-      savedRevision: 11,
-      reopenSavedRevision: 13,
-      reopenedStoryRevision: 11,
+      reopenedUndoDepth: 11,
+      finalRevision: 19,
+      finalUndoDepth: 11,
+      savedRevision: 13,
+      reopenSavedRevision: 19,
+      reopenedStoryRevision: 13,
       reopenedSectionOrder: ['section-two', 'section-one'],
       reopenedOpeningSlideOrder: ['slide-one', 'slide-two'],
       reopenedBodyText: 'A body block.\n\nThat survives design.',
       reopenedUndoBodyText: 'A body block that survives design.',
       reopenedRedoBodyText: 'A body block.\n\nThat survives design.',
+      reopenedAssemblyReady: true,
+      reopenedAssemblyStyle: 'text-only',
       theme: 'dark',
       interfaceScale: 1.25,
       artboardZoom: 0.5,

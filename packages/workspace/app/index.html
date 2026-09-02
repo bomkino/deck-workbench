@@ -27,12 +27,18 @@
     <main class="workbench" aria-label="Deck Workbench Editorial Desk" aria-busy="false" tabindex="-1">
       <header class="toolbar">
         <div class="brand-cluster">
-          <img class="brand-mark" src="workbench-mark.svg" alt="" role="presentation" aria-hidden="true" width="58" height="58" />
+          <img class="brand-mark" src="workbench-mark.svg" alt="" role="presentation" aria-hidden="true" draggable="false" width="58" height="58" />
+          <div class="toolbar-leading-actions" role="group" aria-label="Navigation and history">
+            <button id="toggle-navigator" class="icon-button" type="button" aria-pressed="true" aria-controls="phase-workspaces" aria-label="Toggle Navigator" title="Toggle Navigator"><span class="phosphor-icon" aria-hidden="true">&#xEAB6;</span></button>
+            <span class="toolbar-divider" aria-hidden="true"></span>
+            <button id="undo" class="icon-button" type="button" disabled aria-label="Undo" title="Undo"><span class="phosphor-icon" aria-hidden="true">&#xE038;</span></button>
+            <button id="redo" class="icon-button" type="button" disabled aria-label="Redo" title="Redo"><span class="phosphor-icon" aria-hidden="true">&#xE036;</span></button>
+          </div>
           <div class="brand-copy">
             <p class="eyebrow">pitch.dog / Deck Workbench</p>
             <div class="deck-title-row">
-              <h1 id="deck-title">No Deck open</h1>
-              <button id="rename-deck" class="quiet-action" type="button" disabled>Rename</button>
+              <h1 id="deck-title">No Deck</h1>
+              <button id="rename-deck" class="quiet-action icon-button" type="button" disabled aria-label="Rename Deck" title="Rename Deck"><span class="phosphor-icon" aria-hidden="true">&#xE1FE;</span></button>
             </div>
           </div>
         </div>
@@ -44,32 +50,34 @@
           <button type="button" data-phase="handoff"><span>04</span><strong>Handoff</strong><small>Review + PDF proof</small></button>
         </nav>
 
-        <div class="toolbar-actions" aria-label="History and interface controls">
-          <div class="history-actions" role="group" aria-label="History">
-            <button id="undo" class="icon-button" type="button" disabled aria-label="Undo" title="Undo"><span class="phosphor-icon" aria-hidden="true">&#xE038;</span></button>
-            <button id="redo" class="icon-button" type="button" disabled aria-label="Redo" title="Redo"><span class="phosphor-icon" aria-hidden="true">&#xE036;</span></button>
-          </div>
-          <label class="theme-control">
-            <span>Theme</span>
-            <select id="theme" aria-label="Theme">
-              <option value="system">System</option>
-              <option value="light">Light</option>
-              <option value="dark">Dark</option>
-            </select>
-          </label>
-          <label class="interface-control">
-            <span>Interface</span>
-            <select id="interface-scale" aria-label="Interface Scale">
-              <option value="0.8">80%</option>
-              <option value="0.9">90%</option>
-              <option value="1">100%</option>
-              <option value="1.1">110%</option>
-              <option value="1.25">125%</option>
-              <option value="1.5">150%</option>
-              <option value="1.75">175%</option>
-            </select>
-          </label>
-          <p id="save-state" role="status" aria-live="polite" aria-atomic="true">No document session</p>
+        <div class="toolbar-actions" aria-label="Inspector and interface controls">
+          <button id="toggle-inspector" class="icon-button" type="button" aria-pressed="true" aria-controls="phase-workspaces" aria-label="Toggle Inspector" title="Toggle Inspector"><span class="phosphor-icon inspector-icon" aria-hidden="true">&#xEAB6;</span></button>
+          <details class="appearance-control">
+            <summary aria-label="Appearance" title="Appearance"><span class="phosphor-icon" aria-hidden="true">&#xE434;</span><span class="visually-hidden">Appearance</span></summary>
+            <div class="appearance-panel">
+              <label class="theme-control">
+                <span>Theme</span>
+                <select id="theme" aria-label="Theme">
+                  <option value="system">System</option>
+                  <option value="light">Light</option>
+                  <option value="dark">Dark</option>
+                </select>
+              </label>
+              <label class="interface-control">
+                <span>Interface</span>
+                <select id="interface-scale" aria-label="Interface Scale">
+                  <option value="0.8">80%</option>
+                  <option value="0.9">90%</option>
+                  <option value="1">100%</option>
+                  <option value="1.1">110%</option>
+                  <option value="1.25">125%</option>
+                  <option value="1.5">150%</option>
+                  <option value="1.75">175%</option>
+                </select>
+              </label>
+            </div>
+          </details>
+          <p id="save-state" role="status" aria-live="polite" aria-atomic="true" hidden>No document session</p>
         </div>
       </header>
 
@@ -182,7 +190,6 @@
               <label>
                 <span>Visual Style</span>
                 <select id="slide-intent" disabled>
-                  <option value="undecided">Undecided</option>
                   <option value="text-only">Text Only</option>
                   <option value="full-bleed">Full Bleed</option>
                   <option value="full-bleed-overlay">Full Bleed + Overlay</option>
@@ -223,7 +230,10 @@
 
               <footer class="plan-actions">
                 <button id="cut-slide" class="quiet-action" type="button">Move to Cut Bin</button>
-                <button id="save-plan" class="primary-action" type="submit" disabled>Save Slide plan</button>
+                <div class="plan-save-actions">
+                  <button id="save-plan" type="submit" disabled>Save Slide plan</button>
+                  <button id="save-plan-and-curate" class="primary-action" type="button" disabled>Save &amp; continue to Curate</button>
+                </div>
               </footer>
             </form>
           </aside>
@@ -318,21 +328,25 @@
                   </div>
                 </details>
               </div>
-              <div class="slide-media-actions" role="group" aria-label="Current-Slide Asset decision">
-                <span class="action-scope">For this Slide</span>
-                <button id="preview-media" type="button" disabled aria-keyshortcuts="Space">Preview</button>
-                <button id="shortlist-media" type="button" disabled aria-keyshortcuts="S">Shortlist</button>
-                <button id="assign-primary-media" class="primary-action" type="button" disabled aria-keyshortcuts="M">Assign to slot</button>
-                <button id="alternate-media" type="button" disabled aria-keyshortcuts="A">Use as alternate</button>
-                <button id="reject-slide-media" class="danger-action" type="button" disabled aria-keyshortcuts="X">Reject for Slide</button>
-                <button id="clear-slide-media" class="quiet-action" type="button" disabled aria-keyshortcuts="Shift+X">Clear Slide choice</button>
-                <button id="toggle-compare-media" type="button" disabled aria-pressed="false">Compare choice</button>
-                <button id="open-media-compare" type="button" disabled aria-keyshortcuts="C">Compare <span id="compare-count">0</span></button>
+              <div class="slide-media-decision" role="group" aria-label="Current-Slide Asset decision">
+                <div class="slide-primary-action" role="group" aria-label="Primary Asset for this Slide">
+                  <span class="action-scope">For this Slide</span>
+                  <button id="assign-primary-media" class="primary-action" type="button" disabled aria-keyshortcuts="M">Use as Primary</button>
+                </div>
+                <div class="slide-media-actions" role="group" aria-label="Other current-Slide Asset decisions">
+                  <button id="preview-media" type="button" disabled aria-keyshortcuts="Space">Preview</button>
+                  <button id="shortlist-media" type="button" disabled aria-keyshortcuts="S">Shortlist</button>
+                  <button id="alternate-media" type="button" disabled aria-keyshortcuts="A">Use as alternate</button>
+                  <button id="reject-slide-media" class="danger-action" type="button" disabled aria-keyshortcuts="X">Reject for Slide</button>
+                  <button id="clear-slide-media" class="quiet-action" type="button" disabled aria-keyshortcuts="Shift+X">Clear Slide choice</button>
+                  <button id="toggle-compare-media" type="button" disabled aria-pressed="false">Compare choice</button>
+                  <button id="open-media-compare" type="button" disabled aria-keyshortcuts="C">Compare <span id="compare-count">0</span></button>
+                </div>
               </div>
             </div>
 
             <div class="media-grid-shell">
-              <p id="media-keyboard-help" class="visually-hidden">Arrow keys navigate media. Space opens Preview. S shortlists. M assigns the next open primary slot. A adds an Alternate. X rejects only for this Slide. Shift X clears the current-Slide decision. Number keys zero through five set the project rating. N moves to the next unresolved Slide. P moves to the previous Slide. Plus and minus change thumbnail density. C opens Compare.</p>
+              <p id="media-keyboard-help" class="visually-hidden">Arrow keys navigate media. Double-click or M uses the focused Asset in the named Primary slot. Space opens Preview. S shortlists. A adds an Alternate. X rejects only for this Slide. Shift X clears the current-Slide decision. Number keys zero through five set the project rating. N moves to the next unresolved Slide. P moves to the previous Slide. Plus and minus change thumbnail density. C opens Compare.</p>
               <div id="media-focus-owner" class="media-focus-owner" tabindex="0" role="listbox" aria-label="Project media keyboard navigation" aria-describedby="media-keyboard-help">No media loaded</div>
               <div id="media-scroll" class="media-scroll" tabindex="-1">
                 <div id="media-canvas" class="media-canvas"></div>
@@ -346,6 +360,10 @@
               <div><p class="panel-label">Selected Slide</p><h2 id="curate-brief-heading">No Slide selected</h2></div>
             </div>
             <div id="curate-brief-content" class="curate-brief-content"></div>
+            <nav class="curate-phase-actions" aria-label="Curate phase navigation">
+              <button id="curate-back" type="button">Back to Plan</button>
+              <button id="curate-next" class="primary-action" type="button">Continue to Assemble</button>
+            </nav>
             <details id="find-more-panel" class="find-more-panel">
               <summary id="find-more-summary-trigger"><span class="disclosure-label"><span class="phosphor-icon disclosure-caret" aria-hidden="true">&#xE136;</span><span>Find more media</span></span><strong id="find-more-summary">Not needed</strong></summary>
               <form id="find-more-form" class="find-more-form">
@@ -358,6 +376,7 @@
           </aside>
 
           <footer class="curate-tray panel" aria-label="Selected Slide media tray">
+            <section aria-labelledby="project-pick-tray-heading"><div class="tray-heading"><strong id="project-pick-tray-heading">Project picks</strong></div><div id="project-pick-tray" class="tray-items"></div></section>
             <section aria-labelledby="primary-tray-heading"><div class="tray-heading"><strong id="primary-tray-heading">Primary slots</strong><span id="slot-progress">0/0</span></div><div id="primary-tray" class="tray-items"></div></section>
             <section aria-labelledby="alternate-tray-heading"><div class="tray-heading"><strong id="alternate-tray-heading">Alternates</strong></div><div id="alternate-tray" class="tray-items"></div></section>
             <section aria-labelledby="shortlist-tray-heading"><div class="tray-heading"><strong id="shortlist-tray-heading">Slide shortlist</strong></div><div id="shortlist-tray" class="tray-items"></div></section>
@@ -377,12 +396,15 @@
                 <option value="a4-portrait">A4 · Portrait</option>
                 <option value="letter-portrait">US Letter · Portrait</option>
               </select></label>
-              <button id="apply-canvas" type="button" disabled>Apply canvas</button>
+              <button id="apply-canvas" type="button" disabled>Apply to Deck</button>
               <label><span>Artboard</span><input id="artboard-zoom" type="range" min="0.15" max="0.8" step="0.05" value="0.65" aria-label="Artboard Zoom" /></label>
               <span id="zoom-label">65%</span>
               <button id="fit-artboard" type="button" aria-label="Fit Artboard to Stage">Fit</button>
+              <button id="assembly-back" type="button">Back to Curate</button>
+              <button id="assembly-next" class="primary-action" type="button">Continue to Handoff</button>
             </div>
           </header>
+          <nav id="assembly-slide-rail" class="assembly-slide-rail panel" aria-label="Assembly Slides"></nav>
           <div class="stage-scroll" id="stage-scroll">
             <div class="artboard-shell" id="artboard-shell">
               <article class="artboard" id="artboard" aria-label="Projected Slide">
@@ -397,14 +419,15 @@
           </div>
           <aside class="assembly-controls panel" aria-label="Assembly controls">
             <section>
-              <h3>Starter Pattern</h3>
+              <h3>Assembly source</h3>
+              <p id="assembly-layout-source" class="assembly-layout-source">Choose a saved Visual Style in 01 Plan.</p>
+              <button id="edit-assembly-plan" type="button">Edit Visual Style in Plan</button>
+              <button id="rebuild-assembly" type="button" hidden>Rebuild from current Plan</button>
               <p id="assembly-overflow-state" class="assembly-overflow-state" role="status" aria-live="polite" hidden></p>
-              <label><span>Pattern</span><select id="pattern-choice" disabled><option value="cover">Cover</option><option value="full-bleed-statement">Full-bleed Statement</option><option value="editorial-body">Editorial Body</option></select></label>
-              <label><span>Body binding</span><select id="pattern-body-block" disabled></select></label>
-              <button id="apply-pattern" class="primary-action" type="button" disabled>Apply new Assembly</button>
             </section>
             <section>
               <h3>Element</h3>
+              <p class="assembly-help">Drag any selected element to move it. Use its corner to resize. Arrow keys nudge; Shift moves 10 units.</p>
               <label><span>Selected Element</span><select id="visual-element" disabled></select></label>
               <div class="align-actions" role="group" aria-label="Align selected Element">
                 <button type="button" data-align="left" disabled>Left</button>
@@ -412,8 +435,54 @@
                 <button type="button" data-align="right" disabled>Right</button>
               </div>
             </section>
+            <fieldset id="text-controls" class="text-controls" disabled>
+              <legend>Text size</legend>
+              <div class="segmented-control" role="group" aria-label="Selected text size">
+                <button type="button" data-text-size="small" aria-pressed="false">Small</button>
+                <button type="button" data-text-size="medium" aria-pressed="true">Medium</button>
+                <button type="button" data-text-size="large" aria-pressed="false">Large</button>
+              </div>
+            </fieldset>
+            <fieldset id="image-controls" class="image-controls" disabled>
+              <legend>Image</legend>
+              <span class="control-label">Frame</span>
+              <div class="segmented-control" role="group" aria-label="Selected image fit">
+                <button type="button" data-image-fit="fill" aria-pressed="true">Fill</button>
+                <button type="button" data-image-fit="fit" aria-pressed="false">Fit</button>
+              </div>
+              <p class="assembly-help">Images always keep their original proportions. Fill crops; Fit shows the whole image. In Fill, drag a full-bleed image or its centre crosshair to pan the source.</p>
+              <div class="assembly-swap-heading"><span class="control-label">Swap this slot</span><small id="image-swap-role">No image selected</small></div>
+              <div id="image-swap-candidates" class="image-swap-candidates" aria-label="Shortlisted images for selected slot"></div>
+            </fieldset>
+            <fieldset id="gradient-controls" class="gradient-controls" disabled>
+              <legend>Gradient</legend>
+              <button id="edit-gradient" type="button" disabled>Edit gradient on canvas</button>
+              <details class="gradient-advanced">
+                <summary>Advanced gradient</summary>
+                <div class="gradient-advanced-body">
+                  <span class="control-label">Direction</span>
+                  <div class="gradient-directions" role="group" aria-label="Gradient direction">
+                    <button type="button" data-gradient-direction="right" aria-label="Fade right">&#x2192;</button>
+                    <button type="button" data-gradient-direction="down-right" aria-label="Fade down and right">&#x2198;</button>
+                    <button type="button" data-gradient-direction="down" aria-label="Fade down">&#x2193;</button>
+                    <button type="button" data-gradient-direction="down-left" aria-label="Fade down and left">&#x2199;</button>
+                    <button type="button" data-gradient-direction="left" aria-label="Fade left">&#x2190;</button>
+                    <button type="button" data-gradient-direction="up-left" aria-label="Fade up and left">&#x2196;</button>
+                    <button type="button" data-gradient-direction="up" aria-label="Fade up">&#x2191;</button>
+                    <button type="button" data-gradient-direction="up-right" aria-label="Fade up and right">&#x2197;</button>
+                  </div>
+                  <label><span>Strength <output id="gradient-strength-output" for="gradient-strength">78%</output></span><input id="gradient-strength" type="range" min="0" max="100" step="1" value="78" /></label>
+                  <div class="form-row two-up">
+                    <label><span>Start colour</span><input id="gradient-start-color" type="color" value="#000000" /></label>
+                    <label><span>Fade colour</span><input id="gradient-end-color" type="color" value="#000000" /></label>
+                  </div>
+                  <p class="assembly-help">Choose a direction, then drag the two handles on the Slide for exact placement.</p>
+                </div>
+              </details>
+            </fieldset>
             <fieldset class="crop-controls" disabled>
               <legend>Image crop · percent</legend>
+              <p id="crop-help" class="assembly-help">Fill crops the source proportionally. Drag the image for the intuitive path, or enter exact percentages here.</p>
               <label><span>Left</span><input id="crop-x" type="number" min="0" max="100" step="1" value="0" inputmode="decimal" /></label>
               <label><span>Top</span><input id="crop-y" type="number" min="0" max="100" step="1" value="0" inputmode="decimal" /></label>
               <label><span>Width</span><input id="crop-width" type="number" min="1" max="100" step="1" value="100" inputmode="decimal" /></label>
@@ -445,11 +514,27 @@
 
       <dialog id="media-preview" class="media-dialog media-preview-dialog" aria-labelledby="preview-media-title">
         <form method="dialog">
-          <header class="media-dialog-heading"><div><p class="panel-label">Media Preview</p><h2 id="preview-media-title">Asset</h2></div><button type="submit" value="cancel" aria-label="Close Preview">Close</button></header>
+          <header class="media-dialog-heading"><div><p class="panel-label">Media Preview</p><h2 id="preview-media-title">Asset</h2></div><div class="preview-navigation"><button id="preview-media-previous" type="button" aria-label="Previous image">Previous</button><button id="preview-media-next" type="button" aria-label="Next image">Next</button><button type="submit" value="cancel" aria-label="Close Preview">Close</button></div></header>
           <div class="media-preview-layout">
-            <div class="media-preview-stage"><img id="preview-media-image" alt="" hidden /><p id="preview-capability-state">Preview unavailable.</p></div>
-            <aside id="preview-media-details" class="preview-media-details"></aside>
+            <div class="media-preview-stage"><img id="preview-media-image" alt="" draggable="false" hidden /><p id="preview-capability-state">Preview unavailable.</p></div>
+            <aside class="preview-media-sidebar">
+              <div id="preview-media-details" class="preview-media-details"></div>
+              <div class="preview-media-actions">
+                <fieldset id="preview-rating"><legend>Rating</legend><div class="preview-rating-buttons" role="group" aria-label="Project rating"><button type="button" data-preview-rating="0">None</button><button type="button" data-preview-rating="1" aria-label="1 star">&#x2605;</button><button type="button" data-preview-rating="2" aria-label="2 stars">&#x2605;&#x2605;</button><button type="button" data-preview-rating="3" aria-label="3 stars">&#x2605;&#x2605;&#x2605;</button><button type="button" data-preview-rating="4" aria-label="4 stars">&#x2605;&#x2605;&#x2605;&#x2605;</button><button type="button" data-preview-rating="5" aria-label="5 stars">&#x2605;&#x2605;&#x2605;&#x2605;&#x2605;</button></div></fieldset>
+                <button id="preview-project-pick" type="button">Project Pick</button>
+                <button id="preview-shortlist" type="button">Shortlist for this Slide</button>
+                <button id="preview-alternate" type="button">Use as alternate</button>
+                <button id="preview-assign" class="primary-action" type="button">Assign to Slide…</button>
+              </div>
+            </aside>
           </div>
+        </form>
+      </dialog>
+
+      <dialog id="media-assignment-dialog" class="media-dialog media-assignment-dialog" aria-labelledby="media-assignment-heading">
+        <form method="dialog">
+          <header class="media-dialog-heading"><div><p class="panel-label">Assign image</p><h2 id="media-assignment-heading">Choose a Slide and slot</h2></div><button id="cancel-media-assignment" type="submit" value="cancel">Cancel</button></header>
+          <div class="media-assignment-content"><p id="media-assignment-asset"></p><div id="media-assignment-targets" class="media-assignment-targets"></div></div>
         </form>
       </dialog>
 
@@ -463,7 +548,7 @@
       <div id="media-context-menu" class="media-context-menu" role="menu" aria-label="Asset actions" hidden>
         <button type="button" role="menuitem" data-media-context-action="preview">Open Preview</button>
         <button type="button" role="menuitem" data-media-context-action="shortlist">Shortlist for this Slide</button>
-        <button type="button" role="menuitem" data-media-context-action="primary">Assign to next open primary slot</button>
+        <button type="button" role="menuitem" data-media-context-action="assign">Assign to Slide…</button>
         <button type="button" role="menuitem" data-media-context-action="alternate">Add as Alternate</button>
         <button type="button" role="menuitem" data-media-context-action="reject">Reject for this Slide</button>
         <button type="button" role="menuitem" data-media-context-action="clear">Clear current-Slide decision</button>
@@ -489,10 +574,16 @@
             <div><p class="panel-label">Workbench Markdown v1</p><h2 id="writing-import-heading">Import writing</h2></div>
             <button id="cancel-writing-import" type="submit" value="cancel">Cancel</button>
           </header>
-          <label class="writing-import-source">
-            <span>Paste the contents of a Workbench Markdown `.md` file here. Workbench does not upload the file.</span>
-            <textarea id="writing-import-source" rows="18" spellcheck="false" autocomplete="off"></textarea>
-          </label>
+          <section class="writing-import-source" aria-labelledby="writing-import-source-help">
+            <div class="writing-import-source-heading">
+              <span id="writing-import-source-help">Paste the contents of a Workbench Markdown `.md` file here. Workbench does not upload the file.</span>
+              <label class="writing-import-file-action">
+                <span>Choose `.md`…</span>
+                <input id="writing-import-file" type="file" accept=".md,text/markdown,text/plain" aria-label="Choose a Workbench Markdown file" />
+              </label>
+            </div>
+            <textarea id="writing-import-source" rows="18" spellcheck="false" autocomplete="off" aria-labelledby="writing-import-source-help"></textarea>
+          </section>
           <section id="writing-import-preview" class="writing-import-preview" aria-live="polite">
             <p>Paste writing, then Preview. Import stays locked until these exact bytes pass.</p>
           </section>

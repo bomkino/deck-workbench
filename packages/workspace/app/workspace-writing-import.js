@@ -360,7 +360,7 @@
       }
 
       if (line.startsWith('Version:')) {
-        addError(lineNumber, 'Unknown top-level field Version; v0.0.4 requires Format only')
+        addError(lineNumber, 'Unknown top-level field Version; Workbench Markdown v1 requires Format only')
         continue
       }
 

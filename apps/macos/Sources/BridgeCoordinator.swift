@@ -1,10 +1,11 @@
 import AppKit
 import Foundation
 import PDFKit
+import UniformTypeIdentifiers
 import WebKit
 
 @MainActor
-final class BridgeCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WorkspaceProjectionSink {
+final class BridgeCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate, WorkspaceProjectionSink {
     private weak var webView: WKWebView?
     private let controller: DeckSessionController
     private var loadContinuation: CheckedContinuation<Void, Error>?
@@ -36,6 +37,9 @@ final class BridgeCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDel
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if let container = webView.superview as? WorkbenchWebContainer {
+            WorkbenchWindowChrome.synchronizeWindowControlInset(for: container)
+        }
         loadContinuation?.resume()
         loadContinuation = nil
         Task { await controller.workspaceBecameReady() }
@@ -48,6 +52,29 @@ final class BridgeCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDel
     ) {
         let allowed = navigationAction.request.url?.scheme == "pitchdog-ui"
         decisionHandler(allowed ? .allow : .cancel)
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        runOpenPanelWith parameters: WKOpenPanelParameters,
+        initiatedByFrame frame: WKFrameInfo,
+        completionHandler: @escaping ([URL]?) -> Void
+    ) {
+        let panel = NSOpenPanel()
+        panel.title = "Choose Workbench Markdown"
+        panel.prompt = "Choose"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [UTType(filenameExtension: "md", conformingTo: .plainText) ?? .plainText]
+        let complete: (NSApplication.ModalResponse) -> Void = { response in
+            completionHandler(response == .OK ? panel.urls : nil)
+        }
+        if let window = webView.window {
+            panel.beginSheetModal(for: window, completionHandler: complete)
+        } else {
+            panel.begin(completionHandler: complete)
+        }
     }
 
     func renderProjection(_ projection: [String: Any]) async throws {
@@ -118,6 +145,10 @@ final class BridgeCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDel
             }
             if errorName == "ExportStale" {
                 throw WorkbenchFailure(name: errorName, message: "The active Slide changed while preparing export")
+            }
+            if errorName == "AssemblyUnavailable" || errorName == "AssemblyMediaUnavailable" {
+                let message = frame["message"] as? String ?? "The active Slide Assembly is unavailable for export"
+                throw WorkbenchFailure(name: errorName, message: message)
             }
         }
         guard let frame = rawFrame as? [String: Any],

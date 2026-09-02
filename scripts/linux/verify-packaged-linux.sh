@@ -111,7 +111,7 @@ if (identity.repository !== 'bomkino/deck-workbench') throw new Error('Repositor
 if (identity.commit !== expectedCommit) throw new Error(`Commit identity mismatch: ${identity.commit}`)
 if (identity.platform !== 'linux' || identity.architecture !== 'x86_64') throw new Error('Platform identity mismatch')
 if (identity.electron !== '44.0.0') throw new Error('Electron identity mismatch')
-if (identity.version !== '0.0.4') throw new Error('Application version mismatch')
+if (identity.version !== '0.0.5') throw new Error('Application version mismatch')
 NODE
 
 run_two_phase_journey() {

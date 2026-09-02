@@ -1,4 +1,4 @@
-function selectedPlanRecord() {
+selectedPlanRecord = function selectedPlanRecordWithProjectionFallback() {
   const location = findStoryLocation(selectedSlideId)
   if (location) return planRecordForSlide(location.slide, location.section)
   if (projection?.slide?.id !== selectedSlideId) return null
@@ -249,6 +249,8 @@ function bindWorkspaceEvents() {
   elements.phaseButtons.forEach((button) => button.addEventListener('click', () => void enterPhaseForSlide(button.dataset.phase)))
   elements.undo.addEventListener('click', () => historyAction('undo'))
   elements.redo.addEventListener('click', () => historyAction('redo'))
+  elements.toggleNavigator.addEventListener('click', () => toggleWorkspacePanel('navigator'))
+  elements.toggleInspector.addEventListener('click', () => toggleWorkspacePanel('inspector'))
   elements.theme.addEventListener('change', async () => {
     try {
       const result = await window.deckBridge.setTheme({ value: elements.theme.value })
@@ -320,8 +322,10 @@ async function boot() {
   } catch (error) {
     applyScales()
     renderAll()
+    const errorMessage = String(error?.message ?? '')
     const documentUnavailable = error?.name === 'DocumentUnavailable'
-      || String(error?.message ?? '').includes('DocumentUnavailable:')
+      || (error?.name === 'KernelUnavailable' && errorMessage.includes('No Deck is open'))
+      || errorMessage.includes('DocumentUnavailable:')
     const message = documentUnavailable
       ? 'No document session'
       : `${error?.name ?? 'Error'}: ${error?.message ?? 'Workbench could not load'}`
@@ -366,48 +370,59 @@ window.deckWorkbench = Object.freeze({
     if (!['native', 'linux'].includes(mode)) throw new RangeError('Unknown workspace export mode')
     if (workspaceExportSession || workspaceExportPreparing) return { error: 'ExportBusy' }
     workspaceExportPreparing = true
-    const exportProjection = projection
+    const returnPhase = activePhase
+    let exportSurfaceStarted = false
     try {
+      const preparation = await prepareAssemblyForExport(projection)
+      if (preparation?.error) return preparation
+      const exportProjection = preparation?.projection
+      if (!exportProjection || projection !== exportProjection) return { error: 'ExportStale' }
       await (document.fonts?.ready ?? Promise.resolve())
-      document.documentElement.getBoundingClientRect()
       if (projection !== exportProjection) return { error: 'ExportStale' }
       const overflowCount = compositionOverflowCountForProjection(exportProjection)
       if (overflowCount > 0) return { error: 'CompositionOverflow', overflowCount }
-    } finally {
-      workspaceExportPreparing = false
-    }
-    const token = String(++workspaceExportSequence)
-    const returnPhase = activePhase
-    let rect
-    try {
+
+      const token = String(++workspaceExportSequence)
+      exportSurfaceStarted = true
       activePhase = 'assemble'
       renderAll()
       elements.workbench.inert = true
       document.documentElement.dataset.workspaceExport = mode
-      rect = elements.artboard.getBoundingClientRect()
+      if (!await waitForAssemblyImageDecode(exportProjection)) {
+        return {
+          error: 'AssemblyMediaUnavailable',
+          message: 'Assigned media did not load completely; PDF export was not started',
+        }
+      }
+      document.documentElement.getBoundingClientRect()
+      if (projection !== exportProjection) return { error: 'ExportStale' }
+      const rect = elements.artboard.getBoundingClientRect()
       if (![rect.x, rect.y, rect.width, rect.height].every(Number.isFinite) || rect.width <= 0 || rect.height <= 0) {
         throw new RangeError('Slide export frame is invalid')
       }
-    } catch (error) {
-      delete document.documentElement.dataset.workspaceExport
-      elements.workbench.inert = false
-      activePhase = returnPhase
-      try { renderAll() } catch {}
-      throw error
-    }
-    workspaceExportSession = { token, returnPhase }
-    const exportCanvas = exportProjection.canvas
-    return {
-      token,
-      x: rect.x,
-      y: rect.y,
-      width: rect.width,
-      height: rect.height,
-      canvasPresetId: exportCanvas.id ?? 'cinemascope-2576x1080',
-      canvasWidth: exportCanvas.width,
-      canvasHeight: exportCanvas.height,
-      pageWidthMm: Number.isFinite(exportCanvas.pageWidthMm) ? exportCanvas.pageWidthMm : exportCanvas.width / 10,
-      pageHeightMm: Number.isFinite(exportCanvas.pageHeightMm) ? exportCanvas.pageHeightMm : exportCanvas.height / 10,
+      workspaceExportSession = { token, returnPhase }
+      exportSurfaceStarted = false
+      const exportCanvas = exportProjection.canvas
+      return {
+        token,
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+        canvasPresetId: exportCanvas.id ?? 'cinemascope-2576x1080',
+        canvasWidth: exportCanvas.width,
+        canvasHeight: exportCanvas.height,
+        pageWidthMm: Number.isFinite(exportCanvas.pageWidthMm) ? exportCanvas.pageWidthMm : exportCanvas.width / 10,
+        pageHeightMm: Number.isFinite(exportCanvas.pageHeightMm) ? exportCanvas.pageHeightMm : exportCanvas.height / 10,
+      }
+    } finally {
+      workspaceExportPreparing = false
+      if (exportSurfaceStarted && !workspaceExportSession) {
+        delete document.documentElement.dataset.workspaceExport
+        elements.workbench.inert = false
+        activePhase = returnPhase
+        try { renderAll() } catch {}
+      }
     }
   },
   finishExport(token) {

@@ -181,17 +181,21 @@ private enum MediaFilesystem {
         )
     }
 
+    static func canonicalPath(_ path: String) throws -> String {
+        guard let pointer = path.withCString({ Darwin.realpath($0, nil) }) else {
+            throw WorkbenchFailure(name: "MediaRootUnavailable", message: "The selected media path is unavailable or unsafe")
+        }
+        defer { free(pointer) }
+        return String(cString: pointer)
+    }
+
     static func authorizeDirectory(_ url: URL) throws -> AuthorizedMediaRoot {
         let requested = url.standardizedFileURL.path
         let requestedMetadata = try metadata(requested)
         guard requestedMetadata.isDirectory, !requestedMetadata.isSymbolicLink else {
             throw WorkbenchFailure(name: "MediaRootUnavailable", message: "The selected media Root is unavailable or unsafe")
         }
-        guard let pointer = requested.withCString({ Darwin.realpath($0, nil) }) else {
-            throw WorkbenchFailure(name: "MediaRootUnavailable", message: "The selected media Root is unavailable or unsafe")
-        }
-        defer { free(pointer) }
-        let canonicalPath = String(cString: pointer)
+        let canonicalPath = try MediaFilesystem.canonicalPath(requested)
         let canonicalMetadata = try metadata(canonicalPath)
         guard canonicalMetadata.isDirectory else {
             throw WorkbenchFailure(name: "MediaRootUnavailable", message: "The selected media Root is unavailable or unsafe")
@@ -419,6 +423,10 @@ private final class MacMediaGrantStore {
 }
 
 actor MediaCatalogSession {
+    private static let javaScriptURIComponentAllowed = CharacterSet(
+        charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.!~*'()"
+    )
+
     private let packageURL: URL
     private let deckId: String
     private let grants: MacMediaGrantStore
@@ -566,7 +574,7 @@ actor MediaCatalogSession {
         guard lease.matches(nonce) else {
             throw WorkbenchFailure(name: "StaleMediaSession", message: "This media resource session is no longer active")
         }
-        guard profile == "grid_standard" else {
+        guard ["grid_standard", "preview_standard"].contains(profile) else {
             throw WorkbenchFailure(name: "UnsupportedMediaPreview", message: "Unknown media preview profile")
         }
         guard let asset = catalog.assets.first(where: { $0.id == assetId }) else {
@@ -575,7 +583,7 @@ actor MediaCatalogSession {
         guard asset.availability == "available",
               ["still-image", "animated-image"].contains(asset.previewCapability)
         else {
-            throw WorkbenchFailure(name: "UnsupportedMediaPreview", message: "This Media Asset has no safe grid preview")
+            throw WorkbenchFailure(name: "UnsupportedMediaPreview", message: "This Media Asset has no safe preview")
         }
         guard let grant = grants.get(deckId: deckId, rootId: asset.rootId) else {
             throw WorkbenchFailure(name: "MediaRootNeedsPermission", message: "This media Root needs permission")
@@ -680,7 +688,7 @@ actor MediaCatalogSession {
                 break
             }
             do {
-                let path = candidate.standardizedFileURL.path
+                let path = candidate.path
                 guard MediaFilesystem.isContained(rootPath: root.path, candidatePath: path) else {
                     complete = false
                     warningCount += 1
@@ -705,7 +713,7 @@ actor MediaCatalogSession {
                 guard metadata.isRegular,
                       let kind = supported[candidate.pathExtension.lowercased()]
                 else { continue }
-                let canonical = candidate.resolvingSymlinksInPath().standardizedFileURL.path
+                let canonical = try MediaFilesystem.canonicalPath(path)
                 guard MediaFilesystem.isContained(rootPath: root.path, candidatePath: canonical) else {
                     complete = false
                     warningCount += 1
@@ -925,7 +933,8 @@ actor MediaCatalogSession {
 
     private func queryAssets(_ params: [String: Any]) throws -> Data {
         try requireExpectedRevision(params)
-        let (offset, limit) = try pageRequest(params)
+        let assetIds = try requestedAssetIds(params)
+        let (offset, limit) = try pageRequest(params, defaultLimit: assetIds?.count ?? 100)
         if offset > 0 && params["expectedCatalogRevision"] as? Int == nil {
             throw WorkbenchFailure(name: "InvalidCommand", message: "expectedCatalogRevision is required after the first media page")
         }
@@ -936,6 +945,7 @@ actor MediaCatalogSession {
         let oneRoot = params["rootId"] as? String
         let rootIds = Set((params["rootIds"] as? [String]) ?? (oneRoot.map { [$0] } ?? []))
         var matched = catalog.assets.filter { asset in
+            if let assetIds, !assetIds.contains(asset.id) { return false }
             if !rootIds.isEmpty && !rootIds.contains(asset.rootId) { return false }
             if search.isEmpty { return true }
             return "\(asset.filename)\n\(asset.folder)\n\(asset.relativePath)\n\(asset.title)\n\(asset.note)"
@@ -950,14 +960,25 @@ actor MediaCatalogSession {
         let end = min(matched.count, offset + limit)
         let page = offset < matched.count ? Array(matched[offset..<end]) : []
         let nonce = lease.current()
-        var items = page.map { asset -> [String: Any] in
+        var items = try page.map { asset -> [String: Any] in
             let availability = effectiveAvailability(asset, rootAvailability: rootAvailability)
             let grid = ["still-image", "animated-image"].contains(asset.previewCapability)
-            let rendition: Any
+            let gridRendition: Any
+            let previewRendition: Any
             if grid && availability == "available", let nonce {
-                rendition = "pitchdog-asset://\(nonce)/\(asset.id)/grid_standard"
+                guard let encodedAssetId = asset.id.addingPercentEncoding(
+                    withAllowedCharacters: Self.javaScriptURIComponentAllowed
+                ) else {
+                    throw WorkbenchFailure(
+                        name: "InvalidMediaCatalog",
+                        message: "Media Asset identity could not be encoded for preview"
+                    )
+                }
+                gridRendition = "pitchdog-asset://\(nonce)/\(encodedAssetId)/grid_standard"
+                previewRendition = "pitchdog-asset://\(nonce)/\(encodedAssetId)/preview_standard"
             } else {
-                rendition = NSNull()
+                gridRendition = NSNull()
+                previewRendition = NSNull()
             }
             return [
                 "id": asset.id,
@@ -978,7 +999,10 @@ actor MediaCatalogSession {
                 "availability": availability,
                 "previewCapability": grid ? "grid" : "catalog_only",
                 "previewReason": Self.jsonValue(asset.previewReason),
-                "renditions": ["gridStandard": rendition],
+                "renditions": [
+                    "gridStandard": gridRendition,
+                    "previewStandard": previewRendition,
+                ],
             ]
         }
         while true {
@@ -1071,7 +1095,37 @@ actor MediaCatalogSession {
         }
     }
 
-    private func pageRequest(_ params: [String: Any]) throws -> (offset: Int, limit: Int) {
+    private func requestedAssetIds(_ params: [String: Any]) throws -> Set<String>? {
+        guard let raw = params["assetIds"] else { return nil }
+        guard let values = raw as? [Any], !values.isEmpty, values.count <= 250 else {
+            throw WorkbenchFailure(
+                name: "InvalidCommand",
+                message: "assetIds must contain between 1 and 250 opaque identities"
+            )
+        }
+        var ids = Set<String>()
+        for value in values {
+            guard let id = value as? String,
+                  !id.isEmpty,
+                  id.count <= 200,
+                  !id.contains("/"),
+                  !id.contains("\\"),
+                  !id.contains("\0"),
+                  ids.insert(id).inserted
+            else {
+                throw WorkbenchFailure(
+                    name: "InvalidCommand",
+                    message: "assetIds must contain unique opaque identities"
+                )
+            }
+        }
+        return ids
+    }
+
+    private func pageRequest(
+        _ params: [String: Any],
+        defaultLimit: Int = 100
+    ) throws -> (offset: Int, limit: Int) {
         let offset: Int
         if let raw = params["offset"] {
             guard let value = raw as? Int else {
@@ -1085,7 +1139,7 @@ actor MediaCatalogSession {
                 throw WorkbenchFailure(name: "InvalidCommand", message: "Media query limit must be an integer")
             }
             limit = value
-        } else { limit = 100 }
+        } else { limit = defaultLimit }
         guard offset >= 0,
               offset <= maximumCatalogRevision,
               limit > 0,

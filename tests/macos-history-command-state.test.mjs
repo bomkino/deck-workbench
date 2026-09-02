@@ -18,18 +18,12 @@ test('native history commands expose the projected undo and redo availability', 
   assert.match(app, /Button\("Redo"\)[\s\S]+?\.disabled\(!controller\.canRedo\)/)
 })
 
-test('native toolbar keeps command names equal to their menu equivalents', () => {
+test('macOS keeps document actions in the File menu without a duplicate native action strip', () => {
   for (const label of ['Open Deck…', 'Close Deck', 'Export Review PDF…']) {
     assert.equal(app.match(new RegExp(`^\\s*Button\\("${label}"`, 'gm'))?.length, 1)
-    assert.equal(app.match(new RegExp(`Label \\{\\s+Text\\("${label}"\\)`, 'g'))?.length, 1)
   }
-})
-
-test('native toolbar becomes icon-led before scaled labels can clip', () => {
-  assert.match(app, /private struct AdaptiveToolbarLabelStyle: LabelStyle/)
-  assert.match(app, /if !compact \{\s+configuration\.title/)
-  assert.match(app, /AdaptiveToolbarLabelStyle\(compact: shellScale >= 1\.5\)/)
-  assert.match(app, /\.controlSize\(\.large\)/)
+  assert.doesNotMatch(app, /private enum ToolbarIcon|private struct AdaptiveToolbarLabelStyle|PhosphorGlyph/)
+  assert.match(app, /var body: some View \{\s*WorkspaceWebView\(controller: controller\)/)
 })
 
 test('native save and termination flush renderer-owned Slide drafts first', () => {

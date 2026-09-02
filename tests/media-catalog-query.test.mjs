@@ -113,6 +113,32 @@ test('heavy queries keep source availability separate from preview capability an
   assert.equal(JSON.stringify(fixture.catalog), before, 'live Root availability must not mutate portable catalogue JSON')
 })
 
+test('exact Asset-ID queries are bounded and return only the requested catalogue records', () => {
+  const fixture = createCurateMediaFixture()
+  const requested = [fixture.catalog.assets[41].id, fixture.catalog.assets[7].id]
+  const result = queryMediaCatalog(fixture.catalog, { assetIds: requested })
+
+  assert.equal(result.total, requested.length)
+  assert.equal(result.items.length, requested.length)
+  assert.equal(result.nextOffset, null)
+  assert.deepEqual(new Set(result.items.map((asset) => asset.id)), new Set(requested))
+
+  assert.throws(
+    () => queryMediaCatalog(fixture.catalog, { assetIds: [requested[0], requested[0]] }),
+    /must not contain duplicate identities/,
+  )
+  assert.throws(
+    () => queryMediaCatalog(fixture.catalog, {
+      assetIds: Array.from({ length: MAX_MEDIA_QUERY_LIMIT + 1 }, (_, index) => `asset-${index}`),
+    }),
+    /between 1 and 250 opaque identities/,
+  )
+  assert.throws(
+    () => queryMediaCatalog(fixture.catalog, { assetIds: ['not/an/opaque/id'] }),
+    /opaque and path-independent/,
+  )
+})
+
 test('later pages reject a stale catalogue revision and bounded query inputs fail explicitly', () => {
   const idFactory = deterministicIdFactory()
   let catalog = createMediaCatalog({

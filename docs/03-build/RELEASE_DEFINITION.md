@@ -48,17 +48,30 @@ manufacture evidence.
 ## Current public status
 
 Deck Workbench is pre-alpha source with bounded integrated tracers. It is not a
-public v1, notarized distribution or production-ready editor. The owner has
-authorized `v0.0.4` as a normal public GitHub Release marked Latest. It adds
-native conversion-prompt copying and strict paste, Preview and import into a new
-local `.pitchdeck`; it does not add upload or built-in AI. The release must target
-its exact CI-passed `main` commit, use artifacts produced for that same commit,
-and keep the unverified Curate and target-machine boundaries explicit. Normal
-release status does not manufacture production readiness. Source text or a tag
-alone does not prove publication; the GitHub Release and its attached exact-commit
-artifacts are the authority. The existing unpublished `v0.0.3` draft is historical
-and must be retargeted to `c6736ef6c20e1e5d5e6bdfd4f40c5ce062280512`
-before anyone publishes it.
+public v1, notarized distribution or production-ready editor. GitHub's public
+Latest state is authoritative: if `v0.0.5` is not yet public, `v0.0.4` remains
+the last normal release. `v0.0.4` added native conversion-prompt copying and
+strict paste, Preview and import into a new local `.pitchdeck`; it did not add
+upload or built-in AI. Normal release status does not manufacture production readiness.
+Source text or a tag alone does not prove publication; the GitHub Release and
+its attached exact-commit artifacts are the authority. The existing unpublished
+`v0.0.3` draft is historical and must be retargeted to
+`c6736ef6c20e1e5d5e6bdfd4f40c5ce062280512` before anyone publishes it.
+
+## Current source and release line
+
+The current source and intended Latest release line is `v0.0.5`. Its bounded repair scope makes Full Bleed the
+new-work default and makes Plan's visual decision drive the initial Assembly. Assembly renders assigned images
+without distortion, exposes Fit/Fill, three text sizes, direct Element movement and resizing, role-specific image
+swaps, visual gradient controls, an image-backed Slide rail, and working canvas changes. Curate exposes a clear
+Primary action, real thumbnail trays, a local fullscreen rated preview, and role-aware assignment to any Slide.
+The macOS shell uses one full-content frame: native traffic lights share the compact Workbench toolbar, document
+commands remain in the system menu bar, and no duplicate title or action strip consumes canvas height. It is
+not released, Latest, packaged or installed merely because the source version
+is `0.0.5`. Release status comes from the public GitHub Release targeting an
+exact canonical-main commit whose package workflows passed, with its public
+artifacts downloaded and read back. Curate and target-machine behavior outside
+repository CI must be reported from direct acceptance rather than assumed.
 
 ## First serious release
 

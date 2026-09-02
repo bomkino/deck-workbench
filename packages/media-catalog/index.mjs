@@ -304,7 +304,10 @@ export function queryMediaCatalog(catalogInput, request = {}) {
     )
   }
 
-  const limit = request.limit === undefined ? 100 : positiveInteger(request.limit, 'limit')
+  const assetIds = optionalOpaqueIdSet(request.assetIds, 'assetIds', MAX_MEDIA_QUERY_LIMIT)
+  const limit = request.limit === undefined
+    ? assetIds?.size ?? 100
+    : positiveInteger(request.limit, 'limit')
   if (limit > MAX_MEDIA_QUERY_LIMIT) invalid(`limit must not exceed ${MAX_MEDIA_QUERY_LIMIT}`)
   const search = request.search === undefined ? '' : boundedString(request.search, 'search', 500).trim().toLowerCase()
   const rootIds = optionalSet(request.rootIds, 'rootIds')
@@ -339,6 +342,7 @@ export function queryMediaCatalog(catalogInput, request = {}) {
 
   const queryKey = JSON.stringify({
     availabilityRevision,
+    assetIds: sortedSetValues(assetIds),
     search,
     rootIds: sortedSetValues(rootIds),
     folders: sortedSetValues(folders),
@@ -361,6 +365,7 @@ export function queryMediaCatalog(catalogInput, request = {}) {
   } else {
     matched = catalog.assets.filter((asset) => {
       const availability = effectiveAvailability(asset, rootAvailability)
+      if (assetIds && !assetIds.has(asset.id)) return false
       if (rootIds && !rootIds.has(asset.rootId)) return false
       if (folders && !folders.has(asset.folder)) return false
       if (mediaKinds && !mediaKinds.has(asset.mediaKind)) return false
@@ -825,6 +830,16 @@ function optionalSet(value, label) {
   if (value === undefined) return null
   if (!Array.isArray(value) || value.length === 0) invalid(`${label} must be a non-empty array when provided`)
   return new Set(value.map((entry, index) => boundedString(entry, `${label}[${index}]`, 2_000)))
+}
+
+function optionalOpaqueIdSet(value, label, maximumEntries) {
+  if (value === undefined) return null
+  if (!Array.isArray(value) || value.length === 0 || value.length > maximumEntries) {
+    invalid(`${label} must contain between 1 and ${maximumEntries} opaque identities`)
+  }
+  const ids = value.map((entry, index) => opaqueId(entry, `${label}[${index}]`))
+  if (new Set(ids).size !== ids.length) invalid(`${label} must not contain duplicate identities`)
+  return new Set(ids)
 }
 
 function optionalEnumSet(value, allowed, label) {

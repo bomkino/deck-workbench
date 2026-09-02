@@ -28,15 +28,23 @@ const PNG_1X1 = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
   'base64',
 )
+const GIF_1X1 = Buffer.from('R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==', 'base64')
 
 test('Linux catalogue replacement preflights the exact compact encoded bytes', async () => {
-  const sessionSource = await readFile(
-    new URL('../apps/linux/media-session.mjs', import.meta.url),
-    'utf8',
-  )
+  const [sessionSource, hostSource] = await Promise.all([
+    readFile(new URL('../apps/linux/media-session.mjs', import.meta.url), 'utf8'),
+    readFile(new URL('../apps/linux/main.mjs', import.meta.url), 'utf8'),
+  ])
   assert.match(sessionSource, /const compact = `\$\{JSON\.stringify\(validated\)\}\\n`/)
   assert.match(sessionSource, /Buffer\.byteLength\(compact, 'utf8'\) > MAX_CATALOG_BYTES/)
   assert.equal(mediaRootAccessContract.maxDecodedPixels, 64_000_000)
+  assert.deepEqual(mediaRootAccessContract.previewProfiles, {
+    gridStandard: { id: 'grid_standard', maxLongestSide: 512, maxOutputBytes: 8 * 1024 * 1024 },
+    previewStandard: { id: 'preview_standard', maxLongestSide: 2048, maxOutputBytes: 32 * 1024 * 1024 },
+  })
+  assert.match(hostSource, /size\.width >= size\.height[^]*\? \{ width: profileDefinition\.maxLongestSide \}[^]*: \{ height: profileDefinition\.maxLongestSide \}/)
+  assert.match(hostSource, /Math\.max\(renditionSize\.width, renditionSize\.height\) > profileDefinition\.maxLongestSide/)
+  assert.match(hostSource, /png\.byteLength > profileDefinition\.maxOutputBytes/)
 })
 
 async function fixture(t) {
@@ -98,6 +106,7 @@ async function authorizeStoredRoot(grantStore, mediaRoot, rootId, fileIdentities
 test('native media session keeps absolute locators outside the portable Deck catalogue', async (t) => {
   const value = await fixture(t)
   await writeFile(join(value.mediaRoot, 'frame.png'), PNG_1X1)
+  await writeFile(join(value.mediaRoot, 'loop.gif'), GIF_1X1)
   await writeFile(join(value.mediaRoot, 'rushes.mp4'), Buffer.from('catalogue-only-video'))
 
   const attached = await value.session.authorizeRoot(value.mediaRoot)
@@ -112,16 +121,42 @@ test('native media session keeps absolute locators outside the portable Deck cat
   assert.equal(roots.nextOffset, null)
   assert.equal(typeof roots.availabilityRevision, 'string')
   assert.equal(assets.availabilityRevision, roots.availabilityRevision)
-  assert.equal(assets.items.length, 2)
+  assert.equal(assets.items.length, 3)
   assert.equal(assets.nextOffset, null)
   const image = assets.items.find((asset) => asset.filename === 'frame.png')
+  const animation = assets.items.find((asset) => asset.filename === 'loop.gif')
   const video = assets.items.find((asset) => asset.filename === 'rushes.mp4')
   assert.equal(image.previewCapability, 'grid')
   assert.match(image.renditions.gridStandard, /^pitchdog-asset:\/\//)
+  assert.match(image.renditions.previewStandard, /^pitchdog-asset:\/\//)
+  assert.equal(parseRendition(image.renditions.gridStandard).profile, 'grid_standard')
+  assert.equal(parseRendition(image.renditions.previewStandard).profile, 'preview_standard')
+  assert.equal(animation.previewCapability, 'grid')
+  assert.match(animation.renditions.gridStandard, /^pitchdog-asset:\/\//)
+  assert.match(animation.renditions.previewStandard, /^pitchdog-asset:\/\//)
+  const gridResource = parseRendition(image.renditions.gridStandard)
+  const previewResource = parseRendition(image.renditions.previewStandard)
+  assert.equal(gridResource.assetId, image.id)
+  assert.equal(previewResource.assetId, image.id)
+  assert.equal(previewResource.nonce, gridResource.nonce)
   assert.equal(video.previewCapability, 'catalog_only')
   assert.equal(video.renditions.gridStandard, null)
+  assert.equal(video.renditions.previewStandard, null)
   assert.equal(video.width, null)
   assert.equal(video.orientation, null)
+
+  const resolved = await value.session.query('media.assets', { assetIds: [image.id] })
+  assert.equal(resolved.total, 1)
+  assert.equal(resolved.limit, 1)
+  assert.deepEqual(resolved.items.map((asset) => asset.id), [image.id])
+  assert.equal(resolved.items[0].availability, 'available')
+  assert.match(resolved.items[0].renditions.gridStandard, /^pitchdog-asset:\/\//)
+  assert.match(resolved.items[0].renditions.previewStandard, /^pitchdog-asset:\/\//)
+
+  await assert.rejects(
+    value.session.query('media.assets', { assetIds: [image.id, image.id] }),
+    /must not contain duplicate identities/,
+  )
 
   const portable = await readFile(join(value.packagePath, 'media', 'catalog.json'), 'utf8')
   const portableCatalog = JSON.parse(portable)
@@ -131,12 +166,27 @@ test('native media session keeps absolute locators outside the portable Deck cat
   const hostLocal = await readFile(value.grantPath, 'utf8')
   assert.equal(portable.includes(value.mediaRoot), false)
   assert.equal(portable.includes('authorizedPath'), false)
+  assert.equal(portable.includes('pitchdog-asset://'), false)
   assert.equal(hostLocal.includes(value.mediaRoot), true)
 
   if (process.platform === 'linux') {
-    const source = await value.session.readGridResource(parseRendition(image.renditions.gridStandard))
-    assert.deepEqual(source.dimensions, { width: 1, height: 1 })
-    assert.equal(source.bytes.equals(PNG_1X1), true)
+    for (const rendition of [image.renditions.gridStandard, image.renditions.previewStandard]) {
+      const source = await value.session.readGridResource(parseRendition(rendition))
+      assert.deepEqual(source.dimensions, { width: 1, height: 1 })
+      assert.equal(source.bytes.equals(PNG_1X1), true)
+    }
+    const animationSource = await value.session.readGridResource(
+      parseRendition(animation.renditions.previewStandard),
+    )
+    assert.deepEqual(animationSource.dimensions, { width: 1, height: 1 })
+    assert.equal(animationSource.bytes.equals(GIF_1X1), true)
+    await assert.rejects(
+      value.session.readGridResource({
+        ...parseRendition(image.renditions.previewStandard),
+        profile: 'original',
+      }),
+      (error) => error.name === 'UnsupportedMediaPreview',
+    )
   }
   await assert.rejects(
     value.session.query('media.assets', { limit: 251 }),
@@ -189,6 +239,7 @@ test('oversized image sources are catalogue-only before any rendition URL is adv
   assert.equal(assets.items[0].previewCapability, 'catalog_only')
   assert.equal(assets.items[0].previewReason, 'source_outside_preview_bounds')
   assert.equal(assets.items[0].renditions.gridStandard, null)
+  assert.equal(assets.items[0].renditions.previewStandard, null)
 })
 
 test('same filesystem identity moves in place while missing files remain explicit', async (t) => {
@@ -215,6 +266,7 @@ test('same filesystem identity moves in place while missing files remain explici
   assert.equal(afterRemoval.items[0].id, assetId)
   assert.equal(afterRemoval.items[0].availability, 'missing')
   assert.equal(afterRemoval.items[0].renditions.gridStandard, null)
+  assert.equal(afterRemoval.items[0].renditions.previewStandard, null)
 })
 
 test('Root disconnect is a live availability overlay and reconnect preserves catalogue revision when unchanged', async (t) => {
@@ -233,6 +285,7 @@ test('Root disconnect is a live availability overlay and reconnect preserves cat
   assert.equal(disconnectedRoots.items[0].availability, 'offline_volume')
   assert.equal(disconnectedAssets.items[0].availability, 'offline_volume')
   assert.equal(disconnectedAssets.items[0].renditions.gridStandard, null)
+  assert.equal(disconnectedAssets.items[0].renditions.previewStandard, null)
 
   const reconnected = await value.session.reconnectRoot(rootId, relocated)
   assert.equal(reconnected.root.availability, 'available')

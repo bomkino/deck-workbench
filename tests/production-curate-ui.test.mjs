@@ -37,16 +37,83 @@ function extractFunctionBefore(source, name, endMarker) {
 }
 
 test('Production Curate renders four stable regions and bounded host-owned previews', () => {
+  assert.match(html, /id="curate-back"[^>]*>Back to Plan<\/button>/)
+  assert.match(html, /id="curate-next"[^>]*>Continue to Assemble<\/button>/)
+  assert.match(curate, /curateBack\.addEventListener\('click',[\s\S]*enterPhaseForSlide\('plan'\)/)
+  assert.match(curate, /curateNext\.addEventListener\('click',[\s\S]*enterPhaseForSlide\('assemble'\)/)
   for (const id of ['curate-slide-queue', 'media-focus-owner', 'media-canvas', 'curate-brief-content', 'primary-tray', 'alternate-tray', 'shortlist-tray', 'unplaced-tray-heading', 'unplaced-tray']) {
     assert.match(html, new RegExp(`id="${id}"`))
   }
   assert.match(styles, /grid-template-areas: "queue wall brief" "tray tray tray"/)
-  assert.match(styles, /grid-template-rows: minmax\(0, 1fr\) minmax\(7rem, 16vh\)/)
+  assert.match(styles, /grid-template-rows: minmax\(0, 1fr\) minmax\(8\.5rem, 18vh\)/)
   assert.match(html, /img-src 'self' pitchdog-asset:/)
   assert.doesNotMatch(html, /img-src[^;]*(?:data:|blob:)/)
   assert.match(curate, /candidate\.startsWith\('pitchdog-asset:'\)/)
   assert.match(curate, /asset\?\.previewCapability === 'grid'/)
   assert.doesNotMatch(curate, /createObjectURL|readAsDataURL|localStorage|absolutePath|file:\/\//)
+})
+
+test('Curate decision trays render exact hydrated thumbnails without HTML string assembly', () => {
+  for (const id of ['project-pick-tray', 'primary-tray', 'shortlist-tray', 'alternate-tray']) {
+    assert.match(html, new RegExp(`id="${id}"`))
+  }
+  const trays = functionSource(curate, 'renderCurateTrays', 'renderCurateRootControls')
+  assert.match(trays, /replaceChildren/)
+  assert.match(trays, /createCurateTrayItem/)
+  assert.doesNotMatch(trays, /innerHTML/)
+  assert.match(curate, /function scheduleCurateTrayAssetHydration[\s\S]*assetIds: assetIds\.slice\(index, index \+ 250\)/)
+  assert.match(curate, /name: 'media\.assets', params/)
+  assert.match(curate, /curateTrayAssetLoadGeneration/)
+  assert.match(curate, /projectPicks/)
+  assert.match(curate, /name: 'asset\.catalog'/)
+})
+
+test('full-screen Preview exposes direct project and current-Slide decisions', () => {
+  for (const id of [
+    'preview-media-previous',
+    'preview-media-next',
+    'preview-rating',
+    'preview-project-pick',
+    'preview-shortlist',
+    'preview-alternate',
+    'preview-assign',
+  ]) assert.match(html, new RegExp(`id="${id}"`))
+  assert.match(html, /data-preview-rating="0"/)
+  assert.match(html, /data-preview-rating="5"/)
+  assert.match(curate, /curatePreviewRenditionUrl/)
+  assert.match(curate, /previewMedia\.addEventListener\('click', \(\) => openFocusedPreview\(\)\)/)
+  assert.doesNotMatch(curate, /previewMedia\.addEventListener\('click', openFocusedPreview\)/)
+  assert.match(curate, /setProjectJudgmentForAsset\(assetId, \{ rating \}/)
+  assert.match(curate, /toggleCuratePreviewDecision\('shortlisted'\)/)
+  assert.match(curate, /toggleCuratePreviewDecision\('alternate'\)/)
+  assert.match(curate, /return openCurateAssignmentChooser\(assetId\)/)
+  assert.match(curate, /previewMediaImage\.addEventListener\('contextmenu'[\s\S]*openCurateAssignmentChooser\(curatePreviewMediaId\)/)
+  assert.match(curate, /function moveCuratePreview\(delta\) \{\s*if \(curateAssignmentPending \|\| curatePreviewActionPending\) return false/)
+  assert.doesNotMatch(curate, /Full Preview is not available in this gate/)
+})
+
+test('right-click assignment chooser names every Slide role and preserves current focus', () => {
+  for (const id of ['media-assignment-dialog', 'media-assignment-asset', 'media-assignment-targets']) {
+    assert.match(html, new RegExp(`id="${id}"`))
+  }
+  assert.match(html, /data-media-context-action="assign"/)
+  assert.match(curate, /dataset\.assignmentSlideId = target\.slideId/)
+  assert.match(curate, /dataset\.assignmentSlotKey = slot\.key/)
+  assert.match(curate, /slotDisplayName\(slot, target\.record\)/)
+  assert.match(curate, /state: 'selected', slotKey: slot\.key/)
+  assert.match(curate, /if \(!slot\.selected\) decision\.mediaAssignmentId = crypto\.randomUUID\(\)/)
+  assert.match(curate, /preserveCurrentSelection: true/)
+  assert.match(curate, /for \(let index = 0; index < records\.length; index \+= 8\)/)
+  assert.match(curate, /async function openCurateAssignmentChooser[\s\S]*if \(curateAssignmentPending \|\| curatePreviewActionPending\) return false/)
+})
+
+test('role labels preserve multi-image and Supporting Item identity', () => {
+  const displayName = extractFunction(curate, 'slotDisplayName', 'curateAssignmentTargetSlot')
+  assert.equal(displayName({ kind: 'primary', ordinal: 2 }, { metadata: { supportingItems: [] } }), 'Primary 3')
+  assert.equal(displayName(
+    { kind: 'supporting-item', ordinal: 1, supportingItemId: 'dogs' },
+    { metadata: { supportingItems: [{ id: 'dogs', title: 'Reservation Dogs' }] } },
+  ), 'Media · Reservation Dogs')
 })
 
 test('10,000 media descriptors mount only visible rows plus fixed overscan', () => {
@@ -104,6 +171,8 @@ test('Curate uses exact bridge seams and keeps project judgment separate from cu
   for (const command of ['media.root.authorize', 'media.root.reconnect', 'media.root.scan']) {
     assert.match(curate, new RegExp(`executeMediaRootCommand\\('${command.replaceAll('.', '\\.')}'`))
   }
+  const authorizeRoot = functionSource(curate, 'authoriseCurateMediaRoot', 'scanSelectedCurateRoot')
+  assert.match(authorizeRoot, /root\.assetCount === 0[\s\S]*scanSelectedCurateRoot\(\{ automatic: true \}\)/)
   assert.match(curate, /judgment,\n\s+\}, sourceLabel/)
   assert.match(curate, /slideId: selectedSlideId,[\s\S]*?decision,/)
   assert.match(curate, /const decision = \{ state: 'selected', slotKey: slot\.key \}/)
@@ -120,7 +189,7 @@ test('Unplaced media blocks Ready and included Story order owns queue navigation
   assert.equal(queueState(full, null), 'needs')
   assert.match(curate, /renderDecisionTray\('unplaced', elements\.unplacedTray\)/)
   assert.match(curate, /previousSlotKey \?\? decision\.previousAssignmentRole/)
-  assert.match(curate, /\[elements\.primaryTray, elements\.alternateTray, elements\.shortlistTray, elements\.unplacedTray\]/)
+  assert.match(curate, /\[elements\.primaryTray, elements\.projectPickTray, elements\.alternateTray, elements\.shortlistTray, elements\.unplacedTray\]/)
   const renderQueue = functionSource(curate, 'renderCurateQueue', 'renderCurateBrief')
   assert.match(renderQueue, /planRecords\(\)\.filter\(\(record\) => record\.metadata\.lifecycle === 'included'\)/)
   const unresolved = functionSource(curate, 'unresolvedCurateSlideIds', 'moveToNextCurateIssue')
@@ -229,11 +298,16 @@ test('context actions and deferred media-root operations cannot strand or cross 
   assert.match(rootCommand, /pendingWorkspaceSlideId \?\? selectedSlideId/)
 })
 
-test('default four-region layout keeps Curate controls inside the 1440px wall', () => {
+test('default four-region layout keeps the Primary action visible without a horizontal action trap', () => {
   assert.match(styles, /\.media-toolbar \{[^}]*grid-template-columns: minmax\(12rem, 2fr\) repeat\(4, minmax\(6rem, 1fr\)\) minmax\(8rem, 1\.2fr\) auto/)
   assert.match(styles, /\.media-toolbar > label \{ min-width: 0;/)
   assert.match(styles, /\.media-source-bar \{[^}]*flex-wrap: wrap/)
-  assert.match(styles, /\.slide-media-actions \{[^}]*flex-wrap: nowrap;[^}]*overflow-x: auto/)
+  assert.match(styles, /\.slide-media-decision \{[^}]*flex-wrap: wrap/)
+  assert.match(styles, /\.slide-primary-action \{[^}]*flex: 0 0 auto/)
+  assert.match(styles, /\.slide-media-actions \{[^}]*flex-wrap: wrap;[^}]*overflow: visible/)
+  assert.doesNotMatch(styles, /\.slide-media-actions \{[^}]*overflow-x: auto/)
+  assert.match(html, /id="assign-primary-media"[\s\S]*id="preview-media"/)
+  assert.match(curate, /targetSlot\.selected \? 'Replace' : 'Use as'/)
   assert.match(styles, /\.media-action-bar \{[^}]*grid-template-columns: minmax\(10rem, 0\.44fr\) minmax\(0, 1fr\)/)
   assert.doesNotMatch(styles, /\.media-action-bar \{[^}]*auto auto/)
   assert.match(styles, /\.media-action-bar \{ position: relative;/)

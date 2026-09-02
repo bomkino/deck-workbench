@@ -12,10 +12,19 @@
   authentic packaged Root/reopen and visual journeys remain.
 - `DW-W09`: bounded local CLI source-ready.
 - `DW-W10`: privacy-safe support-report seam source-ready.
-- `v0.0.4` candidate: native conversion-prompt copying plus strict paste, Preview
+- `v0.0.4`: public native conversion-prompt copying plus strict paste, Preview
   and import into a new local `.pitchdeck`; malformed, cancelled or refused
   creation cannot mutate the open Deck. There is no file upload or built-in AI.
-  Exact-head CI still controls promotion and release.
+- `v0.0.5`: repair the core visual workflow so Full Bleed is the new-work
+  default and Plan drives the initial Assembly. Images render proportionally
+  with Fit/Fill, Elements and gradients are directly manipulable, text has three
+  useful sizes, exact media roles can swap from the shortlist, Slides stay
+  visible in an image-backed rail, canvas changes apply, and Curate adds clear
+  Primary assignment, real trays, local fullscreen ratings, and assign-to-Slide.
+  The macOS shell integrates native traffic lights into one full-content phase
+  toolbar and leaves document commands in the system menu bar. Exact-head CI
+  controls artifact production, and the public GitHub Release is the release
+  authority; source version text alone is not release evidence.
 - Repository hardening: strict journal record boundaries, durable/live-state fencing, dead utility-process rejection, recoverable Linux preferences, atomic Linux PDF publication and one canonical repository verification gate.
 
 Target-machine Garuda and interactive macOS accessibility checks are waived for

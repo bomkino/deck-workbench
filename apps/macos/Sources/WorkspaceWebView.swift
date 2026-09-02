@@ -8,19 +8,105 @@ struct WorkspaceWebView: NSViewRepresentable {
         BridgeCoordinator(controller: controller)
     }
 
-    func makeNSView(context: Context) -> WKWebView {
+    func makeNSView(context: Context) -> WorkbenchWebContainer {
         let webView = WorkspaceWebViewFactory.make(coordinator: context.coordinator)
-        DispatchQueue.main.async { [weak webView, weak controller] in
-            guard let window = webView?.window, let controller else { return }
+        let container = WorkbenchWebContainer(webView: webView)
+        DispatchQueue.main.async { [weak container, weak controller] in
+            guard let container, let window = container.window, let controller else { return }
+            WorkbenchWindowChrome.configure(window, container: container)
             WorkbenchWindowCloseGuard.shared.install(on: window, controller: controller)
         }
-        return webView
+        return container
     }
 
-    func updateNSView(_ webView: WKWebView, context: Context) {
-        guard let window = webView.window else { return }
+    func updateNSView(_ container: WorkbenchWebContainer, context: Context) {
+        guard let window = container.window else { return }
+        WorkbenchWindowChrome.configure(window, container: container)
         WorkbenchWindowCloseGuard.shared.install(on: window, controller: controller)
     }
+}
+
+final class WorkbenchWKWebView: WKWebView {
+    override var mouseDownCanMoveWindow: Bool { false }
+}
+
+final class WorkbenchWebContainer: NSView {
+    let webView: WKWebView
+    private let dragRegion = WorkbenchWindowDragRegion(frame: .zero)
+    private var dragLeadingConstraint: NSLayoutConstraint!
+
+    init(webView: WKWebView) {
+        self.webView = webView
+        super.init(frame: .zero)
+        webView.translatesAutoresizingMaskIntoConstraints = false
+        dragRegion.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(webView)
+        addSubview(dragRegion, positioned: .above, relativeTo: webView)
+        dragLeadingConstraint = dragRegion.leadingAnchor.constraint(equalTo: leadingAnchor)
+        NSLayoutConstraint.activate([
+            webView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            webView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            webView.topAnchor.constraint(equalTo: topAnchor),
+            webView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            dragLeadingConstraint,
+            dragRegion.topAnchor.constraint(equalTo: topAnchor),
+            dragRegion.widthAnchor.constraint(equalToConstant: 32),
+            dragRegion.heightAnchor.constraint(equalToConstant: 48),
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is unavailable")
+    }
+
+    override var mouseDownCanMoveWindow: Bool { true }
+
+    func positionDragRegion(at x: CGFloat) {
+        dragLeadingConstraint.constant = x
+    }
+}
+
+@MainActor
+enum WorkbenchWindowChrome {
+    static func configure(_ window: NSWindow, container: WorkbenchWebContainer) {
+        window.styleMask.insert(.fullSizeContentView)
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.titlebarSeparatorStyle = .none
+        window.isMovable = true
+        window.isMovableByWindowBackground = true
+        DispatchQueue.main.async { [weak container] in
+            guard let container else { return }
+            synchronizeWindowControlInset(for: container)
+        }
+    }
+
+    static func synchronizeWindowControlInset(for container: WorkbenchWebContainer) {
+        guard let window = container.window else { return }
+        let buttons = [
+            NSWindow.ButtonType.closeButton,
+            .miniaturizeButton,
+            .zoomButton,
+        ].compactMap { window.standardWindowButton($0) }
+        guard let occupiedMaxX = buttons
+            .map({ container.convert($0.bounds, from: $0).maxX })
+            .max()
+        else { return }
+        let inset = ceil(occupiedMaxX + 12)
+        container.positionDragRegion(at: inset)
+        container.webView.evaluateJavaScript(
+            "document.documentElement.style.setProperty('--macos-window-controls-inset', '\(Int(inset))px');"
+        )
+    }
+}
+
+final class WorkbenchWindowDragRegion: NSView {
+    override var acceptsFirstResponder: Bool { false }
+    override var mouseDownCanMoveWindow: Bool { true }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func accessibilityIsIgnored() -> Bool { true }
 }
 
 @MainActor
@@ -105,9 +191,15 @@ enum WorkspaceWebViewFactory {
             forURLScheme: "pitchdog-asset"
         )
         configuration.userContentController.add(coordinator, name: BridgeContract.messageHandler)
+        configuration.userContentController.addUserScript(WKUserScript(
+            source: "document.documentElement.dataset.workspaceHost = 'macos';",
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        ))
 
-        let webView = WKWebView(frame: .zero, configuration: configuration)
+        let webView = WorkbenchWKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = coordinator
+        webView.uiDelegate = coordinator
         webView.allowsMagnification = false
         coordinator.attach(webView: webView)
         webView.load(URLRequest(url: URL(string: "pitchdog-ui://app/index.html")!))
