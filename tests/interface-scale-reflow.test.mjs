@@ -30,6 +30,8 @@ test('large Interface Scale reflows the phased workspace instead of clipping it'
   assert.match(styles, /@media \(max-height: 760px\)[\s\S]+?plan-phase:has\(#plan-empty:not\(\[hidden\]\)\) \.sequence-heading \{ min-height: 0;[\s\S]+?padding-block: var\(--space-1\)/)
   assert.match(styles, /plan-phase:has\(#plan-empty:not\(\[hidden\]\)\) \.sequence-heading > div:first-child \{ display: none; \}/)
   assert.match(styles, /plan-phase:has\(#plan-empty:not\(\[hidden\]\)\) \.sequence-actions \{ width: 100%; flex-wrap: nowrap; justify-content: center; \}/)
+  assert.match(styles, /plan-phase:has\(#plan-empty:not\(\[hidden\]\)\) \.sequence \{ block-size: max-content; grid-template-rows: auto; grid-auto-rows: 0; align-content: start; align-self: start; \}/)
+  assert.match(styles, /plan-phase:has\(#plan-empty:not\(\[hidden\]\)\) #plan-empty \{ gap: var\(--space-1\); padding-block: var\(--space-2\); \}/)
   assert.match(styles, /data-workspace-layout="single-column"\] \.curate-phase \{[\s\S]+?grid-template-areas: "wall" "queue" "brief" "tray";[\s\S]+?grid-template-rows: minmax\(45rem, auto\) minmax\(24rem, auto\) minmax\(24rem, auto\) minmax\(32rem, auto\)/)
   assert.match(styles, /data-workspace-layout="single-column"\] \.curate-tray \{[\s\S]+?grid-template-rows: repeat\(4, minmax\(7rem, auto\)\)/)
   assert.match(styles, /data-workspace-layout="single-column"\] \.stage-scroll \{[\s\S]+?overflow: visible/)
