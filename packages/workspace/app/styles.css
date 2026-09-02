@@ -188,6 +188,7 @@ small { font-size: max(0.8125rem, 11px); line-height: 1.38; letter-spacing: 0.00
 .phase-navigation button[aria-current="page"] { background: var(--paper-strong); color: var(--ink); box-shadow: 0 1px 2px rgb(0 0 0 / 0.14), inset 0 0 0 1px rgb(255 255 255 / 0.12); }
 .toolbar-actions { justify-content: flex-end; }
 .toolbar .icon-button[aria-pressed="true"] { background: var(--selected-surface); color: var(--ink); }
+.toolbar .icon-button:disabled { background: transparent; }
 .inspector-icon { transform: scaleX(-1); }
 .appearance-control { position: relative; flex: 0 0 auto; }
 .appearance-control > summary { inline-size: var(--control-size); block-size: var(--control-size); min-inline-size: var(--control-size); min-height: var(--control-size); display: grid; place-items: center; padding: 0; border: 1px solid transparent; border-radius: var(--radius); color: var(--ink-muted); cursor: pointer; font-size: max(0.875rem, 12px); font-weight: 600; list-style: none; }

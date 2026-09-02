@@ -67,13 +67,16 @@ enum WorkbenchWindowChrome {
             .first(where: { $0.identifier == dragRegionIdentifier }) as? WorkbenchWindowDragRegion
             ?? WorkbenchWindowDragRegion(frame: .zero)
         dragRegion.identifier = dragRegionIdentifier
+        let topY = webView.isFlipped
+            ? webView.bounds.minY
+            : webView.bounds.maxY - toolbarHeight
         dragRegion.frame = NSRect(
             x: x,
-            y: webView.bounds.maxY - toolbarHeight,
+            y: topY,
             width: dragRegionWidth,
             height: toolbarHeight
         )
-        dragRegion.autoresizingMask = [.minYMargin]
+        dragRegion.autoresizingMask = webView.isFlipped ? [.maxYMargin] : [.minYMargin]
         if dragRegion.superview == nil {
             webView.addSubview(dragRegion, positioned: .above, relativeTo: nil)
         }

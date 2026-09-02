@@ -20,6 +20,8 @@ test('macOS uses one full-content window frame with native traffic lights and a 
   assert.match(webView, /window\.isMovableByWindowBackground = false/)
   assert.match(webView, /private static let dragRegionWidth: CGFloat = 32/)
   assert.match(webView, /WorkbenchWindowDragRegion/)
+  assert.match(webView, /let topY = webView\.isFlipped/)
+  assert.match(webView, /webView\.isFlipped \? \[\.maxYMargin\] : \[\.minYMargin\]/)
   assert.match(webView, /webView\.addSubview\(dragRegion, positioned: \.above, relativeTo: nil\)/)
   assert.match(webView, /window\?\.performDrag\(with: event\)/)
   assert.match(webView, /window\.standardWindowButton\(\$0\)/)
