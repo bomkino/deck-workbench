@@ -56,6 +56,8 @@ final class WorkbenchWebContainer: NSView {
         fatalError("init(coder:) is unavailable")
     }
 
+    override var mouseDownCanMoveWindow: Bool { false }
+
     func positionDragRegion(at x: CGFloat) {
         dragLeadingConstraint.constant = x
     }
@@ -69,7 +71,7 @@ enum WorkbenchWindowChrome {
         window.titlebarAppearsTransparent = true
         window.titlebarSeparatorStyle = .none
         window.isMovable = true
-        window.isMovableByWindowBackground = false
+        window.isMovableByWindowBackground = true
         DispatchQueue.main.async { [weak container] in
             guard let container else { return }
             synchronizeWindowControlInset(for: container)
@@ -97,11 +99,8 @@ enum WorkbenchWindowChrome {
 
 final class WorkbenchWindowDragRegion: NSView {
     override var acceptsFirstResponder: Bool { false }
+    override var mouseDownCanMoveWindow: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-
-    override func mouseDown(with event: NSEvent) {
-        window?.performDrag(with: event)
-    }
 
     override func accessibilityIsIgnored() -> Bool { true }
 }
