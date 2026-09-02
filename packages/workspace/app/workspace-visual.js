@@ -525,6 +525,7 @@ function canvasReviewMessage(next) {
 }
 
 function appendCompositionElements(layer, next) {
+  const imageInteractions = []
   const gradientInteractions = []
   next.composition?.elements.forEach((element, index) => {
     const node = document.createElement('div')
@@ -583,9 +584,12 @@ function appendCompositionElements(layer, next) {
     node.addEventListener('pointerdown', (event) => beginElementPointerInteraction(event, element, node))
     node.addEventListener('focus', () => selectCompositionElement(element.id))
     if (!isGradient) appendElementResizeHandle(node, element)
-    if (element.kind === 'image') appendImagePanHandle(node, element)
+    if (element.kind === 'image') imageInteractions.push({ element, node })
     layer.append(node)
   })
+  for (const { element, node } of imageInteractions) {
+    appendImagePanInteractionLayer(layer, node, element, next)
+  }
   for (const { element, node } of gradientInteractions) {
     appendGradientInteractionLayer(layer, node, element, next)
   }
@@ -608,14 +612,28 @@ function appendElementResizeHandle(node, element) {
   node.append(handle)
 }
 
-function appendImagePanHandle(node, element) {
+function appendImagePanInteractionLayer(layer, imageNode, element, next) {
+  const interaction = document.createElement('div')
+  interaction.className = 'image-pan-interaction-layer'
+  interaction.dataset.imagePanInteractionFor = element.id
+  interaction.dataset.imageFit = element.imageFit ?? 'fill'
+  interaction.style.left = `${(element.frame.x / next.canvas.width) * 100}%`
+  interaction.style.top = `${(element.frame.y / next.canvas.height) * 100}%`
+  interaction.style.width = `${(element.frame.width / next.canvas.width) * 100}%`
+  interaction.style.height = `${(element.frame.height / next.canvas.height) * 100}%`
+  interaction.style.zIndex = String((next.composition?.elements.length ?? 0) + 9)
   const handle = document.createElement('button')
   handle.type = 'button'
   handle.className = 'image-pan-handle'
   handle.dataset.panImageElementId = element.id
   handle.textContent = '✥'
   handle.setAttribute('aria-label', 'Pan image within frame')
-  node.append(handle)
+  handle.addEventListener('pointerdown', (event) => beginImagePanInteraction(event, element, imageNode, {
+    slideId: next.slide.id,
+    designOptionId: next.designOption.id,
+  }))
+  interaction.append(handle)
+  layer.append(interaction)
 }
 
 function renderGradientElement(node, element) {
@@ -700,6 +718,9 @@ function syncCompositionSelection() {
   }
   for (const interaction of elements.compositionLayer.querySelectorAll('[data-gradient-interaction-for]')) {
     interaction.classList.toggle('is-selected', interaction.dataset.gradientInteractionFor === selectedId)
+  }
+  for (const interaction of elements.compositionLayer.querySelectorAll('[data-image-pan-interaction-for]')) {
+    interaction.classList.toggle('is-selected', interaction.dataset.imagePanInteractionFor === selectedId)
   }
 }
 

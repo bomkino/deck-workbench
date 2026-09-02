@@ -403,6 +403,8 @@ const elements = {
   renameDeck: document.querySelector('#rename-deck'),
   undo: document.querySelector('#undo'),
   redo: document.querySelector('#redo'),
+  toggleNavigator: document.querySelector('#toggle-navigator'),
+  toggleInspector: document.querySelector('#toggle-inspector'),
   theme: document.querySelector('#theme'),
   interfaceScale: document.querySelector('#interface-scale'),
   saveState: document.querySelector('#save-state'),
@@ -574,6 +576,8 @@ let themePreference = 'system'
 let interfaceScale = 1
 let artboardZoom = 0.65
 let activePhase = 'plan'
+let navigatorCollapsed = false
+let inspectorCollapsed = false
 let planSearch = ''
 let planFilter = 'all'
 let draftSupportingItems = []
@@ -636,7 +640,31 @@ function selectedPlanRecord() {
   return location ? planRecordForSlide(location.slide, location.section) : null
 }
 
+function renderWorkspacePanelVisibility() {
+  if (!projection) {
+    navigatorCollapsed = false
+    inspectorCollapsed = false
+  }
+  elements.workbench.dataset.navigatorCollapsed = String(navigatorCollapsed)
+  elements.workbench.dataset.inspectorCollapsed = String(inspectorCollapsed)
+  elements.toggleNavigator.setAttribute('aria-pressed', String(!navigatorCollapsed))
+  elements.toggleInspector.setAttribute('aria-pressed', String(!inspectorCollapsed))
+  elements.toggleNavigator.disabled = !projection || activePhase === 'handoff'
+  elements.toggleInspector.disabled = !projection
+  elements.toggleNavigator.title = navigatorCollapsed ? 'Show Navigator' : 'Hide Navigator'
+  elements.toggleInspector.title = inspectorCollapsed ? 'Show Inspector' : 'Hide Inspector'
+  elements.toggleNavigator.setAttribute('aria-label', elements.toggleNavigator.title)
+  elements.toggleInspector.setAttribute('aria-label', elements.toggleInspector.title)
+}
+
+function toggleWorkspacePanel(panel) {
+  if (panel === 'navigator' && activePhase !== 'handoff') navigatorCollapsed = !navigatorCollapsed
+  if (panel === 'inspector') inspectorCollapsed = !inspectorCollapsed
+  renderWorkspacePanelVisibility()
+}
+
 function renderAll() {
+  renderWorkspacePanelVisibility()
   elements.phaseButtons.forEach((button) => {
     const active = button.dataset.phase === activePhase
     button.setAttribute('aria-current', active ? 'page' : 'false')

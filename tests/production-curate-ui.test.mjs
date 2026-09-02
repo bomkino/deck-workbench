@@ -45,7 +45,7 @@ test('Production Curate renders four stable regions and bounded host-owned previ
     assert.match(html, new RegExp(`id="${id}"`))
   }
   assert.match(styles, /grid-template-areas: "queue wall brief" "tray tray tray"/)
-  assert.match(styles, /grid-template-rows: minmax\(0, 1fr\) minmax\(7rem, 16vh\)/)
+  assert.match(styles, /grid-template-rows: minmax\(0, 1fr\) minmax\(8\.5rem, 18vh\)/)
   assert.match(html, /img-src 'self' pitchdog-asset:/)
   assert.doesNotMatch(html, /img-src[^;]*(?:data:|blob:)/)
   assert.match(curate, /candidate\.startsWith\('pitchdog-asset:'\)/)
@@ -81,6 +81,8 @@ test('full-screen Preview exposes direct project and current-Slide decisions', (
   assert.match(html, /data-preview-rating="0"/)
   assert.match(html, /data-preview-rating="5"/)
   assert.match(curate, /curatePreviewRenditionUrl/)
+  assert.match(curate, /previewMedia\.addEventListener\('click', \(\) => openFocusedPreview\(\)\)/)
+  assert.doesNotMatch(curate, /previewMedia\.addEventListener\('click', openFocusedPreview\)/)
   assert.match(curate, /setProjectJudgmentForAsset\(assetId, \{ rating \}/)
   assert.match(curate, /toggleCuratePreviewDecision\('shortlisted'\)/)
   assert.match(curate, /toggleCuratePreviewDecision\('alternate'\)/)

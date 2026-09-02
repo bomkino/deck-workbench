@@ -131,6 +131,14 @@ test('Full Bleed Fill supports direct proportional image panning instead of a cl
   assert.match(visual, /Switch to Fill to crop or pan/)
 })
 
+test('image pan handle stays interactive above later text without changing paint order', () => {
+  assert.match(visual, /imageInteractions\.push\(\{ element, node \}\)/)
+  assert.match(visual, /for \(const \{ element, node \} of imageInteractions\)[\s\S]*appendImagePanInteractionLayer/)
+  assert.match(visual, /dataset\.imagePanInteractionFor = element\.id/)
+  assert.match(styles, /\.image-pan-interaction-layer \{[^}]*pointer-events:\s*none;/)
+  assert.match(styles, /\.image-pan-interaction-layer\.is-selected\[data-image-fit="fill"\] > \.image-pan-handle \{[^}]*pointer-events:\s*auto;/)
+})
+
 test('gradient handles stay interactive above text without changing paint order', () => {
   assert.match(visual, /gradientInteractions\.push\(\{ element, node \}\)/)
   assert.match(visual, /for \(const \{ element, node \} of gradientInteractions\)[\s\S]*appendGradientInteractionLayer/)

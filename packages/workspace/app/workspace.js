@@ -249,6 +249,8 @@ function bindWorkspaceEvents() {
   elements.phaseButtons.forEach((button) => button.addEventListener('click', () => void enterPhaseForSlide(button.dataset.phase)))
   elements.undo.addEventListener('click', () => historyAction('undo'))
   elements.redo.addEventListener('click', () => historyAction('redo'))
+  elements.toggleNavigator.addEventListener('click', () => toggleWorkspacePanel('navigator'))
+  elements.toggleInspector.addEventListener('click', () => toggleWorkspacePanel('inspector'))
   elements.theme.addEventListener('change', async () => {
     try {
       const result = await window.deckBridge.setTheme({ value: elements.theme.value })

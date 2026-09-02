@@ -2225,7 +2225,7 @@ function bindCurateEvents() {
   elements.toggleProjectPick.addEventListener('click', () => void setFocusedProjectJudgment({ projectPick: !curateJudgmentForAsset(curateFocusedMediaId).projectPick }, 'Toggle Project Pick'))
   elements.projectRating.addEventListener('change', () => void setFocusedProjectJudgment({ rating: Number(elements.projectRating.value) }, 'Set project Asset rating'))
   elements.projectReview.addEventListener('change', () => void setFocusedProjectJudgment({ review: elements.projectReview.value }, 'Set project Asset review'))
-  elements.previewMedia.addEventListener('click', openFocusedPreview)
+  elements.previewMedia.addEventListener('click', () => openFocusedPreview())
   elements.shortlistMedia.addEventListener('click', () => void setFocusedSlideDecision({ state: 'shortlisted' }, 'Shortlist Asset for Slide'))
   elements.assignPrimaryMedia.addEventListener('click', assignFocusedAsset)
   elements.alternateMedia.addEventListener('click', () => void setFocusedSlideDecision({ state: 'alternate' }, 'Add Slide Alternate'))

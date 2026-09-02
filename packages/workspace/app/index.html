@@ -49,26 +49,35 @@
             <button id="undo" class="icon-button" type="button" disabled aria-label="Undo" title="Undo"><span class="phosphor-icon" aria-hidden="true">&#xE038;</span></button>
             <button id="redo" class="icon-button" type="button" disabled aria-label="Redo" title="Redo"><span class="phosphor-icon" aria-hidden="true">&#xE036;</span></button>
           </div>
-          <label class="theme-control">
-            <span>Theme</span>
-            <select id="theme" aria-label="Theme">
-              <option value="system">System</option>
-              <option value="light">Light</option>
-              <option value="dark">Dark</option>
-            </select>
-          </label>
-          <label class="interface-control">
-            <span>Interface</span>
-            <select id="interface-scale" aria-label="Interface Scale">
-              <option value="0.8">80%</option>
-              <option value="0.9">90%</option>
-              <option value="1">100%</option>
-              <option value="1.1">110%</option>
-              <option value="1.25">125%</option>
-              <option value="1.5">150%</option>
-              <option value="1.75">175%</option>
-            </select>
-          </label>
+          <div class="panel-visibility-actions" role="group" aria-label="Workspace panels">
+            <button id="toggle-navigator" type="button" aria-pressed="true" aria-controls="phase-workspaces">Navigator</button>
+            <button id="toggle-inspector" type="button" aria-pressed="true" aria-controls="phase-workspaces">Inspector</button>
+          </div>
+          <details class="appearance-control">
+            <summary>Appearance</summary>
+            <div class="appearance-panel">
+              <label class="theme-control">
+                <span>Theme</span>
+                <select id="theme" aria-label="Theme">
+                  <option value="system">System</option>
+                  <option value="light">Light</option>
+                  <option value="dark">Dark</option>
+                </select>
+              </label>
+              <label class="interface-control">
+                <span>Interface</span>
+                <select id="interface-scale" aria-label="Interface Scale">
+                  <option value="0.8">80%</option>
+                  <option value="0.9">90%</option>
+                  <option value="1">100%</option>
+                  <option value="1.1">110%</option>
+                  <option value="1.25">125%</option>
+                  <option value="1.5">150%</option>
+                  <option value="1.75">175%</option>
+                </select>
+              </label>
+            </div>
+          </details>
           <p id="save-state" role="status" aria-live="polite" aria-atomic="true">No document session</p>
         </div>
       </header>
@@ -449,23 +458,28 @@
             <fieldset id="gradient-controls" class="gradient-controls" disabled>
               <legend>Gradient</legend>
               <button id="edit-gradient" type="button" disabled>Edit gradient on canvas</button>
-              <span class="control-label">Direction</span>
-              <div class="gradient-directions" role="group" aria-label="Gradient direction">
-                <button type="button" data-gradient-direction="right" aria-label="Fade right">&#x2192;</button>
-                <button type="button" data-gradient-direction="down-right" aria-label="Fade down and right">&#x2198;</button>
-                <button type="button" data-gradient-direction="down" aria-label="Fade down">&#x2193;</button>
-                <button type="button" data-gradient-direction="down-left" aria-label="Fade down and left">&#x2199;</button>
-                <button type="button" data-gradient-direction="left" aria-label="Fade left">&#x2190;</button>
-                <button type="button" data-gradient-direction="up-left" aria-label="Fade up and left">&#x2196;</button>
-                <button type="button" data-gradient-direction="up" aria-label="Fade up">&#x2191;</button>
-                <button type="button" data-gradient-direction="up-right" aria-label="Fade up and right">&#x2197;</button>
-              </div>
-              <label><span>Strength <output id="gradient-strength-output" for="gradient-strength">78%</output></span><input id="gradient-strength" type="range" min="0" max="100" step="1" value="78" /></label>
-              <div class="form-row two-up">
-                <label><span>Start colour</span><input id="gradient-start-color" type="color" value="#000000" /></label>
-                <label><span>Fade colour</span><input id="gradient-end-color" type="color" value="#000000" /></label>
-              </div>
-              <p class="assembly-help">Choose a direction, then drag the two handles on the Slide for exact placement.</p>
+              <details class="gradient-advanced">
+                <summary>Advanced gradient</summary>
+                <div class="gradient-advanced-body">
+                  <span class="control-label">Direction</span>
+                  <div class="gradient-directions" role="group" aria-label="Gradient direction">
+                    <button type="button" data-gradient-direction="right" aria-label="Fade right">&#x2192;</button>
+                    <button type="button" data-gradient-direction="down-right" aria-label="Fade down and right">&#x2198;</button>
+                    <button type="button" data-gradient-direction="down" aria-label="Fade down">&#x2193;</button>
+                    <button type="button" data-gradient-direction="down-left" aria-label="Fade down and left">&#x2199;</button>
+                    <button type="button" data-gradient-direction="left" aria-label="Fade left">&#x2190;</button>
+                    <button type="button" data-gradient-direction="up-left" aria-label="Fade up and left">&#x2196;</button>
+                    <button type="button" data-gradient-direction="up" aria-label="Fade up">&#x2191;</button>
+                    <button type="button" data-gradient-direction="up-right" aria-label="Fade up and right">&#x2197;</button>
+                  </div>
+                  <label><span>Strength <output id="gradient-strength-output" for="gradient-strength">78%</output></span><input id="gradient-strength" type="range" min="0" max="100" step="1" value="78" /></label>
+                  <div class="form-row two-up">
+                    <label><span>Start colour</span><input id="gradient-start-color" type="color" value="#000000" /></label>
+                    <label><span>Fade colour</span><input id="gradient-end-color" type="color" value="#000000" /></label>
+                  </div>
+                  <p class="assembly-help">Choose a direction, then drag the two handles on the Slide for exact placement.</p>
+                </div>
+              </details>
             </fieldset>
             <fieldset class="crop-controls" disabled>
               <legend>Image crop · percent</legend>
