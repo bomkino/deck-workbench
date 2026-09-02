@@ -516,7 +516,8 @@ html[data-workspace-layout="single-column"] .handoff-phase { grid-template-areas
 html[data-workspace-layout="single-column"] .handoff-review { overflow: visible; }
 html[data-workspace-layout="single-column"] .assembly-controls, html[data-workspace-layout="single-column"] .handoff-actions { min-height: max-content; overflow: visible; border-left: 0; border-top: 1px solid var(--rule); }
 
-@media (max-height: 700px) {
+@media (max-height: 760px) {
+  html[data-workspace-layout="single-column"] .plan-phase:has(#plan-empty:not([hidden])) .sequence-heading { min-height: 0; align-items: center; padding-block: var(--space-1); }
   html[data-workspace-layout="single-column"] .plan-phase:has(#plan-empty:not([hidden])) #plan-empty { gap: var(--space-2); padding-block: var(--space-3); }
   html[data-workspace-layout="single-column"] .plan-phase:has(#plan-empty:not([hidden])) .empty-actions { width: min(100%, 36rem); grid-template-columns: repeat(2, minmax(0, 1fr)); }
   html[data-workspace-layout="two-column"] .curate-phase { overflow: auto; grid-template-areas: "wall wall" "queue brief" "tray tray"; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: minmax(32rem, auto) minmax(18rem, auto) minmax(7rem, auto); }
