@@ -270,7 +270,7 @@ enum PackagedTracer {
               importedUI["dialogOpen"] as? Bool == false,
               importedUI["phase"] as? String == "plan",
               (importedUI["status"] as? String)?.contains("Imported \(documentURL.lastPathComponent) · 2 Parts · 3 Slides") == true,
-              controller.documentURL?.standardizedFileURL == documentURL.standardizedFileURL
+              controller.documentURL?.standardizedFileURL.path == documentURL.standardizedFileURL.path
         else {
             throw WorkbenchFailure(name: "CheckpointWriteFailure", message: "Installed writing import did not create and activate exactly one Deck")
         }
