@@ -27,13 +27,17 @@ struct WorkspaceWebView: NSViewRepresentable {
 
 @MainActor
 enum WorkbenchWindowChrome {
+    private static let dragRegionIdentifier = NSUserInterfaceItemIdentifier("dog.pitch.deck-workbench.window-drag-region")
+    private static let dragRegionWidth: CGFloat = 32
+    private static let toolbarHeight: CGFloat = 48
+
     static func configure(_ window: NSWindow, webView: WKWebView) {
         window.styleMask.insert(.fullSizeContentView)
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.titlebarSeparatorStyle = .none
         window.isMovable = true
-        window.isMovableByWindowBackground = true
+        window.isMovableByWindowBackground = false
         DispatchQueue.main.async { [weak webView] in
             guard let webView else { return }
             synchronizeWindowControlInset(for: webView)
@@ -51,11 +55,41 @@ enum WorkbenchWindowChrome {
             .map({ $0.convert($0.bounds, to: nil).maxX })
             .max()
         else { return }
-        let inset = Int(ceil(occupiedMaxX + 12))
+        let inset = ceil(occupiedMaxX + 12)
+        installDragRegion(in: window, x: inset)
         webView.evaluateJavaScript(
-            "document.documentElement.style.setProperty('--macos-window-controls-inset', '\(inset)px');"
+            "document.documentElement.style.setProperty('--macos-window-controls-inset', '\(Int(inset))px');"
         )
     }
+
+    private static func installDragRegion(in window: NSWindow, x: CGFloat) {
+        guard let contentView = window.contentView else { return }
+        let dragRegion = contentView.subviews
+            .first(where: { $0.identifier == dragRegionIdentifier }) as? WorkbenchWindowDragRegion
+            ?? WorkbenchWindowDragRegion(frame: .zero)
+        dragRegion.identifier = dragRegionIdentifier
+        dragRegion.frame = NSRect(
+            x: x,
+            y: contentView.bounds.maxY - toolbarHeight,
+            width: dragRegionWidth,
+            height: toolbarHeight
+        )
+        dragRegion.autoresizingMask = [.minYMargin]
+        if dragRegion.superview == nil {
+            contentView.addSubview(dragRegion, positioned: .above, relativeTo: nil)
+        }
+    }
+}
+
+final class WorkbenchWindowDragRegion: NSView {
+    override var acceptsFirstResponder: Bool { false }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        window?.performDrag(with: event)
+    }
+
+    override func accessibilityIsIgnored() -> Bool { true }
 }
 
 @MainActor

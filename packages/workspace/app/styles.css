@@ -199,7 +199,7 @@ small { font-size: max(0.8125rem, 11px); line-height: 1.38; letter-spacing: 0.00
 
 /* macOS uses one full-content frame: native traffic lights sit inside this toolbar. */
 html[data-workspace-host="macos"] .toolbar { grid-template-columns: minmax(17rem, 19rem) minmax(24rem, 1fr) auto; }
-html[data-workspace-host="macos"] .brand-cluster { padding-inline-start: var(--macos-window-controls-inset, 76px); }
+html[data-workspace-host="macos"] .brand-cluster { padding-inline-start: calc(var(--macos-window-controls-inset, 76px) + 40px); }
 html[data-workspace-host="macos"] .brand-mark { display: none; }
 
 .phase-workspaces { position: relative; min-width: 0; min-height: 0; overflow: hidden; }

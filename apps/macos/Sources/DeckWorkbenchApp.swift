@@ -67,7 +67,6 @@ struct DeckWorkbenchApp: App {
                 .frame(minWidth: 1180, minHeight: 700)
         }
         .windowStyle(.hiddenTitleBar)
-        .windowBackgroundDragBehavior(.enabled)
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("New Deck…") {

@@ -9,14 +9,17 @@ const [app, webView, coordinator, styles] = await Promise.all([
   readFile(new URL('../packages/workspace/app/styles.css', import.meta.url), 'utf8'),
 ])
 
-test('macOS uses one full-content window frame with native traffic lights and background dragging', () => {
+test('macOS uses one full-content window frame with native traffic lights and a bounded native drag zone', () => {
   assert.match(app, /\.windowStyle\(\.hiddenTitleBar\)/)
-  assert.match(app, /\.windowBackgroundDragBehavior\(\.enabled\)/)
+  assert.doesNotMatch(app, /\.windowBackgroundDragBehavior\(\.enabled\)/)
   assert.match(webView, /window\.styleMask\.insert\(\.fullSizeContentView\)/)
   assert.match(webView, /window\.titleVisibility = \.hidden/)
   assert.match(webView, /window\.titlebarAppearsTransparent = true/)
   assert.match(webView, /window\.titlebarSeparatorStyle = \.none/)
-  assert.match(webView, /window\.isMovableByWindowBackground = true/)
+  assert.match(webView, /window\.isMovableByWindowBackground = false/)
+  assert.match(webView, /private static let dragRegionWidth: CGFloat = 32/)
+  assert.match(webView, /WorkbenchWindowDragRegion/)
+  assert.match(webView, /window\?\.performDrag\(with: event\)/)
   assert.match(webView, /window\.standardWindowButton\(\$0\)/)
   assert.match(webView, /\$0\.convert\(\$0\.bounds, to: nil\)\.maxX/)
   assert.match(webView, /--macos-window-controls-inset/)
@@ -26,7 +29,7 @@ test('macOS uses one full-content window frame with native traffic lights and ba
 test('the native host marks macOS before revealing the web workspace and reserves traffic-light space only there', () => {
   assert.match(webView, /document\.documentElement\.dataset\.workspaceHost = 'macos'/)
   assert.match(webView, /injectionTime: \.atDocumentStart/)
-  assert.match(styles, /html\[data-workspace-host="macos"\] \.brand-cluster \{ padding-inline-start: var\(--macos-window-controls-inset, 76px\); \}/)
+  assert.match(styles, /html\[data-workspace-host="macos"\] \.brand-cluster \{ padding-inline-start: calc\(var\(--macos-window-controls-inset, 76px\) \+ 40px\); \}/)
   assert.match(styles, /html\[data-workspace-host="macos"\] \.brand-mark \{ display: none; \}/)
   assert.doesNotMatch(styles, /:root[^}]*--macos-window-controls-inset/)
 })
