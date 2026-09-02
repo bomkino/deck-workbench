@@ -11,7 +11,8 @@ struct WorkspaceWebView: NSViewRepresentable {
     func makeNSView(context: Context) -> WKWebView {
         let webView = WorkspaceWebViewFactory.make(coordinator: context.coordinator)
         DispatchQueue.main.async { [weak webView, weak controller] in
-            guard let window = webView?.window, let controller else { return }
+            guard let webView, let window = webView.window, let controller else { return }
+            WorkbenchWindowChrome.configure(window, webView: webView)
             WorkbenchWindowCloseGuard.shared.install(on: window, controller: controller)
         }
         return webView
@@ -19,7 +20,41 @@ struct WorkspaceWebView: NSViewRepresentable {
 
     func updateNSView(_ webView: WKWebView, context: Context) {
         guard let window = webView.window else { return }
+        WorkbenchWindowChrome.configure(window, webView: webView)
         WorkbenchWindowCloseGuard.shared.install(on: window, controller: controller)
+    }
+}
+
+@MainActor
+enum WorkbenchWindowChrome {
+    static func configure(_ window: NSWindow, webView: WKWebView) {
+        window.styleMask.insert(.fullSizeContentView)
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.titlebarSeparatorStyle = .none
+        window.isMovable = true
+        window.isMovableByWindowBackground = true
+        DispatchQueue.main.async { [weak webView] in
+            guard let webView else { return }
+            synchronizeWindowControlInset(for: webView)
+        }
+    }
+
+    static func synchronizeWindowControlInset(for webView: WKWebView) {
+        guard let window = webView.window else { return }
+        let buttons = [
+            NSWindow.ButtonType.closeButton,
+            .miniaturizeButton,
+            .zoomButton,
+        ].compactMap { window.standardWindowButton($0) }
+        guard let occupiedMaxX = buttons
+            .map({ $0.convert($0.bounds, to: nil).maxX })
+            .max()
+        else { return }
+        let inset = Int(ceil(occupiedMaxX + 12))
+        webView.evaluateJavaScript(
+            "document.documentElement.style.setProperty('--macos-window-controls-inset', '\(inset)px');"
+        )
     }
 }
 
@@ -105,6 +140,11 @@ enum WorkspaceWebViewFactory {
             forURLScheme: "pitchdog-asset"
         )
         configuration.userContentController.add(coordinator, name: BridgeContract.messageHandler)
+        configuration.userContentController.addUserScript(WKUserScript(
+            source: "document.documentElement.dataset.workspaceHost = 'macos';",
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        ))
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = coordinator

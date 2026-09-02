@@ -21,7 +21,8 @@
   useful sizes, exact media roles can swap from the shortlist, Slides stay
   visible in an image-backed rail, canvas changes apply, and Curate adds clear
   Primary assignment, real trays, local fullscreen ratings, and assign-to-Slide.
-  Exact-head CI
+  The macOS shell integrates native traffic lights into one full-content phase
+  toolbar and leaves document commands in the system menu bar. Exact-head CI
   controls artifact production, and the public GitHub Release is the release
   authority; source version text alone is not release evidence.
 - Repository hardening: strict journal record boundaries, durable/live-state fencing, dead utility-process rejection, recoverable Linux preferences, atomic Linux PDF publication and one canonical repository verification gate.

@@ -66,7 +66,8 @@ struct DeckWorkbenchApp: App {
             WorkbenchRootView(controller: controller)
                 .frame(minWidth: 1180, minHeight: 700)
         }
-        .windowStyle(.titleBar)
+        .windowStyle(.hiddenTitleBar)
+        .windowBackgroundDragBehavior(.enabled)
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("New Deck…") {

@@ -1999,7 +1999,7 @@ function instantiatePlanAssembly(
     crop: { x: 0, y: 0, width: 1, height: 1 },
     imageFit: 'fill',
   }))
-  if (style === 'full-bleed-overlay') {
+  if (style === 'full-bleed' || style === 'full-bleed-overlay') {
     elements.push({
       id: `${designOptionId}:element:gradient-overlay`,
       kind: 'shape',
@@ -2009,7 +2009,7 @@ function instantiatePlanAssembly(
         type: 'linear',
         start: { x: 0, y: 0.5 },
         end: { x: 0.72, y: 0.5 },
-        opacity: 0.78,
+        opacity: style === 'full-bleed-overlay' ? 0.78 : 0,
         colors: { start: '#000000', end: '#000000' },
       },
     })

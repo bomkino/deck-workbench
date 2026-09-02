@@ -64,7 +64,9 @@ The current source and intended Latest release line is `v0.0.5`. Its bounded rep
 new-work default and makes Plan's visual decision drive the initial Assembly. Assembly renders assigned images
 without distortion, exposes Fit/Fill, three text sizes, direct Element movement and resizing, role-specific image
 swaps, visual gradient controls, an image-backed Slide rail, and working canvas changes. Curate exposes a clear
-Primary action, real thumbnail trays, a local fullscreen rated preview, and role-aware assignment to any Slide. It is
+Primary action, real thumbnail trays, a local fullscreen rated preview, and role-aware assignment to any Slide.
+The macOS shell uses one full-content frame: native traffic lights share the compact Workbench toolbar, document
+commands remain in the system menu bar, and no duplicate title or action strip consumes canvas height. It is
 not released, Latest, packaged or installed merely because the source version
 is `0.0.5`. Release status comes from the public GitHub Release targeting an
 exact canonical-main commit whose package workflows passed, with its public

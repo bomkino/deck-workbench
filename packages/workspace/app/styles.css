@@ -165,8 +165,8 @@ small { font-size: max(0.8125rem, 11px); line-height: 1.38; letter-spacing: 0.00
 .icon-button { inline-size: var(--control-size); block-size: var(--control-size); min-inline-size: var(--control-size); display: inline-grid; place-items: center; padding: 0; }
 
 .workbench { min-width: 0; width: 100%; height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; }
-.toolbar { position: relative; z-index: 30; display: grid; grid-template-columns: minmax(13rem, 15rem) minmax(24rem, 1fr) auto; min-height: 4rem; border-bottom: 1px solid var(--rule); background: var(--paper-strong); box-shadow: 0 1px 0 rgb(0 0 0 / 0.04); }
-.brand-cluster, .toolbar-actions { min-width: 0; display: flex; align-items: center; gap: 0.4rem; padding: 0.4rem 0.65rem; }
+.toolbar { position: relative; z-index: 30; display: grid; grid-template-columns: minmax(13rem, 15rem) minmax(24rem, 1fr) auto; min-height: 3rem; border-bottom: 1px solid var(--rule); background: var(--paper-strong); box-shadow: 0 1px 0 rgb(0 0 0 / 0.04); }
+.brand-cluster, .toolbar-actions { min-width: 0; display: flex; align-items: center; gap: 0.4rem; padding: 0.125rem 0.65rem; }
 .brand-cluster { border-right: 1px solid var(--rule); }
 .brand-mark { flex: 0 0 auto; width: 2.4rem; height: 2.4rem; }
 .brand-copy { min-width: 0; }
@@ -175,7 +175,7 @@ small { font-size: max(0.8125rem, 11px); line-height: 1.38; letter-spacing: 0.00
 .deck-title-row { display: flex; align-items: baseline; gap: 0.55rem; min-width: 0; }
 .deck-title-row h1 { max-width: 20ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: max(0.9375rem, 13px); }
 .quiet-action { border-color: transparent; }
-.phase-navigation { min-width: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.2rem; align-items: center; padding: 0.4rem; }
+.phase-navigation { min-width: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.2rem; align-items: center; padding: 0.125rem 0.25rem; }
 .phase-navigation button { position: relative; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 0.4rem; border: 0; border-radius: 6px; padding: 0.45rem 0.65rem; text-align: center; }
 .phase-navigation button > span { font-family: var(--font-eyebrow); font-size: max(0.8125rem, 11px); font-weight: 500; font-stretch: 87.5%; font-variation-settings: "wght" 500, "wdth" 87.5, "ital" 0; line-height: 1.25; letter-spacing: 0.006em; font-variant-numeric: tabular-nums lining-nums slashed-zero; }
 .phase-navigation button strong { font-size: max(0.9375rem, 12px); font-weight: 600; line-height: 1.2; letter-spacing: -0.008em; }
@@ -196,6 +196,11 @@ small { font-size: max(0.8125rem, 11px); line-height: 1.38; letter-spacing: 0.00
 .appearance-panel { position: absolute; z-index: 90; top: calc(100% + 0.35rem); right: 0; width: 14rem; display: grid; gap: 0.65rem; padding: 0.75rem; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--paper-strong); box-shadow: var(--shadow); }
 .theme-control, .interface-control { min-width: 0; }
 #save-state { flex: 0 1 8rem; width: 8rem; min-width: 0; max-width: 8rem; overflow: hidden; color: var(--ink-muted); font-family: var(--font-eyebrow); font-size: max(0.6875rem, 11px); font-weight: 500; font-stretch: 87.5%; font-variation-settings: "wght" 500, "wdth" 87.5, "ital" 0; line-height: 1.25; letter-spacing: 0.025em; text-overflow: ellipsis; white-space: nowrap; }
+
+/* macOS uses one full-content frame: native traffic lights sit inside this toolbar. */
+html[data-workspace-host="macos"] .toolbar { grid-template-columns: minmax(17rem, 19rem) minmax(24rem, 1fr) auto; }
+html[data-workspace-host="macos"] .brand-cluster { padding-inline-start: var(--macos-window-controls-inset, 76px); }
+html[data-workspace-host="macos"] .brand-mark { display: none; }
 
 .phase-workspaces { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
 .phase-view { position: absolute; inset: 0; min-width: 0; min-height: 0; visibility: hidden; pointer-events: none; }
@@ -585,6 +590,7 @@ html[data-workspace-export="native"] #artboard { position: absolute !important; 
 html[data-workspace-export="linux"] #artboard { position: absolute !important; inset: 0 !important; width: 1088px !important; height: var(--artboard-base-height, 456.149068px) !important; transform: scale(var(--linux-export-scale, 0.89485873)) !important; transform-origin: 0 0 !important; }
 
 html[data-workspace-layout="two-column"] .toolbar { grid-template-columns: minmax(12rem, 14rem) minmax(22rem, 1fr) auto; }
+html[data-workspace-host="macos"][data-workspace-layout="two-column"] .toolbar { grid-template-columns: minmax(16rem, 18rem) minmax(22rem, 1fr) auto; }
 html[data-workspace-layout="two-column"] .plan-phase { grid-template-areas: "sequence map" "editor editor"; grid-template-columns: minmax(18rem, 0.72fr) minmax(26rem, 1.28fr); grid-template-rows: minmax(18rem, 0.72fr) minmax(26rem, 1.28fr); overflow: auto; }
 html[data-workspace-layout="two-column"] .sequence, html[data-workspace-layout="two-column"] .deck-map-panel { border-bottom: 1px solid var(--rule); }
 html[data-workspace-layout="two-column"] .plan-editor { border-bottom: 0; }

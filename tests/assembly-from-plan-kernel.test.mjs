@@ -127,8 +127,22 @@ test('Plan Visual Styles create one complete deterministic Assembly with exact t
       assert.ok(element.frame.y + element.frame.height <= projection.canvas.height)
     }
     const gradients = projection.composition.elements.filter((element) => element.gradient)
-    assert.equal(gradients.length, style === 'full-bleed-overlay' ? 1 : 0)
+    assert.equal(gradients.length, ['full-bleed', 'full-bleed-overlay'].includes(style) ? 1 : 0)
   }
+})
+
+test('plain Full Bleed exposes the complete gradient editor without changing its default appearance', () => {
+  const session = kernel.open(checkpoint('full-bleed'))
+  createFromPlan(session)
+  const projection = kernel.query(session, 'slide.activeProjection', { slideId: SLIDE_ID })
+  const gradientElement = projection.composition.elements.find((element) => element.gradient)
+  assert.ok(gradientElement)
+  assert.equal(gradientElement.patternElementKey, 'gradient-overlay')
+  assert.equal(gradientElement.gradient.opacity, 0)
+  assert.deepEqual(JSON.parse(JSON.stringify(gradientElement.gradient.colors)), {
+    start: '#000000',
+    end: '#000000',
+  })
 })
 
 test('the full-bleed overlay gradient is bounded, durable, undoable and canvas-independent', () => {

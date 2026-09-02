@@ -6,11 +6,11 @@
 
 ## Platform
 
-web
+macOS-first desktop application with a shared web workspace; Linux is supported but secondary.
 
 ## Users
 
-- **Confirmed for this redesign:** an expert deck-maker operating a desktop production tool at 1440 × 900 and 1280 × 720.
+- **Confirmed for this redesign:** an expert deck-maker operating primarily on macOS at 1440 × 900 and 1280 × 720.
 - **Repository-derived assumption:** the primary user is pitch.dog and adjacent small creative teams producing film, television, advertising, documentary, and other authored pitch decks.
 
 ## Product Purpose
@@ -30,7 +30,7 @@ web
 ## Capabilities and Constraints
 
 - **Confirmed for this redesign:** preserve all DOM identifiers, JavaScript bindings, copy, data/native contracts, and current feature behaviour.
-- **Confirmed for this redesign:** CSS and markup lead; JavaScript is limited to a necessary panel collapse or shortcut. No framework, kernel, bridge, native, or data-model rewrite.
+- **Confirmed for this redesign:** CSS and markup lead; JavaScript stays narrow. A small native-shell change is permitted where macOS must own window chrome, traffic-light clearance, menus, lifecycle or privileged operations. No framework or data-model rewrite.
 - **Repository-derived assumption:** Plan manages exact copy and intent; Curate judges and assigns authorised media; Assemble arranges media, text, crop, type scale, and gradients; Handoff exposes concrete readiness and export actions.
 - **Repository-derived assumption:** Interface Scale is independent of artboard zoom and Deck geometry.
 - **Repository-derived assumption:** the product contains no bundled AI, account, telemetry, analytics, cloud dependency, or mandatory network access.
@@ -38,7 +38,7 @@ web
 ## Brand Commitments
 
 - **Confirmed for this redesign:** use a quiet Apple Keynote-like editor shell with one accent, system sans typography, restrained neutral layers, familiar controls, and no generic SaaS dashboard treatment.
-- **Repository-derived assumption:** preserve the Deck Workbench name, pitch.dog mark, authored Phosphor icons, and calm editorial working character.
+- **Repository-derived assumption:** preserve the Deck Workbench name, pitch.dog identity, authored Phosphor icons, and calm editorial working character without forcing a logo into scarce working chrome.
 
 ## Evidence on Hand
 

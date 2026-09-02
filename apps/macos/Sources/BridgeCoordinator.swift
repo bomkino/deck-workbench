@@ -37,6 +37,7 @@ final class BridgeCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDel
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        WorkbenchWindowChrome.synchronizeWindowControlInset(for: webView)
         loadContinuation?.resume()
         loadContinuation = nil
         Task { await controller.workspaceBecameReady() }
