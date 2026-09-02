@@ -153,7 +153,7 @@ The extracted macOS app creates and reorders a second Section and Slide, uses Co
 | Kernel | Story add/move/rename/intent, paragraph-preserving \`content.update\`, explicit removals, prepare/commit and atomic rejection | Pass |
 | Story projection | Ordered Sections/Slides plus exact rich-text value and LF-joined plain text | Pass |
 | Typed bridge | Keyboard \`content.update\`, \`slide.move\` and \`section.move\`, queries and history plus all structural commands from WebView | Pass |
-| Journal/replay | Twenty commands, thirteen undos and thirteen redos in one hash chain; restart replay at revision ${storyCreateResult.journalReplayRevision} | Pass |
+| Journal/replay | Twenty-one commands, fourteen undos and fourteen redos in one hash chain; restart replay at revision ${storyCreateResult.journalReplayRevision} | Pass |
 | Crash recovery | Stale manifest head with valid durable journal tail | Pass: repaired and replayed to revision ${storyCreateResult.crashRecoveryRevision} |
 | Session lifecycle | Checkpoint, host close, cleared projection, new-process reopen | Pass |
 | Native failure presentation | Missing document through the shared command wrapper plus compiled SwiftUI alert binding | Pass: controller status and presented failure retained; interactive alert acceptance gated |

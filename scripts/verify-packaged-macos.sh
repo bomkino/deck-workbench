@@ -85,7 +85,7 @@ test "$(wc -l < "$DOCUMENT/journal.ndjson" | tr -d ' ')" = "3"
 
 "$BINARY" --tracer-reopen "$DOCUMENT" "$PDF" "$REOPEN_RESULT"
 test -s "$PDF"
-test "$(wc -l < "$DOCUMENT/journal.ndjson" | tr -d ' ')" = "4"
+test "$(wc -l < "$DOCUMENT/journal.ndjson" | tr -d ' ')" = "6"
 
 swift -e 'import Foundation; import PDFKit; let u = URL(fileURLWithPath: CommandLine.arguments[1]); guard let d = PDFDocument(url: u), d.pageCount == 1 else { exit(1) }' "$PDF"
 node "$REPOSITORY_ROOT/scripts/verify-tracer-output.mjs" "$DOCUMENT" "$CREATE_RESULT" "$REOPEN_RESULT" "$PDF"
@@ -98,10 +98,10 @@ STORY_REOPEN_RESULT="$JOURNEY_ROOT/story-reopen-result.json"
 test -f "$STORY_DOCUMENT/manifest.json"
 test -f "$STORY_DOCUMENT/checkpoint.json"
 test -f "$STORY_DOCUMENT/journal.ndjson"
-test "$(wc -l < "$STORY_DOCUMENT/journal.ndjson" | tr -d ' ')" = "22"
+test "$(wc -l < "$STORY_DOCUMENT/journal.ndjson" | tr -d ' ')" = "23"
 
 "$BINARY" --tracer-story-reopen "$STORY_DOCUMENT" "$STORY_CREATE_RESULT" "$STORY_REOPEN_RESULT"
-test "$(wc -l < "$STORY_DOCUMENT/journal.ndjson" | tr -d ' ')" = "46"
+test "$(wc -l < "$STORY_DOCUMENT/journal.ndjson" | tr -d ' ')" = "49"
 node "$REPOSITORY_ROOT/scripts/verify-story-tracer-output.mjs" \
   "$STORY_DOCUMENT" "$STORY_CREATE_RESULT" "$STORY_REOPEN_RESULT"
 

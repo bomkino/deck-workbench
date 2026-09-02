@@ -588,13 +588,43 @@ enum PackagedTracer {
         }
 
         let undone = try await controller.invokeWorkspaceForTracer(
-            "const result = await deckBridge.undo(); deckWorkbench.renderProjection(result.projection); return result.projection"
+            "const result = await deckBridge.undo(); return await refreshWorkspace(result.projection?.slide?.id)"
         )
         guard let undoneProjection = undone as? [String: Any],
               undoneProjection["revision"] as? Int == 4,
               ((undoneProjection["headline"] as? [String: Any])?["plainText"] as? String) == "Untitled Story"
         else {
             throw WorkbenchFailure(name: "InvalidCommand", message: "Undo after reopen failed")
+        }
+
+        let assembly = try await controller.invokeWorkspaceForTracer(
+            """
+            const slideId = deckWorkbench.projection()?.slide?.id;
+            if (!slideId) throw new Error('Tracer Slide is unavailable');
+            const planned = await executeStructural(
+              'slide.intent.set',
+              { slideId, intent: 'text-only' },
+              slideId,
+              { sourceLabel: 'Prepare packaged export', preserveCurrentSelection: true }
+            );
+            if (!planned) throw new Error('Tracer text-only Plan was not committed');
+            await enterPhaseForSlide('assemble', slideId);
+            const assembled = await ensureAssemblyFromPlan(deckWorkbench.projection());
+            return {
+              revision: assembled?.revision,
+              phase: deckWorkbench.phase(),
+              compositionPresent: Boolean(assembled?.composition),
+              visualStyle: assembled?.designOption?.planAtCreation?.visualStyle ?? null,
+            };
+            """
+        )
+        guard let assemblyResult = assembly as? [String: Any],
+              assemblyResult["revision"] as? Int == 6,
+              assemblyResult["phase"] as? String == "assemble",
+              assemblyResult["compositionPresent"] as? Bool == true,
+              assemblyResult["visualStyle"] as? String == "text-only"
+        else {
+            throw WorkbenchFailure(name: "InvalidCommand", message: "Packaged export Assembly was not created from the text-only Plan")
         }
 
         try await controller.exportPDF(to: pdfURL)
@@ -607,6 +637,9 @@ enum PackagedTracer {
             "reopenedHeadline": reopenedHeadline as Any,
             "undoRevision": 4,
             "undoHeadline": "Untitled Story",
+            "assemblyRevision": 6,
+            "assemblyStyle": "text-only",
+            "assemblyReady": true,
             "pdf": pdfURL.path,
             "corruptJournalFailure": negativeResults.corruptJournal,
             "unsupportedSchemaFailure": negativeResults.unsupportedSchema,
@@ -772,6 +805,11 @@ enum PackagedTracer {
             const openingSequenceSection = [...document.querySelectorAll('#sequence-list [data-section-id]')]
               .find((row) => row.dataset.sectionId === openingSectionId);
             const priorInterfaceScale = interfaceScale;
+            await enterPhaseForSlide('assemble', secondSlideId);
+            const assemblyCreated = await ensureAssemblyFromPlan(deckWorkbench.projection());
+            if (assemblyCreated?.revision !== 12 || !assemblyCreated?.composition || !assemblyCreated?.designOption?.id) {
+              throw new Error('Story Assembly creation did not settle before sequence input');
+            }
             await enterPhaseForSlide('plan', secondSlideId);
             const targetSizesByScale = [];
             const artboardWidthsByScale = [];
@@ -879,7 +917,7 @@ enum PackagedTracer {
               key: 'ArrowUp', altKey: true, bubbles: true, cancelable: true
             });
             sequenceSlide.dispatchEvent(moveUp);
-            await waitForRevision(12);
+            await waitForRevision(13);
             const sequenceMovedUp = await deckBridge.query({ name: 'story.document', params: {} });
             const focusAfterMoveUp = await waitForSequenceFocus();
 
@@ -887,7 +925,7 @@ enum PackagedTracer {
               key: 'ArrowDown', altKey: true, bubbles: true, cancelable: true
             });
             findSequenceSlide().dispatchEvent(moveDown);
-            await waitForRevision(13);
+            await waitForRevision(14);
             const sequenceMovedDown = await deckBridge.query({ name: 'story.document', params: {} });
             const focusAfterMoveDown = await waitForSequenceFocus();
 
@@ -908,7 +946,7 @@ enum PackagedTracer {
               key: 'ArrowUp', altKey: true, bubbles: true, cancelable: true
             });
             sequenceSection.dispatchEvent(moveSectionUp);
-            await waitForRevision(14);
+            await waitForRevision(15);
             const sectionMovedUp = await deckBridge.query({ name: 'story.document', params: {} });
             const focusAfterSectionMoveUp = await waitForSectionFocus();
 
@@ -916,7 +954,7 @@ enum PackagedTracer {
               key: 'ArrowDown', altKey: true, bubbles: true, cancelable: true
             });
             findSequenceSection().dispatchEvent(moveSectionDown);
-            await waitForRevision(15);
+            await waitForRevision(16);
             const sectionMovedDown = await deckBridge.query({ name: 'story.document', params: {} });
             const focusAfterSectionMoveDown = await waitForSectionFocus();
 
@@ -928,14 +966,14 @@ enum PackagedTracer {
             const slideDownControl = findSlideMoveControl(openingSlideId, 'down');
             if (!slideDownControl) throw new Error('Slide down control is unavailable');
             slideDownControl.click();
-            await waitForRevision(16);
+            await waitForRevision(17);
             const controlSlideMovedDown = await deckBridge.query({ name: 'story.document', params: {} });
             const focusAfterControlSlideDown = await waitForSequenceFocus();
 
             const slideUpControl = findSlideMoveControl(openingSlideId, 'up');
             if (!slideUpControl) throw new Error('Slide up control is unavailable');
             slideUpControl.click();
-            await waitForRevision(17);
+            await waitForRevision(18);
             const controlSlideMovedUp = await deckBridge.query({ name: 'story.document', params: {} });
             const focusAfterControlSlideUp = await waitForSequenceFocus();
 
@@ -954,20 +992,25 @@ enum PackagedTracer {
             const sectionDownControl = findSectionMoveControl(secondSectionId, 'down');
             if (!sectionDownControl) throw new Error('Section down control is unavailable');
             sectionDownControl.click();
-            await waitForRevision(18);
+            await waitForRevision(19);
             const controlSectionMovedDown = await deckBridge.query({ name: 'story.document', params: {} });
             const focusAfterControlSectionDown = await waitForSectionIdentityFocus(secondSectionId);
 
             const sectionUpControl = findSectionMoveControl(secondSectionId, 'up');
             if (!sectionUpControl) throw new Error('Section up control is unavailable');
             sectionUpControl.click();
-            await waitForRevision(19);
+            await waitForRevision(20);
             const controlSectionMovedUp = await deckBridge.query({ name: 'story.document', params: {} });
             const focusAfterControlSectionUp = await waitForSectionIdentityFocus(secondSectionId);
 
             return {
               committed, undone, redone,
               accessibilityContract,
+              assemblyCreation: {
+                revision: assemblyCreated.revision,
+                designOptionId: assemblyCreated.designOption.id,
+                compositionPresent: Boolean(assemblyCreated.composition)
+              },
               scaleReflowContract,
               sequenceMovedUp, sequenceMovedDown,
               sectionMovedUp, sectionMovedDown,
@@ -1024,6 +1067,14 @@ enum PackagedTracer {
               keyboardJourney["afterDirtyUndoRevision"] as? Int == 8
         else {
             throw WorkbenchFailure(name: "InvalidCommand", message: "Story keyboard commit, history or focus contract failed")
+        }
+        guard let assemblyCreation = keyboardJourney["assemblyCreation"] as? [String: Any],
+              assemblyCreation["revision"] as? Int == 12,
+              assemblyCreation["compositionPresent"] as? Bool == true,
+              let assemblyDesignOptionId = assemblyCreation["designOptionId"] as? String,
+              !assemblyDesignOptionId.isEmpty
+        else {
+            throw WorkbenchFailure(name: "InvalidCommand", message: "Story Assembly creation did not settle before sequence input")
         }
         guard let accessibility = keyboardJourney["accessibilityContract"] as? [String: Any],
               accessibility["workbenchLabel"] as? String == "Deck Workbench Editorial Desk",
@@ -1101,13 +1152,13 @@ enum PackagedTracer {
         else {
             throw WorkbenchFailure(name: "InvalidCommand", message: "Interface Scale reflow, target size or artboard independence contract failed")
         }
-        let sequenceMovedUp = try requireStory(keyboardJourney["sequenceMovedUp"], revision: 12)
+        let sequenceMovedUp = try requireStory(keyboardJourney["sequenceMovedUp"], revision: 13)
         try requireStoryOrder(
             sequenceMovedUp,
             sectionIds: [secondSectionId, openingSectionId],
             slideIdsBySection: [[openingSlideId], [secondSlideId]]
         )
-        let sequenceMovedDown = try requireStory(keyboardJourney["sequenceMovedDown"], revision: 13)
+        let sequenceMovedDown = try requireStory(keyboardJourney["sequenceMovedDown"], revision: 14)
         try requireStoryOrder(
             sequenceMovedDown,
             sectionIds: [secondSectionId, openingSectionId],
@@ -1120,13 +1171,13 @@ enum PackagedTracer {
         else {
             throw WorkbenchFailure(name: "InvalidCommand", message: "Sequence keyboard reorder or focus contract failed")
         }
-        let sectionMovedUp = try requireStory(keyboardJourney["sectionMovedUp"], revision: 14)
+        let sectionMovedUp = try requireStory(keyboardJourney["sectionMovedUp"], revision: 15)
         try requireStoryOrder(
             sectionMovedUp,
             sectionIds: [openingSectionId, secondSectionId],
             slideIdsBySection: [[openingSlideId, secondSlideId], []]
         )
-        let sectionMovedDown = try requireStory(keyboardJourney["sectionMovedDown"], revision: 15)
+        let sectionMovedDown = try requireStory(keyboardJourney["sectionMovedDown"], revision: 16)
         try requireStoryOrder(
             sectionMovedDown,
             sectionIds: [secondSectionId, openingSectionId],
@@ -1139,25 +1190,25 @@ enum PackagedTracer {
         else {
             throw WorkbenchFailure(name: "InvalidCommand", message: "Sequence Section keyboard reorder or focus contract failed")
         }
-        let controlSlideMovedDown = try requireStory(keyboardJourney["controlSlideMovedDown"], revision: 16)
+        let controlSlideMovedDown = try requireStory(keyboardJourney["controlSlideMovedDown"], revision: 17)
         try requireStoryOrder(
             controlSlideMovedDown,
             sectionIds: [secondSectionId, openingSectionId],
             slideIdsBySection: [[], [secondSlideId, openingSlideId]]
         )
-        let controlSlideMovedUp = try requireStory(keyboardJourney["controlSlideMovedUp"], revision: 17)
+        let controlSlideMovedUp = try requireStory(keyboardJourney["controlSlideMovedUp"], revision: 18)
         try requireStoryOrder(
             controlSlideMovedUp,
             sectionIds: [secondSectionId, openingSectionId],
             slideIdsBySection: [[], [openingSlideId, secondSlideId]]
         )
-        let controlSectionMovedDown = try requireStory(keyboardJourney["controlSectionMovedDown"], revision: 18)
+        let controlSectionMovedDown = try requireStory(keyboardJourney["controlSectionMovedDown"], revision: 19)
         try requireStoryOrder(
             controlSectionMovedDown,
             sectionIds: [openingSectionId, secondSectionId],
             slideIdsBySection: [[openingSlideId, secondSlideId], []]
         )
-        let controlSectionMovedUp = try requireStory(keyboardJourney["controlSectionMovedUp"], revision: 19)
+        let controlSectionMovedUp = try requireStory(keyboardJourney["controlSectionMovedUp"], revision: 20)
         try requireStoryOrder(
             controlSectionMovedUp,
             sectionIds: [secondSectionId, openingSectionId],
@@ -1198,7 +1249,7 @@ enum PackagedTracer {
             """,
             arguments: ["secondSlideId": secondSlideId, "bodyBlockId": bodyBlockId]
         )
-        let removed = try requireStory(rawRemoved, revision: 20)
+        let removed = try requireStory(rawRemoved, revision: 21)
         guard let removedSections = removed["sections"] as? [[String: Any]],
               let removedSlides = removedSections[1]["slides"] as? [[String: Any]],
               let removedBlocks = removedSlides[1]["contentBlocks"] as? [[String: Any]],
@@ -1224,7 +1275,7 @@ enum PackagedTracer {
             """,
             arguments: ["secondSectionId": secondSectionId, "secondSlideId": secondSlideId]
         )
-        let structurallyRemoved = try requireStory(rawStructurallyRemoved, revision: 22)
+        let structurallyRemoved = try requireStory(rawStructurallyRemoved, revision: 23)
         try requireStoryOrder(
             structurallyRemoved,
             sectionIds: [openingSectionId],
@@ -1242,19 +1293,19 @@ enum PackagedTracer {
         try await controller.closeDocument()
         _ = try replayController.openDocument(at: durableDocumentURL)
         let replayed = try replayController.query(name: "story.document", params: [:])
-        _ = try requireStory(replayed, revision: 22)
+        _ = try requireStory(replayed, revision: 23)
         try await replayController.closeDocument()
 
-        let crashRecoveryRevision = try await verifyInterruptedManifestRecovery(from: durableDocumentURL, expectedRevision: 22)
+        let crashRecoveryRevision = try await verifyInterruptedManifestRecovery(from: durableDocumentURL, expectedRevision: 23)
         guard !controller.hasDocument else {
             throw WorkbenchFailure(name: "InvalidCommand", message: "Explicit close left the Deck session open")
         }
         try writeJSON([
             "phase": "story-create",
-            "revision": 22,
+            "revision": 23,
             "sectionIds": [secondSectionId, openingSectionId],
             "openingSlideIds": [openingSlideId, secondSlideId],
-            "journalReplayRevision": 22,
+            "journalReplayRevision": 23,
             "deckTitle": "The Hill",
             "renamedSectionTitle": "Act II",
             "slideIntent": "editorial-body",
@@ -1266,16 +1317,18 @@ enum PackagedTracer {
             "keyboardUndoRevision": 10,
             "keyboardRedoRevision": 11,
             "keyboardFocusRetained": true,
-            "sequenceMoveUpRevision": 12,
-            "sequenceMoveDownRevision": 13,
+            "assemblyCreationRevision": 12,
+            "assemblyDesignOptionId": assemblyDesignOptionId,
+            "sequenceMoveUpRevision": 13,
+            "sequenceMoveDownRevision": 14,
             "sequenceKeyboardFocusRetained": true,
-            "sectionMoveUpRevision": 14,
-            "sectionMoveDownRevision": 15,
+            "sectionMoveUpRevision": 15,
+            "sectionMoveDownRevision": 16,
             "sectionKeyboardFocusRetained": true,
-            "controlSlideMoveDownRevision": 16,
-            "controlSlideMoveUpRevision": 17,
-            "controlSectionMoveDownRevision": 18,
-            "controlSectionMoveUpRevision": 19,
+            "controlSlideMoveDownRevision": 17,
+            "controlSlideMoveUpRevision": 18,
+            "controlSectionMoveDownRevision": 19,
+            "controlSectionMoveUpRevision": 20,
             "sequenceControlFocusRetained": true,
             "compositionCommitIgnored": true,
             "dirtyUndoReservedForText": true,
@@ -1307,7 +1360,9 @@ enum PackagedTracer {
               let sectionIds = createResult["sectionIds"] as? [String],
               sectionIds.count == 2,
               let openingSlideIds = createResult["openingSlideIds"] as? [String],
-              openingSlideIds.count == 2
+              openingSlideIds.count == 2,
+              let assemblyDesignOptionId = createResult["assemblyDesignOptionId"] as? String,
+              !assemblyDesignOptionId.isEmpty
         else {
             throw WorkbenchFailure(name: "InvalidCommand", message: "Story create receipt lacks stable structural identities")
         }
@@ -1320,7 +1375,7 @@ enum PackagedTracer {
         let rawReopened = try await controller.invokeWorkspaceForTracer(
             "return await deckBridge.query({ name: 'story.document', params: {} })"
         )
-        let reopened = try requireStory(rawReopened, revision: 22)
+        let reopened = try requireStory(rawReopened, revision: 23)
         try requireStoryOrder(reopened, sectionIds: [openingSectionId], slideIdsBySection: [[openingSlideId]])
         guard reopened["deckTitle"] as? String == "The Hill" else {
             throw WorkbenchFailure(name: "JournalCorruption", message: "Deck metadata did not survive structural removal")
@@ -1329,7 +1384,7 @@ enum PackagedTracer {
         let rawSectionRestored = try await controller.invokeWorkspaceForTracer(
             "await deckBridge.undo(); return await deckBridge.query({ name: 'story.document', params: {} })"
         )
-        let sectionRestored = try requireStory(rawSectionRestored, revision: 23)
+        let sectionRestored = try requireStory(rawSectionRestored, revision: 24)
         try requireStoryOrder(
             sectionRestored,
             sectionIds: [secondSectionId, openingSectionId],
@@ -1339,7 +1394,7 @@ enum PackagedTracer {
         let rawSlideRestored = try await controller.invokeWorkspaceForTracer(
             "await deckBridge.undo(); return await deckBridge.query({ name: 'story.document', params: {} })"
         )
-        let slideRestored = try requireStory(rawSlideRestored, revision: 24)
+        let slideRestored = try requireStory(rawSlideRestored, revision: 25)
         try requireStoryOrder(
             slideRestored,
             sectionIds: [secondSectionId, openingSectionId],
@@ -1358,7 +1413,7 @@ enum PackagedTracer {
         let rawContentRestored = try await controller.invokeWorkspaceForTracer(
             "await deckBridge.undo(); return await deckBridge.query({ name: 'story.document', params: {} })"
         )
-        let contentRestored = try requireStory(rawContentRestored, revision: 25)
+        let contentRestored = try requireStory(rawContentRestored, revision: 26)
         guard let contentSections = contentRestored["sections"] as? [[String: Any]],
               let contentSlides = contentSections[1]["slides"] as? [[String: Any]],
               let restoredBlocks = contentSlides[1]["contentBlocks"] as? [[String: Any]],
@@ -1374,7 +1429,7 @@ enum PackagedTracer {
             arguments: ["secondSlideId": secondSlideId]
         )
         guard let restoredParagraphProjection = rawRestoredParagraphProjection as? [String: Any],
-              restoredParagraphProjection["revision"] as? Int == 25,
+              restoredParagraphProjection["revision"] as? Int == 26,
               let restoredProjectedBlocks = restoredParagraphProjection["contentBlocks"] as? [[String: Any]],
               restoredProjectedBlocks.count == 2
         else {
@@ -1385,7 +1440,7 @@ enum PackagedTracer {
         let rawControlSectionMoveUpUndone = try await controller.invokeWorkspaceForTracer(
             "await deckBridge.undo(); return await deckBridge.query({ name: 'story.document', params: {} })"
         )
-        let controlSectionMoveUpUndone = try requireStory(rawControlSectionMoveUpUndone, revision: 26)
+        let controlSectionMoveUpUndone = try requireStory(rawControlSectionMoveUpUndone, revision: 27)
         try requireStoryOrder(
             controlSectionMoveUpUndone,
             sectionIds: [openingSectionId, secondSectionId],
@@ -1395,7 +1450,7 @@ enum PackagedTracer {
         let rawControlSectionMoveDownUndone = try await controller.invokeWorkspaceForTracer(
             "await deckBridge.undo(); return await deckBridge.query({ name: 'story.document', params: {} })"
         )
-        let controlSectionMoveDownUndone = try requireStory(rawControlSectionMoveDownUndone, revision: 27)
+        let controlSectionMoveDownUndone = try requireStory(rawControlSectionMoveDownUndone, revision: 28)
         try requireStoryOrder(
             controlSectionMoveDownUndone,
             sectionIds: [secondSectionId, openingSectionId],
@@ -1405,7 +1460,7 @@ enum PackagedTracer {
         let rawControlSlideMoveUpUndone = try await controller.invokeWorkspaceForTracer(
             "await deckBridge.undo(); return await deckBridge.query({ name: 'story.document', params: {} })"
         )
-        let controlSlideMoveUpUndone = try requireStory(rawControlSlideMoveUpUndone, revision: 28)
+        let controlSlideMoveUpUndone = try requireStory(rawControlSlideMoveUpUndone, revision: 29)
         try requireStoryOrder(
             controlSlideMoveUpUndone,
             sectionIds: [secondSectionId, openingSectionId],
@@ -1415,7 +1470,7 @@ enum PackagedTracer {
         let rawControlSlideMoveDownUndone = try await controller.invokeWorkspaceForTracer(
             "await deckBridge.undo(); return await deckBridge.query({ name: 'story.document', params: {} })"
         )
-        let controlSlideMoveDownUndone = try requireStory(rawControlSlideMoveDownUndone, revision: 29)
+        let controlSlideMoveDownUndone = try requireStory(rawControlSlideMoveDownUndone, revision: 30)
         try requireStoryOrder(
             controlSlideMoveDownUndone,
             sectionIds: [secondSectionId, openingSectionId],
@@ -1425,7 +1480,7 @@ enum PackagedTracer {
         let rawSectionMoveDownUndone = try await controller.invokeWorkspaceForTracer(
             "await deckBridge.undo(); return await deckBridge.query({ name: 'story.document', params: {} })"
         )
-        let sectionMoveDownUndone = try requireStory(rawSectionMoveDownUndone, revision: 30)
+        let sectionMoveDownUndone = try requireStory(rawSectionMoveDownUndone, revision: 31)
         try requireStoryOrder(
             sectionMoveDownUndone,
             sectionIds: [openingSectionId, secondSectionId],
@@ -1435,7 +1490,7 @@ enum PackagedTracer {
         let rawSectionMoveUpUndone = try await controller.invokeWorkspaceForTracer(
             "await deckBridge.undo(); return await deckBridge.query({ name: 'story.document', params: {} })"
         )
-        let sectionMoveUpUndone = try requireStory(rawSectionMoveUpUndone, revision: 31)
+        let sectionMoveUpUndone = try requireStory(rawSectionMoveUpUndone, revision: 32)
         try requireStoryOrder(
             sectionMoveUpUndone,
             sectionIds: [secondSectionId, openingSectionId],
@@ -1445,7 +1500,7 @@ enum PackagedTracer {
         let rawSequenceMoveDownUndone = try await controller.invokeWorkspaceForTracer(
             "await deckBridge.undo(); return await deckBridge.query({ name: 'story.document', params: {} })"
         )
-        let sequenceMoveDownUndone = try requireStory(rawSequenceMoveDownUndone, revision: 32)
+        let sequenceMoveDownUndone = try requireStory(rawSequenceMoveDownUndone, revision: 33)
         try requireStoryOrder(
             sequenceMoveDownUndone,
             sectionIds: [secondSectionId, openingSectionId],
@@ -1455,19 +1510,39 @@ enum PackagedTracer {
         let rawSequenceMoveUpUndone = try await controller.invokeWorkspaceForTracer(
             "await deckBridge.undo(); return await deckBridge.query({ name: 'story.document', params: {} })"
         )
-        let sequenceMoveUpUndone = try requireStory(rawSequenceMoveUpUndone, revision: 33)
+        let sequenceMoveUpUndone = try requireStory(rawSequenceMoveUpUndone, revision: 34)
         try requireStoryOrder(
             sequenceMoveUpUndone,
             sectionIds: [secondSectionId, openingSectionId],
             slideIdsBySection: [[], [openingSlideId, secondSlideId]]
         )
 
+        let rawAssemblyUndone = try await controller.invokeWorkspaceForTracer(
+            """
+            await deckBridge.undo();
+            const active = await deckBridge.query({ name: 'slide.activeProjection', params: { slideId: secondSlideId } });
+            return {
+              revision: active.revision,
+              compositionPresent: Boolean(active.composition),
+              designOptionPresent: Boolean(active.designOption)
+            };
+            """,
+            arguments: ["secondSlideId": secondSlideId]
+        )
+        guard let assemblyUndone = rawAssemblyUndone as? [String: Any],
+              assemblyUndone["revision"] as? Int == 35,
+              assemblyUndone["compositionPresent"] as? Bool == false,
+              assemblyUndone["designOptionPresent"] as? Bool == false
+        else {
+            throw WorkbenchFailure(name: "InvalidCommand", message: "Undo did not remove the Plan-created Assembly")
+        }
+
         let rawOriginalBody = try await controller.invokeWorkspaceForTracer(
             "await deckBridge.undo(); return await deckBridge.query({ name: 'slide.activeProjection', params: { slideId: secondSlideId } })",
             arguments: ["secondSlideId": secondSlideId]
         )
         guard let originalBody = rawOriginalBody as? [String: Any],
-              originalBody["revision"] as? Int == 34,
+              originalBody["revision"] as? Int == 36,
               let originalBlocks = originalBody["contentBlocks"] as? [[String: Any]],
               originalBlocks.count == 2,
               originalBlocks[1]["plainText"] as? String == bodyOriginalText
@@ -1481,7 +1556,7 @@ enum PackagedTracer {
             arguments: ["secondSlideId": secondSlideId]
         )
         guard let paragraphsRedone = rawParagraphsRedone as? [String: Any],
-              paragraphsRedone["revision"] as? Int == 35,
+              paragraphsRedone["revision"] as? Int == 37,
               let redoneParagraphBlocks = paragraphsRedone["contentBlocks"] as? [[String: Any]],
               redoneParagraphBlocks.count == 2,
               redoneParagraphBlocks[1]["plainText"] as? String == bodyText
@@ -1490,10 +1565,32 @@ enum PackagedTracer {
         }
         try requireParagraphs(in: redoneParagraphBlocks[1], expected: bodyParagraphs)
 
+        let rawAssemblyRedone = try await controller.invokeWorkspaceForTracer(
+            """
+            await deckBridge.redo();
+            const active = await deckBridge.query({ name: 'slide.activeProjection', params: { slideId: secondSlideId } });
+            return {
+              revision: active.revision,
+              compositionPresent: Boolean(active.composition),
+              designOptionId: active.designOption?.id ?? null,
+              designOptionSource: active.designOption?.source ?? null
+            };
+            """,
+            arguments: ["secondSlideId": secondSlideId]
+        )
+        guard let assemblyRedone = rawAssemblyRedone as? [String: Any],
+              assemblyRedone["revision"] as? Int == 38,
+              assemblyRedone["compositionPresent"] as? Bool == true,
+              assemblyRedone["designOptionId"] as? String == assemblyDesignOptionId,
+              assemblyRedone["designOptionSource"] as? String == "plan"
+        else {
+            throw WorkbenchFailure(name: "InvalidCommand", message: "Redo did not restore the same Plan-created Assembly")
+        }
+
         let rawSequenceMoveUpRedone = try await controller.invokeWorkspaceForTracer(
             "await deckBridge.redo(); return await deckBridge.query({ name: 'story.document', params: {} })"
         )
-        let sequenceMoveUpRedone = try requireStory(rawSequenceMoveUpRedone, revision: 36)
+        let sequenceMoveUpRedone = try requireStory(rawSequenceMoveUpRedone, revision: 39)
         try requireStoryOrder(
             sequenceMoveUpRedone,
             sectionIds: [secondSectionId, openingSectionId],
@@ -1503,7 +1600,7 @@ enum PackagedTracer {
         let rawSequenceMoveDownRedone = try await controller.invokeWorkspaceForTracer(
             "await deckBridge.redo(); return await deckBridge.query({ name: 'story.document', params: {} })"
         )
-        let sequenceMoveDownRedone = try requireStory(rawSequenceMoveDownRedone, revision: 37)
+        let sequenceMoveDownRedone = try requireStory(rawSequenceMoveDownRedone, revision: 40)
         try requireStoryOrder(
             sequenceMoveDownRedone,
             sectionIds: [secondSectionId, openingSectionId],
@@ -1513,7 +1610,7 @@ enum PackagedTracer {
         let rawSectionMoveUpRedone = try await controller.invokeWorkspaceForTracer(
             "await deckBridge.redo(); return await deckBridge.query({ name: 'story.document', params: {} })"
         )
-        let sectionMoveUpRedone = try requireStory(rawSectionMoveUpRedone, revision: 38)
+        let sectionMoveUpRedone = try requireStory(rawSectionMoveUpRedone, revision: 41)
         try requireStoryOrder(
             sectionMoveUpRedone,
             sectionIds: [openingSectionId, secondSectionId],
@@ -1523,7 +1620,7 @@ enum PackagedTracer {
         let rawSectionMoveDownRedone = try await controller.invokeWorkspaceForTracer(
             "await deckBridge.redo(); return await deckBridge.query({ name: 'story.document', params: {} })"
         )
-        let sectionMoveDownRedone = try requireStory(rawSectionMoveDownRedone, revision: 39)
+        let sectionMoveDownRedone = try requireStory(rawSectionMoveDownRedone, revision: 42)
         try requireStoryOrder(
             sectionMoveDownRedone,
             sectionIds: [secondSectionId, openingSectionId],
@@ -1533,7 +1630,7 @@ enum PackagedTracer {
         let rawControlSlideMoveDownRedone = try await controller.invokeWorkspaceForTracer(
             "await deckBridge.redo(); return await deckBridge.query({ name: 'story.document', params: {} })"
         )
-        let controlSlideMoveDownRedone = try requireStory(rawControlSlideMoveDownRedone, revision: 40)
+        let controlSlideMoveDownRedone = try requireStory(rawControlSlideMoveDownRedone, revision: 43)
         try requireStoryOrder(
             controlSlideMoveDownRedone,
             sectionIds: [secondSectionId, openingSectionId],
@@ -1543,7 +1640,7 @@ enum PackagedTracer {
         let rawControlSlideMoveUpRedone = try await controller.invokeWorkspaceForTracer(
             "await deckBridge.redo(); return await deckBridge.query({ name: 'story.document', params: {} })"
         )
-        let controlSlideMoveUpRedone = try requireStory(rawControlSlideMoveUpRedone, revision: 41)
+        let controlSlideMoveUpRedone = try requireStory(rawControlSlideMoveUpRedone, revision: 44)
         try requireStoryOrder(
             controlSlideMoveUpRedone,
             sectionIds: [secondSectionId, openingSectionId],
@@ -1553,7 +1650,7 @@ enum PackagedTracer {
         let rawControlSectionMoveDownRedone = try await controller.invokeWorkspaceForTracer(
             "await deckBridge.redo(); return await deckBridge.query({ name: 'story.document', params: {} })"
         )
-        let controlSectionMoveDownRedone = try requireStory(rawControlSectionMoveDownRedone, revision: 42)
+        let controlSectionMoveDownRedone = try requireStory(rawControlSectionMoveDownRedone, revision: 45)
         try requireStoryOrder(
             controlSectionMoveDownRedone,
             sectionIds: [openingSectionId, secondSectionId],
@@ -1563,7 +1660,7 @@ enum PackagedTracer {
         let rawControlSectionMoveUpRedone = try await controller.invokeWorkspaceForTracer(
             "await deckBridge.redo(); return await deckBridge.query({ name: 'story.document', params: {} })"
         )
-        let controlSectionMoveUpRedone = try requireStory(rawControlSectionMoveUpRedone, revision: 43)
+        let controlSectionMoveUpRedone = try requireStory(rawControlSectionMoveUpRedone, revision: 46)
         try requireStoryOrder(
             controlSectionMoveUpRedone,
             sectionIds: [secondSectionId, openingSectionId],
@@ -1573,7 +1670,7 @@ enum PackagedTracer {
         let rawContentRemoved = try await controller.invokeWorkspaceForTracer(
             "await deckBridge.redo(); return await deckBridge.query({ name: 'story.document', params: {} })"
         )
-        let contentRemoved = try requireStory(rawContentRemoved, revision: 44)
+        let contentRemoved = try requireStory(rawContentRemoved, revision: 47)
         guard let redoneContentSections = contentRemoved["sections"] as? [[String: Any]],
               let redoneContentSlides = redoneContentSections[1]["slides"] as? [[String: Any]],
               let redoneContentBlocks = redoneContentSlides[1]["contentBlocks"] as? [[String: Any]],
@@ -1585,7 +1682,7 @@ enum PackagedTracer {
         let rawSlideRemoved = try await controller.invokeWorkspaceForTracer(
             "await deckBridge.redo(); return await deckBridge.query({ name: 'story.document', params: {} })"
         )
-        let slideRemoved = try requireStory(rawSlideRemoved, revision: 45)
+        let slideRemoved = try requireStory(rawSlideRemoved, revision: 48)
         try requireStoryOrder(
             slideRemoved,
             sectionIds: [secondSectionId, openingSectionId],
@@ -1595,36 +1692,38 @@ enum PackagedTracer {
         let rawSectionRemoved = try await controller.invokeWorkspaceForTracer(
             "await deckBridge.redo(); return await deckBridge.query({ name: 'story.document', params: {} })"
         )
-        let sectionRemoved = try requireStory(rawSectionRemoved, revision: 46)
+        let sectionRemoved = try requireStory(rawSectionRemoved, revision: 49)
         try requireStoryOrder(sectionRemoved, sectionIds: [openingSectionId], slideIdsBySection: [[openingSlideId]])
         try controller.save()
         try writeJSON([
             "phase": "story-reopen",
-            "reopenedRevision": 22,
-            "undoSectionRevision": 23,
-            "undoSlideRevision": 24,
-            "undoContentRevision": 25,
-            "undoControlSectionMoveUpRevision": 26,
-            "undoControlSectionMoveDownRevision": 27,
-            "undoControlSlideMoveUpRevision": 28,
-            "undoControlSlideMoveDownRevision": 29,
-            "undoSectionMoveDownRevision": 30,
-            "undoSectionMoveUpRevision": 31,
-            "undoSequenceMoveDownRevision": 32,
-            "undoSequenceMoveUpRevision": 33,
-            "undoParagraphUpdateRevision": 34,
-            "redoParagraphUpdateRevision": 35,
-            "redoSequenceMoveUpRevision": 36,
-            "redoSequenceMoveDownRevision": 37,
-            "redoSectionMoveUpRevision": 38,
-            "redoSectionMoveDownRevision": 39,
-            "redoControlSlideMoveDownRevision": 40,
-            "redoControlSlideMoveUpRevision": 41,
-            "redoControlSectionMoveDownRevision": 42,
-            "redoControlSectionMoveUpRevision": 43,
-            "redoContentRevision": 44,
-            "redoSlideRevision": 45,
-            "redoSectionRevision": 46,
+            "reopenedRevision": 23,
+            "undoSectionRevision": 24,
+            "undoSlideRevision": 25,
+            "undoContentRevision": 26,
+            "undoControlSectionMoveUpRevision": 27,
+            "undoControlSectionMoveDownRevision": 28,
+            "undoControlSlideMoveUpRevision": 29,
+            "undoControlSlideMoveDownRevision": 30,
+            "undoSectionMoveDownRevision": 31,
+            "undoSectionMoveUpRevision": 32,
+            "undoSequenceMoveDownRevision": 33,
+            "undoSequenceMoveUpRevision": 34,
+            "undoAssemblyRevision": 35,
+            "undoParagraphUpdateRevision": 36,
+            "redoParagraphUpdateRevision": 37,
+            "redoAssemblyRevision": 38,
+            "redoSequenceMoveUpRevision": 39,
+            "redoSequenceMoveDownRevision": 40,
+            "redoSectionMoveUpRevision": 41,
+            "redoSectionMoveDownRevision": 42,
+            "redoControlSlideMoveDownRevision": 43,
+            "redoControlSlideMoveUpRevision": 44,
+            "redoControlSectionMoveDownRevision": 45,
+            "redoControlSectionMoveUpRevision": 46,
+            "redoContentRevision": 47,
+            "redoSlideRevision": 48,
+            "redoSectionRevision": 49,
             "sectionIds": [secondSectionId, openingSectionId],
             "openingSlideIds": [openingSlideId, secondSlideId],
             "deckTitle": "The Hill",
@@ -1634,6 +1733,8 @@ enum PackagedTracer {
             "bodyOriginalText": bodyOriginalText,
             "bodyText": bodyText,
             "bodyParagraphs": bodyParagraphs,
+            "assemblyDesignOptionId": assemblyDesignOptionId,
+            "assemblyUndoRedoStable": true,
             "paragraphsPreservedAfterReopen": true,
             "keyboardFocusRetained": true,
             "sequenceKeyboardFocusRetained": true,

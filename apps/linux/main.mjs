@@ -1536,6 +1536,7 @@ async function inspectPackagedCanvasPresets(outputDirectory) {
   }
   activePackagePath = packagePath
   const initial = await utility.request('document.create', { packagePath, seed })
+  await activateMediaSession(packagePath)
   await renderProjection(initial)
 
   const execute = async (commandId, type, payload, issuedAt) => {
@@ -1570,6 +1571,12 @@ async function inspectPackagedCanvasPresets(outputDirectory) {
     },
     '2026-08-30T15:00:00.000Z',
   )
+  await execute(
+    '00000000-0000-4000-8000-000000000307',
+    'slide.intent.set',
+    { slideId: seed.slideId, intent: 'text-only' },
+    '2026-08-30T15:00:01.000Z',
+  )
 
   const cases = [
     { id: 'widescreen-1920x1080', slug: 'landscape' },
@@ -1578,6 +1585,7 @@ async function inspectPackagedCanvasPresets(outputDirectory) {
   ]
   const evidence = []
   const screenshots = []
+  const designOptionId = '00000000-0000-4000-8000-000000000308'
   for (const [index, item] of cases.entries()) {
     await execute(
       `00000000-0000-4000-8000-00000000031${index}`,
@@ -1587,16 +1595,10 @@ async function inspectPackagedCanvasPresets(outputDirectory) {
     )
     const projection = await execute(
       `00000000-0000-4000-8000-00000000032${index}`,
-      'designOption.applyPattern',
+      index === 0 ? 'designOption.createFromPlan' : 'designOption.rebuildFromPlan',
       {
         slideId: seed.slideId,
-        designOptionId: `00000000-0000-4000-8000-00000000033${index}`,
-        patternId: 'editorial-body',
-        patternVersion: 1,
-        contentBindings: {
-          headline: seed.blockId,
-          body: '00000000-0000-4000-8000-000000000306',
-        },
+        designOptionId,
       },
       `2026-08-30T15:00:2${index}.000Z`,
     )
@@ -1627,6 +1629,7 @@ async function inspectPackagedCanvasPresets(outputDirectory) {
   await invokeInWorkspace('setInterfaceScale', { value: previousPreferences.interfaceScale })
   await invokeInWorkspace('setArtboardZoom', { value: previousPreferences.artboardZoom })
   await utility.request('document.close')
+  abandonMediaSession()
   activePackagePath = null
   return { cases: evidence, screenshots, ok: evidence.length === cases.length }
 }
@@ -1754,6 +1757,7 @@ async function runPackagedTracerCreate(outputDirectory) {
   }
   activePackagePath = packagePath
   const initial = await utility.request('document.create', { packagePath, seed })
+  await activateMediaSession(packagePath)
   await renderProjection(initial)
   const boundary = await inspectRendererBoundary()
   const expectedRevision = initial.revision
@@ -1883,6 +1887,23 @@ async function runPackagedTracerCreate(outputDirectory) {
   const sectionOrder = structuredStory.sections.map((section) => section.id)
   const openingSlideOrder = structuredStory.sections[1].slides.map((slide) => slide.id)
   const bodyText = storyBlockPlainText(structuredStory, packagedStoryIds.bodyBlockId)
+  const tracerPlan = await executeStoryCommand(
+    '00000000-0000-4000-8000-000000000118',
+    'slide.intent.set',
+    { slideId: seed.slideId, intent: 'text-only' },
+    '2026-08-27T00:00:09.000Z',
+  )
+  await renderProjection(tracerPlan.projection)
+  const tracerAssembly = await executeStoryCommand(
+    '00000000-0000-4000-8000-000000000119',
+    'designOption.createFromPlan',
+    {
+      slideId: seed.slideId,
+      designOptionId: '00000000-0000-4000-8000-000000000120',
+    },
+    '2026-08-27T00:00:10.000Z',
+  )
+  await renderProjection(tracerAssembly.projection)
   const runtimeUIDocument = await inspectPackagedDocumentRuntimeUI(outputDirectory)
   const runtimeUI = {
     schemaVersion: 1,
@@ -1897,6 +1918,7 @@ async function runPackagedTracerCreate(outputDirectory) {
 
   const saved = await utility.request('document.save')
   await utility.request('document.close')
+  abandonMediaSession()
   activePackagePath = null
   const canvasPresets = await inspectPackagedCanvasPresets(outputDirectory)
   runtimeUI.canvasPresets = canvasPresets
@@ -1931,6 +1953,9 @@ async function runPackagedTracerCreate(outputDirectory) {
       bodyBlockId: packagedStoryIds.bodyBlockId,
       bodyOriginalText: 'A body block that survives design.',
       bodyText,
+      assemblyRevision: tracerAssembly.projection.revision,
+      assemblyStyle: tracerAssembly.projection.designOption?.planAtCreation?.visualStyle,
+      assemblyReady: Boolean(tracerAssembly.projection.composition),
       runtimeUI,
     },
   }
@@ -1943,7 +1968,7 @@ async function runPackagedTracerCreate(outputDirectory) {
     && result.checks.editedHeadline === 'Linux Story Traced'
     && result.checks.undoneHeadline === 'Untitled Story'
     && result.checks.redoneHeadline === 'Linux Story Traced'
-    && result.checks.savedRevision === 11
+    && result.checks.savedRevision === 13
     && result.checks.theme === 'dark'
     && result.checks.interfaceScale === 1.25
     && result.checks.artboardZoom === 0.5
@@ -1963,6 +1988,9 @@ async function runPackagedTracerCreate(outputDirectory) {
     && result.checks.renamedSectionTitle === 'Act II'
     && result.checks.secondSlideIntent === 'editorial-body'
     && result.checks.bodyText === 'A body block.\n\nThat survives design.'
+    && result.checks.assemblyRevision === 13
+    && result.checks.assemblyStyle === 'text-only'
+    && result.checks.assemblyReady === true
     && result.checks.runtimeUI.ok === true
   await writeDurably(
     resolve(outputDirectory, 'journey-create-result.json'),
@@ -1997,21 +2025,29 @@ async function runPackagedTracerReopen(outputDirectory, { requireDistinctProcess
 
   const reopened = await utility.request('document.open', { packagePath })
   activePackagePath = packagePath
+  await activateMediaSession(packagePath)
   await renderProjection(reopened)
   const boundary = await inspectRendererBoundary()
   const historyAtReopen = await invokeInWorkspace('query', { name: 'history.summary', params: {} })
   const reopenedStory = await invokeInWorkspace('query', { name: 'story.document', params: {} })
   const reopenedPreferences = await invokeInWorkspace('getPreferences')
-  const reopenedUndo = (await invokeInWorkspace('undo')).projection
-  await renderProjection(reopenedUndo)
+  let reopenedUndo = null
+  for (let step = 0; step < 3; step += 1) {
+    reopenedUndo = (await invokeInWorkspace('undo')).projection
+    await renderProjection(reopenedUndo)
+  }
   const reopenedUndoStory = await invokeInWorkspace('query', { name: 'story.document', params: {} })
-  const reopenedRedo = (await invokeInWorkspace('redo')).projection
-  await renderProjection(reopenedRedo)
+  let reopenedRedo = null
+  for (let step = 0; step < 3; step += 1) {
+    reopenedRedo = (await invokeInWorkspace('redo')).projection
+    await renderProjection(reopenedRedo)
+  }
   const reopenedRedoStory = await invokeInWorkspace('query', { name: 'story.document', params: {} })
   const history = await invokeInWorkspace('query', { name: 'history.summary', params: {} })
   const pdf = await exportOnePagePDF(pdfPath)
   const reopenedSaved = await utility.request('document.save')
   await utility.request('document.close')
+  abandonMediaSession()
   activePackagePath = null
 
   const result = {
@@ -2037,6 +2073,8 @@ async function runPackagedTracerReopen(outputDirectory, { requireDistinctProcess
       reopenedUndoDepth: historyAtReopen.undoDepth,
       reopenedUndoHeadline: reopenedUndo.headline.plainText,
       reopenedRedoHeadline: reopenedRedo.headline.plainText,
+      reopenedAssemblyReady: Boolean(reopenedRedo.composition),
+      reopenedAssemblyStyle: reopenedRedo.designOption?.planAtCreation?.visualStyle,
       finalRevision: history.revision,
       finalUndoDepth: history.undoDepth,
       savedRevision: createResult.checks.savedRevision,
@@ -2077,23 +2115,25 @@ async function runPackagedTracerReopen(outputDirectory, { requireDistinctProcess
     || result.checks.reopenedUndoDepth < 1
     || result.checks.reopenedUndoHeadline !== 'Linux Story Traced'
     || result.checks.reopenedRedoHeadline !== 'Linux Story Traced'
-    || result.checks.finalRevision !== 13
-    || result.checks.finalUndoDepth !== 9
-    || result.checks.reopenedUndoDepth !== 9
-    || result.checks.savedRevision !== 11
-    || result.checks.reopenSavedRevision !== 13
+    || result.checks.finalRevision !== 19
+    || result.checks.finalUndoDepth !== 11
+    || result.checks.reopenedUndoDepth !== 11
+    || result.checks.savedRevision !== 13
+    || result.checks.reopenSavedRevision !== 19
     || result.checks.theme !== 'dark'
     || result.checks.interfaceScale !== 1.25
     || result.checks.artboardZoom !== 0.5
     || result.checks.persistedTheme !== 'dark'
     || result.checks.persistedInterfaceScale !== 1.25
     || result.checks.persistedArtboardZoom !== 0.5
-    || result.checks.reopenedStoryRevision !== 11
+    || result.checks.reopenedStoryRevision !== 13
     || JSON.stringify(result.checks.reopenedSectionOrder) !== JSON.stringify(createResult.checks.sectionOrder)
     || JSON.stringify(result.checks.reopenedOpeningSlideOrder) !== JSON.stringify(createResult.checks.openingSlideOrder)
     || result.checks.reopenedBodyText !== 'A body block.\n\nThat survives design.'
     || result.checks.reopenedUndoBodyText !== createResult.checks.bodyOriginalText
     || result.checks.reopenedRedoBodyText !== 'A body block.\n\nThat survives design.'
+    || result.checks.reopenedAssemblyReady !== true
+    || result.checks.reopenedAssemblyStyle !== 'text-only'
     || result.checks.runtimeUI?.ok !== true
     || result.checks.pdfBytes < 100
     || (requireDistinctProcess && !result.processLifecycle.distinctProcesses)
