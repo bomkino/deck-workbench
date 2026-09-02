@@ -322,8 +322,10 @@ async function boot() {
   } catch (error) {
     applyScales()
     renderAll()
+    const errorMessage = String(error?.message ?? '')
     const documentUnavailable = error?.name === 'DocumentUnavailable'
-      || String(error?.message ?? '').includes('DocumentUnavailable:')
+      || (error?.name === 'KernelUnavailable' && errorMessage.includes('No Deck is open'))
+      || errorMessage.includes('DocumentUnavailable:')
     const message = documentUnavailable
       ? 'No document session'
       : `${error?.name ?? 'Error'}: ${error?.message ?? 'Workbench could not load'}`

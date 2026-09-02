@@ -13,7 +13,7 @@ Deck Workbench is a local production editor, not a dashboard. The Deck stays vis
 
 ## Shell
 
-- One compact toolbar contains Deck identity, the four phases, history, pane visibility, Appearance and save state.
+- One compact toolbar uses three familiar groups: Navigator/history plus Deck identity at the leading edge, a bounded four-phase segmented control in the centre, and Inspector/Appearance plus save state at the trailing edge. Icon controls keep native labels and tooltips instead of spending scarce vertical space on a second command strip.
 - On macOS, full-size content extends beneath a transparent hidden titlebar so the native traffic lights live inside this single toolbar. AppKit measures their occupied width; Workbench never redraws or manually moves them.
 - On macOS, the native File and View menus own document commands, export, theme and Interface Scale. The window does not repeat them in a second native action strip or an app-name title.
 - Plan, Curate, Assemble and Handoff are a persistent one-click switcher. The selected phase uses a quiet tinted surface and a single accent rule, not a black slab.

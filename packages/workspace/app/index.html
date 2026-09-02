@@ -27,12 +27,18 @@
     <main class="workbench" aria-label="Deck Workbench Editorial Desk" aria-busy="false" tabindex="-1">
       <header class="toolbar">
         <div class="brand-cluster">
-          <img class="brand-mark" src="workbench-mark.svg" alt="" role="presentation" aria-hidden="true" width="58" height="58" />
+          <img class="brand-mark" src="workbench-mark.svg" alt="" role="presentation" aria-hidden="true" draggable="false" width="58" height="58" />
+          <div class="toolbar-leading-actions" role="group" aria-label="Navigation and history">
+            <button id="toggle-navigator" class="icon-button" type="button" aria-pressed="true" aria-controls="phase-workspaces" aria-label="Toggle Navigator" title="Toggle Navigator"><span class="phosphor-icon" aria-hidden="true">&#xEAB6;</span></button>
+            <span class="toolbar-divider" aria-hidden="true"></span>
+            <button id="undo" class="icon-button" type="button" disabled aria-label="Undo" title="Undo"><span class="phosphor-icon" aria-hidden="true">&#xE038;</span></button>
+            <button id="redo" class="icon-button" type="button" disabled aria-label="Redo" title="Redo"><span class="phosphor-icon" aria-hidden="true">&#xE036;</span></button>
+          </div>
           <div class="brand-copy">
             <p class="eyebrow">pitch.dog / Deck Workbench</p>
             <div class="deck-title-row">
               <h1 id="deck-title">No Deck open</h1>
-              <button id="rename-deck" class="quiet-action" type="button" disabled>Rename</button>
+              <button id="rename-deck" class="quiet-action icon-button" type="button" disabled aria-label="Rename Deck" title="Rename Deck"><span class="phosphor-icon" aria-hidden="true">&#xE1FE;</span></button>
             </div>
           </div>
         </div>
@@ -44,17 +50,10 @@
           <button type="button" data-phase="handoff"><span>04</span><strong>Handoff</strong><small>Review + PDF proof</small></button>
         </nav>
 
-        <div class="toolbar-actions" aria-label="History and interface controls">
-          <div class="history-actions" role="group" aria-label="History">
-            <button id="undo" class="icon-button" type="button" disabled aria-label="Undo" title="Undo"><span class="phosphor-icon" aria-hidden="true">&#xE038;</span></button>
-            <button id="redo" class="icon-button" type="button" disabled aria-label="Redo" title="Redo"><span class="phosphor-icon" aria-hidden="true">&#xE036;</span></button>
-          </div>
-          <div class="panel-visibility-actions" role="group" aria-label="Workspace panels">
-            <button id="toggle-navigator" type="button" aria-pressed="true" aria-controls="phase-workspaces">Navigator</button>
-            <button id="toggle-inspector" type="button" aria-pressed="true" aria-controls="phase-workspaces">Inspector</button>
-          </div>
+        <div class="toolbar-actions" aria-label="Inspector and interface controls">
+          <button id="toggle-inspector" class="icon-button" type="button" aria-pressed="true" aria-controls="phase-workspaces" aria-label="Toggle Inspector" title="Toggle Inspector"><span class="phosphor-icon inspector-icon" aria-hidden="true">&#xEAB6;</span></button>
           <details class="appearance-control">
-            <summary>Appearance</summary>
+            <summary aria-label="Appearance" title="Appearance"><span class="phosphor-icon" aria-hidden="true">&#xE434;</span><span class="visually-hidden">Appearance</span></summary>
             <div class="appearance-panel">
               <label class="theme-control">
                 <span>Theme</span>
@@ -517,7 +516,7 @@
         <form method="dialog">
           <header class="media-dialog-heading"><div><p class="panel-label">Media Preview</p><h2 id="preview-media-title">Asset</h2></div><div class="preview-navigation"><button id="preview-media-previous" type="button" aria-label="Previous image">Previous</button><button id="preview-media-next" type="button" aria-label="Next image">Next</button><button type="submit" value="cancel" aria-label="Close Preview">Close</button></div></header>
           <div class="media-preview-layout">
-            <div class="media-preview-stage"><img id="preview-media-image" alt="" hidden /><p id="preview-capability-state">Preview unavailable.</p></div>
+            <div class="media-preview-stage"><img id="preview-media-image" alt="" draggable="false" hidden /><p id="preview-capability-state">Preview unavailable.</p></div>
             <aside class="preview-media-sidebar">
               <div id="preview-media-details" class="preview-media-details"></div>
               <div class="preview-media-actions">

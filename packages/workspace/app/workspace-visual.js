@@ -160,6 +160,7 @@ function renderAssemblySlideRail() {
         const image = document.createElement('img')
         image.src = rendition
         image.alt = ''
+        image.draggable = false
         thumbnail.append(image)
       }
       const ordinal = document.createElement('span')
@@ -1248,6 +1249,7 @@ function appendAssemblySwapThumbnail(target, asset) {
     const image = document.createElement('img')
     image.src = url
     image.alt = ''
+    image.draggable = false
     thumb.append(image)
   } else {
     const unavailable = document.createElement('span')
