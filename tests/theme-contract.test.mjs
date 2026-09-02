@@ -22,6 +22,7 @@ test('workbench offers Light, Dark, and System without changing layout geometry'
   assert.match(styles, /color-scheme: dark/)
   assert.match(styles, /--paper: #1f2225/)
   assert.match(styles, /--stage-control: #202426/)
+  assert.match(styles, /\.preview-rating-buttons button \{[^}]*color: var\(--warning\)/)
   assert.doesNotMatch(styles, /data-theme-effective="dark"[^}]*--(?:interface-scale|artboard-zoom|space-|control-size)/)
   assert.match(styles, /data-workspace-layout="single-column"[^}]*\.theme-control > span[^}]*display: none/)
   assert.match(styles, /data-workspace-layout="single-column"[^}]*\.toolbar-actions[^}]*flex-wrap: nowrap/)

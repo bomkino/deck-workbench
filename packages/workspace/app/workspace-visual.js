@@ -866,6 +866,13 @@ function beginElementPointerInteraction(event, element, node) {
   const origin = { ...element.frame }
   const artboardRect = elements.artboard.getBoundingClientRect()
   const pointerId = event.pointerId
+  const imagePanInteraction = element.kind === 'image'
+    ? elements.compositionLayer.querySelector(`[data-image-pan-interaction-for="${CSS.escape(element.id)}"]`)
+    : null
+  const previewFrame = (frame) => {
+    applyElementNodeFrame(node, frame, canvas)
+    if (imagePanInteraction) applyElementNodeFrame(imagePanInteraction, frame, canvas)
+  }
   node.setPointerCapture(pointerId)
 
   const move = (nextEvent) => {
@@ -880,9 +887,9 @@ function beginElementPointerInteraction(event, element, node) {
           ...origin,
           x: clamp(origin.x + delta.x, 0, canvas.width - origin.width),
           y: clamp(origin.y + delta.y, 0, canvas.height - origin.height),
-        }
+    }
     node.dataset.previewFrame = JSON.stringify(frame)
-    applyElementNodeFrame(node, frame, canvas)
+    previewFrame(frame)
   }
   const finish = (nextEvent) => {
     node.removeEventListener('pointermove', move)
@@ -893,7 +900,7 @@ function beginElementPointerInteraction(event, element, node) {
     delete node.dataset.previewFrame
     if (JSON.stringify(frame) === JSON.stringify(origin)) return
     if (projection?.slide?.id !== operationSlideId || projection?.designOption?.id !== operationDesignOptionId) {
-      applyElementNodeFrame(node, origin, canvas)
+      previewFrame(origin)
       return
     }
     assemblyInteractionPending = true
@@ -909,7 +916,7 @@ function beginElementPointerInteraction(event, element, node) {
     node.removeEventListener('pointerup', finish)
     node.removeEventListener('pointercancel', cancel)
     delete node.dataset.previewFrame
-    applyElementNodeFrame(node, origin, canvas)
+    previewFrame(origin)
   }
   node.addEventListener('pointermove', move)
   node.addEventListener('pointerup', finish)

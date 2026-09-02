@@ -135,6 +135,8 @@ test('image pan handle stays interactive above later text without changing paint
   assert.match(visual, /imageInteractions\.push\(\{ element, node \}\)/)
   assert.match(visual, /for \(const \{ element, node \} of imageInteractions\)[\s\S]*appendImagePanInteractionLayer/)
   assert.match(visual, /dataset\.imagePanInteractionFor = element\.id/)
+  assert.match(visual, /const imagePanInteraction = element\.kind === 'image'[\s\S]*data-image-pan-interaction-for/)
+  assert.match(visual, /const previewFrame = \(frame\) => \{[\s\S]*applyElementNodeFrame\(imagePanInteraction, frame, canvas\)/)
   assert.match(styles, /\.image-pan-interaction-layer \{[^}]*pointer-events:\s*none;/)
   assert.match(styles, /\.image-pan-interaction-layer\.is-selected\[data-image-fit="fill"\] > \.image-pan-handle \{[^}]*pointer-events:\s*auto;/)
 })

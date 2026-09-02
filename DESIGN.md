@@ -12,6 +12,7 @@ Deck Workbench is a local production editor, not a dashboard. The Deck stays vis
 ## Shell
 
 - One compact toolbar contains Deck identity, the four phases, history, pane visibility, Appearance and save state.
+- On macOS, the native File and View menus own document commands, export, theme and Interface Scale. The window does not repeat them in a second native action strip.
 - Plan, Curate, Assemble and Handoff are a persistent one-click switcher. The selected phase uses a quiet tinted surface and a single accent rule, not a black slab.
 - Roomy windows use a narrow navigator, dominant work area and contextual inspector. Navigator and Inspector controls hide their panes without changing Deck state.
 - Curate and Assemble preserve a visible thumbnail rail. Curate keeps Project Picks, Primary slots, Alternates, Slide shortlist and Unplaced imagery readable at the bottom.

@@ -437,7 +437,7 @@ details > summary:focus-visible .disclosure-caret { transition: none; }
 .preview-media-actions { display: grid; gap: var(--space-2); padding: 1rem; border-top: 1px solid var(--rule); }
 .preview-media-actions fieldset { display: grid; gap: var(--space-2); margin: 0; padding: 0; border: 0; }
 .preview-rating-buttons { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.3rem; }
-.preview-rating-buttons button { min-width: 0; padding-inline: 0.35rem; color: #8c6720; }
+.preview-rating-buttons button { min-width: 0; padding-inline: 0.35rem; color: var(--warning); }
 .preview-rating-buttons button[aria-pressed="true"] { background: #f1c14f; color: #17130b; }
 .media-assignment-dialog { width: min(56rem, calc(100vw - 2rem)); height: min(44rem, calc(100vh - 2rem)); }
 .media-assignment-content { min-height: 0; overflow: auto; padding: 1rem; }
@@ -608,7 +608,7 @@ html[data-workspace-layout="single-column"] .toolbar { grid-template-columns: mi
 html[data-workspace-layout="single-column"] .brand-cluster { grid-area: brand; border-right: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
 html[data-workspace-layout="single-column"] .brand-mark { width: 2.4rem; height: 2.4rem; }
 html[data-workspace-layout="single-column"] .phase-navigation { grid-area: phases; border-top: 1px solid var(--rule); }
-html[data-workspace-layout="single-column"] .toolbar-actions { grid-area: actions; position: static; justify-content: flex-end; flex-wrap: nowrap; overflow-x: auto; }
+html[data-workspace-layout="single-column"] .toolbar-actions { grid-area: actions; position: static; justify-content: flex-end; flex-wrap: nowrap; overflow: visible; }
 html[data-workspace-layout="single-column"] .theme-control > span, html[data-workspace-layout="single-column"] .interface-control > span { display: none; }
 html[data-workspace-layout="single-column"] #save-state { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
 html[data-workspace-layout="single-column"] .plan-phase { grid-template-areas: "sequence" "map" "editor"; grid-template-columns: minmax(0, 1fr); grid-template-rows: 22rem 24rem minmax(28rem, 1fr); overflow: auto; }
@@ -708,6 +708,11 @@ html[data-workspace-layout="single-column"] .assembly-controls, html[data-worksp
 .workbench[data-navigator-collapsed="true"] .curate-phase { grid-template-areas: "wall brief" "tray tray"; grid-template-columns: minmax(28rem, 1fr) minmax(19rem, 0.32fr); }
 .workbench[data-inspector-collapsed="true"] .curate-phase { grid-template-areas: "queue wall" "tray tray"; grid-template-columns: minmax(14.5rem, 0.24fr) minmax(28rem, 1fr); }
 .workbench[data-navigator-collapsed="true"][data-inspector-collapsed="true"] .curate-phase { grid-template-areas: "wall" "tray"; grid-template-columns: minmax(0, 1fr); }
+
+html[data-workspace-layout="two-column"] .workbench[data-navigator-collapsed="true"] .plan-phase,
+html[data-workspace-layout="two-column"] .workbench[data-inspector-collapsed="true"] .plan-phase { grid-template-rows: minmax(0, 1fr); }
+html[data-workspace-layout="two-column"] .workbench[data-navigator-collapsed="true"] .curate-phase,
+html[data-workspace-layout="two-column"] .workbench[data-inspector-collapsed="true"] .curate-phase { grid-template-rows: minmax(0, 1fr) minmax(8.5rem, 18vh); }
 
 .workbench[data-navigator-collapsed="true"] .assemble-phase { grid-template-areas: "toolbar toolbar" "stage controls"; grid-template-columns: minmax(0, 1fr) minmax(20rem, 0.34fr); }
 .workbench[data-inspector-collapsed="true"] .assemble-phase { grid-template-areas: "toolbar toolbar" "rail stage"; grid-template-columns: minmax(12.5rem, 0.22fr) minmax(0, 1fr); }
