@@ -1,0 +1,67 @@
+name: Apply and verify native workflow repair
+on:
+  push:
+    branches: [codex/native-workflow-fixes]
+    paths: ['.native-transfer/**', '.github/workflows/apply-workflow-repair.yml']
+permissions:
+  contents: write
+jobs:
+  native:
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24
+      - name: Apply the exact reviewed patch and remove transport
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64, hashlib, json, lzma, pathlib, shutil, subprocess
+          root=pathlib.Path('.native-transfer')
+          manifest=json.loads((root/'manifest.json').read_text())
+          assert subprocess.check_output(['git','rev-parse','HEAD^'],text=True).strip()==manifest['base'], 'Source advanced; do not overwrite it'
+          encoded=''.join((root/f'part-{i}').read_text() for i in range(5))
+          patch=lzma.decompress(base64.b64decode(encoded,validate=True))
+          assert hashlib.sha256(patch).hexdigest()==manifest['patch_sha256'], 'Transfer differs from reviewed patch'
+          subprocess.run(['git','apply','--check','--index','--unidiff-zero','-'],input=patch,check=True)
+          subprocess.run(['git','apply','--index','--unidiff-zero','-'],input=patch,check=True)
+          for name, digest in manifest['files'].items():
+              p=pathlib.Path(name)
+              actual=hashlib.sha256(p.read_bytes()).hexdigest() if p.exists() else None
+              assert actual==digest, name
+          shutil.rmtree(root)
+          pathlib.Path('.github/workflows/apply-workflow-repair.yml').unlink()
+          PY
+          git config user.name 'Chattie Intern'
+          git config user.email 'hello@pitch.dog'
+          git add -A
+          git commit -m 'Repair native editing, keyboard workflow, handoff and bounded performance for v0.1.1'
+          git push origin HEAD:codex/native-workflow-fixes
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Verify changed document behavior
+        run: npm test
+      - name: Compile the native application
+        run: scripts/build-native-macos.sh
+      - name: Exercise the actual extracted app and handoff
+        run: scripts/verify-native-package.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: native-mac-${{ steps.source.outputs.sha }}
+          path: |
+            artifacts/*.app.zip
+            artifacts/*.sha256
+            artifacts/evidence/native-acceptance.json
+            artifacts/evidence/*.png
+            artifacts/evidence/handoffs/**/*.pdf
+            artifacts/evidence/handoffs/**/*.md
+            artifacts/evidence/handoffs/**/*.csv
+            artifacts/evidence/handoffs/**/Export issues.txt
+          if-no-files-found: warn
+          retention-days: 30
