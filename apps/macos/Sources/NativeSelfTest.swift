@@ -59,6 +59,9 @@ enum NativeAcceptance {
       markdown +=
         "## Slide \(i)\n\n### Headline\n\nHeadline \(i)\n\n### Body\n\n\(i==2 ? dense : exact)\n\n### Body\n\nSecond body block \(i).\n\n### Caption\n\nCAPTION-\(i)-MUST-SURVIVE\n\n### Notes\n\nNOTES-\(i)-MUST-SURVIVE. Keep the prototype provisional.\n\n"
     }
+    let literal = "# Literal deck\n## One slide\n### Body\n````\n### Slide: not a new slide\n# Literal heading\n\\not-a-command\n```\n````\n"
+    let parsedLiteral = try NativeCopyImport.parse(Data(literal.utf8), filename: "literal.md")
+    try require(parsedLiteral.slides.count == 1 && parsedLiteral.slides[0].blocks.last?.text.contains("### Slide: not a new slide") == true, "Fenced copy was mistaken for structure")
     let imported = try NativeCopyImport.parse(Data(markdown.utf8), filename: "acceptance.md")
     try require(imported.slides.count == 20, "Import lost slide boundaries")
     let controller = try NativeWorkbenchController()
@@ -80,8 +83,9 @@ enum NativeAcceptance {
     await Task.yield()
     // Post a burst into AppKit's real event loop. Each Right event changes the
     // focused asset before the following S is dispatched by the installed monitor.
-    controller.focusAsset(controller.assets[0].id)
+    controller.focusAsset(controller.filteredAssets[0].id)
     let eventBaseline = NativeShortcuts.handledEventCount
+    let inputStarted = ProcessInfo.processInfo.systemUptime
     for index in 0..<40 {
       guard
         let event = NSEvent.keyEvent(
@@ -122,6 +126,7 @@ enum NativeAcceptance {
       "Rapid decisions failed: \(controller.failure ?? "unknown")")
     try require(
       controller.selectedSlide?.settings.shortlist.count == 40, "Rapid native decisions were lost")
+    let inputAndSaveSeconds = ProcessInfo.processInfo.systemUptime - inputStarted
     let first = controller.assets[0]
     let second = controller.assets[1]
     controller.decide("use", assetID: first.id)
@@ -163,6 +168,33 @@ enum NativeAcceptance {
     try require(
       controller.selectedSlide!.settings.layout.textFrame?.x == 101,
       "Relative native nudges did not accumulate")
+    for preset in ["left", "right", "lower"] { controller.chooseLayout(preset) }
+    await controller.flush()
+    try require(controller.selectedSlide?.settings.layout.preset == "lower" && controller.failedCommands.isEmpty, "Layout picker failed or fenced later writes")
+    controller.chooseLayout("three-images")
+    await controller.flush()
+    controller.decide("use", assetID: first.id, role: "primary")
+    controller.decide("use", assetID: second.id, role: "primary:2")
+    controller.patchLayout(["crops": ["primary": ["x": 0.1, "y": 0.1, "width": 0.8, "height": 0.8]], "imageFits": ["primary": "fit"]])
+    controller.patchLayout(["crops": ["primary:2": ["x": 0.2, "y": 0.1, "width": 0.7, "height": 0.8]], "imageFits": ["primary:2": "fill"]])
+    await controller.flush()
+    try require(controller.selectedSlide?.settings.layout.crops.count == 2 && controller.selectedSlide?.settings.layout.imageFits["primary"] == "fit", "Editing image B lost A's crop or fit")
+    controller.chooseLayout("left")
+    await controller.flush()
+    try require(controller.selectedSlide?.imageRoles == ["primary"] && controller.selectedSlide?.settings.shortlist.contains(second.id) == true, "Layout slot reconciliation lost a candidate")
+    controller.setNotes("Acknowledged note")
+    await controller.flush()
+    controller.setNotes("Later typing")
+    await controller.flush()
+    try require(controller.notesDrafts.isEmpty, "Acknowledged notes remained dirty")
+    controller.undo(documentOnly: true)
+    await controller.flush()
+    try require(controller.notes == "Acknowledged note" && controller.selectedSlide?.settings.notes == "Acknowledged note", "Notes undo was overwritten by a retained draft")
+    controller.enqueue(type: "native.slide.patch", payload: ["slideId": ids[0], "patch": ["layout": ["columns": 0]]], label: "Deliberate invalid layout")
+    controller.setNotes("Valid action after rejected layout")
+    await controller.flush()
+    try require(controller.failedCommands.isEmpty && controller.notes == "Valid action after rejected layout", "A validation rejection blocked later valid actions")
+    controller.failure = nil
     controller.setNotes("A final pending note — flushed before handoff.")
     await controller.flush()
     try await controller.session.save()
@@ -179,6 +211,23 @@ enum NativeAcceptance {
     let sources = try await reopenedMedia.nativeSources(assetIds: controller.assets.map(\.id))
     let exports = output.appendingPathComponent("handoffs", isDirectory: true)
     try manager.createDirectory(at: exports, withIntermediateDirectories: true)
+    var copyOnly = HandoffOptions()
+    copyOnly.prototypePDF = false; copyOnly.notesPDF = false; copyOnly.approved = false; copyOnly.shortlisted = false
+    let copyOptions = copyOnly
+    try require(NativeHandoffExporter.requiredAssetIDs(snapshot: snapshot, options: copyOptions).isEmpty, "Copy-only depends on images")
+    let textExport = try await Task.detached {
+      try NativeHandoffExporter.export(snapshot: snapshot, sources: [:], to: exports, options: copyOptions, progress: { _ in })
+    }.value
+    try require(textExport.produced == ["Copy.md"] && textExport.issues.isEmpty, "Copy-only export touched media or reported unrequested outputs")
+    try require(NativeHandoffExporter.safeFilename(String(repeating: "x", count: 230) + ".jpeg").hasSuffix(".jpeg"), "Filename truncation discarded the extension")
+    try require(NativeHandoffExporter.csvField("=1+1").hasPrefix("\"'"), "CSV text can execute as a formula")
+    if let source = sources[first.id] {
+      let warm = await NativeThumbnailService.shared.data(for: source, longestSide: 512)
+      let hits = await NativeThumbnailService.shared.cacheHits
+      let cached = await NativeThumbnailService.shared.data(for: source, longestSide: 512)
+      let afterHits = await NativeThumbnailService.shared.cacheHits
+      try require(warm != nil && warm == cached && afterHits > hits, "Warm thumbnails are not reused")
+    }
     let exported = try await Task.detached {
       try NativeHandoffExporter.export(
         snapshot: snapshot, sources: sources, to: exports, options: HandoffOptions(),
@@ -264,6 +313,9 @@ enum NativeAcceptance {
       "notesPages": notes.pageCount, "originalCopies": exported.originalCopies,
       "copyComplete": true, "previewScope": true, "shortlistIndependent": true, "reopen": true,
       "savedCopyRecovery": true, "uiIndependentPDF": true, "nativeKeyEvents": true,
+      "layoutPicker": true, "perImageEdits": true, "notesUndo": true, "validationDoesNotFence": true,
+      "copyOnlyIndependent": true, "literalCopy": true, "safeFilenames": true, "thumbnailCache": true,
+      "nativeBurstAndSaveSeconds": inputAndSaveSeconds,
       "manualAccessibility": "not performed", "targetMachinePerformance": "not measured",
       "issues": exported.issues,
     ]

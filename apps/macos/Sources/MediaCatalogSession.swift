@@ -46,6 +46,7 @@ private struct PortableMediaAsset: Codable, Sendable {
     var platformIdentityKind: String?
     var linkCount: Int
     var previewReason: String?
+    var modifiedAt: Int64? = nil
 }
 
 private struct PortableSourceRevision: Codable, Sendable {
@@ -435,7 +436,6 @@ actor MediaCatalogSession {
     private let lease = MediaSessionLease()
     private var catalog: PortableMediaCatalog
     private var nativeScans: [String: Task<NativeScanResult, Error>] = [:]
-    private var excludedNativeRoots: Set<String> = []
 
     init(packageURL: URL, deckId: String, grantStoreURL: URL? = nil) throws {
         let packageMetadata = try MediaFilesystem.metadata(packageURL.path)
@@ -631,14 +631,23 @@ actor MediaCatalogSession {
         }
         return NativeMediaSource(assetId: asset.id, sourceRevisionId: asset.sourceRevisionId, rootPath: grant.authorizedPath,
             relativePath: asset.relativePath, filename: asset.filename, fingerprint: asset.fingerprint,
-            byteSize: asset.byteSize, mediaKind: asset.mediaKind, rootDevice: grant.rootDevice, rootInode: grant.rootInode, bookmark: grant.bookmark)
+            byteSize: asset.byteSize, mediaKind: asset.mediaKind, rootDevice: grant.rootDevice, rootInode: grant.rootInode, bookmark: grant.bookmark, note: asset.note)
     }
     func nativeSources(assetIds: [String]) throws -> [String: NativeMediaSource] {
+        try requireOpen()
+        let wanted = Set(assetIds)
+        let byRoot = Dictionary(uniqueKeysWithValues: grants.list(deckId: deckId).map { ($0.rootId, $0) })
         var result: [String: NativeMediaSource] = [:]
-        for id in assetIds { result[id] = try? nativeSource(assetId: id) }
+        // One catalog pass, not a linear catalog search for every requested ID.
+        for asset in catalog.assets where wanted.contains(asset.id) && asset.availability != "missing" {
+            guard let grant = byRoot[asset.rootId] else { continue }
+            result[asset.id] = NativeMediaSource(assetId: asset.id, sourceRevisionId: asset.sourceRevisionId,
+                rootPath: grant.authorizedPath, relativePath: asset.relativePath, filename: asset.filename,
+                fingerprint: asset.fingerprint, byteSize: asset.byteSize, mediaKind: asset.mediaKind,
+                rootDevice: grant.rootDevice, rootInode: grant.rootInode, bookmark: grant.bookmark, note: asset.note)
+        }
         return result
     }
-    func excludeNativeDestination(_ url: URL) { excludedNativeRoots.insert(url.standardizedFileURL.path) }
     func cancelNativeScans() { for work in nativeScans.values { work.cancel() } }
     private func publishNativeBatch(_ observations: [MediaObservation], rootId: String) throws {
         try requireOpen()
@@ -660,9 +669,8 @@ actor MediaCatalogSession {
     private func scanAuthorized(rootId: String, root: AuthorizedMediaRoot) async throws -> [String: Any] {
         guard nativeScans[rootId] == nil else { throw WorkbenchFailure(name: "ScanBusy", message: "This folder is already being scanned.") }
         let lease = self.lease
-        let exclusions = excludedNativeRoots
         let work = Task.detached(priority: .utility) { [weak self] in
-            try await Self.discover(root, lease: lease, exclusions: exclusions) { batch in
+            try await Self.discover(root, lease: lease) { batch in
                 guard let self else { return }
                 try await self.publishNativeBatch(batch, rootId: rootId)
             }
@@ -711,7 +719,7 @@ actor MediaCatalogSession {
         ]
     }
 
-    private static func discover(_ root: AuthorizedMediaRoot, lease: MediaSessionLease, exclusions: Set<String>, publish: @Sendable ([MediaObservation]) async throws -> Void) async throws -> NativeScanResult {
+    private static func discover(_ root: AuthorizedMediaRoot, lease: MediaSessionLease, publish: @Sendable ([MediaObservation]) async throws -> Void) async throws -> NativeScanResult {
         let manager = FileManager.default
         var complete = true
         var warningCount = 0
@@ -760,7 +768,7 @@ actor MediaCatalogSession {
                     continue
                 }
                 if metadata.isDirectory {
-                    if candidate.pathExtension.lowercased() == "pitchdeck" || candidate.lastPathComponent.hasPrefix(".") || exclusions.contains(path) || manager.fileExists(atPath: candidate.appendingPathComponent(".workbench-handoff").path) {
+                    if candidate.pathExtension.lowercased() == "pitchdeck" || candidate.lastPathComponent.hasPrefix(".") || manager.fileExists(atPath: candidate.appendingPathComponent(".workbench-handoff").path) {
                         enumerator.skipDescendants(); continue
                     }
                     if depth > 64 {
@@ -1481,7 +1489,8 @@ actor MediaCatalogSession {
             platformIdentity: observation.platformIdentity,
             platformIdentityKind: observation.platformIdentity == nil ? nil : "macos-dev-inode",
             linkCount: observation.linkCount,
-            previewReason: observation.previewReason
+            previewReason: observation.previewReason,
+            modifiedAt: observation.modifiedAt
         )
     }
 
@@ -1508,6 +1517,7 @@ actor MediaCatalogSession {
         result.platformIdentityKind = observation.platformIdentity == nil ? nil : "macos-dev-inode"
         result.linkCount = observation.linkCount
         result.previewReason = observation.previewReason
+        result.modifiedAt = observation.modifiedAt
         return result
     }
 

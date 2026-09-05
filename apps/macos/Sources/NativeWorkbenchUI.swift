@@ -33,6 +33,7 @@ struct NativeWorkbenchRoot: View {
             HStack {
               Button("Import Final Copy…") { controller.importFile() }.buttonStyle(
                 .borderedProminent)
+              Button("Paste Final Copy") { controller.pasteCopy() }
               Button("Open Deck…") { controller.openPanel() }
             }
             if !controller.recentDocuments.isEmpty {
@@ -48,14 +49,24 @@ struct NativeWorkbenchRoot: View {
         } else {
           HSplitView {
             Group {
-              if controller.phase == "curate" {
+              if controller.compareOpen {
+                NativeCompareView(controller: controller)
+              } else if controller.previewOpen {
+                NativePreviewView(controller: controller)
+              } else if controller.phase == "curate" {
                 NativeCurateView(controller: controller)
               } else {
                 NativeAssembleView(controller: controller)
               }
             }.frame(minWidth: 390)
-            NativeContextPanel(controller: controller).frame(
-              minWidth: 230, idealWidth: 300, maxWidth: 400)
+            if controller.showContext {
+              NativeContextPanel(controller: controller).frame(minWidth: 230, idealWidth: controller.contextWidth, maxWidth: 440)
+                .background(GeometryReader { geometry in
+                  Color.clear.onChange(of: geometry.size.width) { _, width in
+                    if abs(controller.contextWidth - width) > 1 { controller.contextWidth = width }
+                  }
+                })
+            }
           }
         }
         Divider()
@@ -63,7 +74,7 @@ struct NativeWorkbenchRoot: View {
           Text(
             controller.pendingCount > 0
               ? "Saving \(controller.pendingCount) action\(controller.pendingCount==1 ? "" : "s")…"
-              : controller.status
+              : !controller.failedCommands.isEmpty ? "\(controller.failedCommands.count) actions need recovery" : controller.status
           ).font(.caption).lineLimit(2)
           Spacer()
           if controller.scanRunning {
@@ -101,8 +112,11 @@ struct NativeWorkbenchRoot: View {
             }.pickerStyle(.segmented).frame(width: 200).disabled(controller.document == nil)
           }
           ToolbarItemGroup(placement: .primaryAction) {
+            Button { controller.showContext.toggle() } label: {
+              Label("Copy, notes and inspector", systemImage: "sidebar.right")
+            }.help("Show or hide context panel")
             Button {
-              controller.undo()
+              controller.undo(documentOnly: true)
             } label: {
               Label("Undo", systemImage: "arrow.uturn.backward")
             }.disabled(controller.document?.history.canUndo != true)
@@ -114,7 +128,6 @@ struct NativeWorkbenchRoot: View {
     .font(.system(size: 14 * controller.interfaceScale))
     .background(NativeKeyboardRouter(controller: controller).frame(width: 0, height: 0))
     .background(NativeWindowGuard(controller: controller).frame(width: 0, height: 0))
-    .sheet(isPresented: $controller.previewOpen) { NativePreviewView(controller: controller) }
     .sheet(isPresented: $controller.showShortcuts) { NativeShortcutSheet(controller: controller) }
     .sheet(isPresented: $controller.showExport) { NativeExportSheet(controller: controller) }
     .sheet(isPresented: $controller.showSettings) { NativeSettingsView(controller: controller) }
@@ -123,7 +136,8 @@ struct NativeWorkbenchRoot: View {
         NativeCopyEditor(controller: controller, blocks: slide.copyBlocks)
       }
     }
-    .sheet(isPresented: $controller.compareOpen) { NativeCompareView(controller: controller) }
+    .sheet(isPresented: $controller.showApplyLayout) { NativeApplyLayoutSheet(controller: controller) }
+    .sheet(isPresented: $controller.showExportResult) { NativeHandoffResultSheet(controller: controller) }
     .sheet(
       isPresented: Binding(
         get: { controller.imported != nil }, set: { if !$0 { controller.imported = nil } })
@@ -189,7 +203,10 @@ struct NativeMediaGrid: View {
   @ObservedObject var controller: NativeWorkbenchController
   let width: CGFloat
   private var columns: [GridItem] {
-    [GridItem(.adaptive(minimum: CGFloat(controller.gridSize)), spacing: 10)]
+    Array(repeating: GridItem(.flexible(minimum: 80), spacing: 10), count: columnCount)
+  }
+  private var columnCount: Int {
+    max(1, Int((max(0, width - 24) + 10) / (controller.gridSize + 10)))
   }
   var body: some View {
     ScrollViewReader { scroll in
@@ -201,25 +218,25 @@ struct NativeMediaGrid: View {
         }.padding(12)
       }.onChange(of: controller.focusedAssetID) { _, id in
         if !controller.previewOpen, let id { scroll.scrollTo(id, anchor: .center) }
-      }
+      }.onAppear { if let id = controller.focusedAssetID { scroll.scrollTo(id, anchor: .center) } }
     }.onAppear { updateColumns() }
       .onChange(of: width) { _, _ in updateColumns() }
       .onChange(of: controller.gridSize) { _, _ in updateColumns() }
   }
   private func updateColumns() {
-    let available = max(0.0, Double(width) - 24.0)
-    let tileWidth = controller.gridSize + 10.0
-    controller.gridColumns = max(1, Int(available / tileWidth))
+    controller.gridColumns = columnCount
   }
 }
 
 struct NativeCurateView: View {
   @ObservedObject var controller: NativeWorkbenchController
+  @FocusState private var searchFocused: Bool
   var body: some View {
     VStack(spacing: 0) {
       HStack(spacing: 10) {
         TextField("Search filenames and folders", text: $controller.query).textFieldStyle(
-          .roundedBorder)
+          .roundedBorder).focused($searchFocused)
+          .onChange(of: controller.searchRequest) { _, _ in searchFocused = true }
         Picker("Collection", selection: $controller.collection) {
           Text("All media").tag("all")
           Text("Shortlist").tag("shortlist")
@@ -242,13 +259,26 @@ struct NativeCurateView: View {
         }
       }.padding(12)
       HStack {
-        Text("\(controller.filteredAssets.count) images").font(.caption).foregroundStyle(.secondary)
+        Text("\(controller.filteredAssets.count) media files").font(.caption).foregroundStyle(.secondary)
+        Picker("Sort", selection: $controller.sortOrder) {
+          Text("Filename").tag("filename")
+          Text("Folder").tag("folder")
+          Text("Recently modified").tag("modified")
+        }.frame(maxWidth: 165).controlSize(.small)
         Spacer()
         if !controller.compareIDs.isEmpty {
           Button("Compare \(controller.compareIDs.count)") { controller.compareOpen = true }
         }
         Slider(value: $controller.gridSize, in: 100...240).frame(width: 110).help("Thumbnail size")
       }.padding(.horizontal, 14).padding(.bottom, 8)
+      if controller.selectedRootID != nil || !controller.query.isEmpty || controller.collection != "all" {
+        HStack {
+          Text(controller.roots.first { $0.id == controller.selectedRootID }?.label ?? "All folders").lineLimit(1)
+          Text("· " + controller.collection.capitalized)
+          Spacer()
+          Button("Clear filters") { controller.clearFilters() }
+        }.font(.caption).foregroundStyle(.secondary).padding(.horizontal, 14).padding(.bottom, 8)
+      }
       Divider()
       if controller.assets.isEmpty {
         VStack(spacing: 12) {
@@ -261,6 +291,11 @@ struct NativeCurateView: View {
           Button("Add Media Folder…") { controller.addMediaFolder() }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+      } else if controller.filteredAssets.isEmpty {
+        VStack(spacing: 12) {
+          Text("No media matches this view.").font(.headline)
+          Button("Clear filters") { controller.clearFilters() }
+        }.frame(maxWidth: .infinity, maxHeight: .infinity)
       } else {
         GeometryReader { geometry in
           NativeMediaGrid(controller: controller, width: geometry.size.width)
@@ -281,10 +316,10 @@ struct NativeAssetTile: View {
       ).frame(maxWidth: .infinity).background(Color.black.opacity(0.10)).clipped()
       Text(asset.filename).font(.caption).lineLimit(1).truncationMode(.middle)
       HStack(spacing: 7) {
-        if controller.selectedSlide?.chosenIDs.contains(asset.id) == true {
+        if controller.chosenAssetIDs.contains(asset.id) {
           Label("Chosen", systemImage: "checkmark.circle.fill")
         }
-        if controller.selectedSlide?.settings.shortlist.contains(asset.id) == true {
+        if controller.shortlistedAssetIDs.contains(asset.id) {
           Label("Shortlisted", systemImage: "bookmark.fill")
         }
         if controller.compareIDs.contains(asset.id) { Image(systemName: "square.split.2x1") }
@@ -303,11 +338,16 @@ struct NativeAssetTile: View {
     .accessibilityElement(children: .combine).accessibilityAddTraits(
       controller.focusedAssetID == asset.id ? .isSelected : []
     )
+    .accessibilityAddTraits(.isButton)
+    .accessibilityAction { controller.focusAsset(asset.id) }
+    .accessibilityAction(named: Text("Shortlist")) { controller.decide("shortlist", assetID: asset.id) }
+    .accessibilityAction(named: Text("Choose for slide")) { controller.decide("use", assetID: asset.id) }
     .contextMenu {
       Button("Choose for Slide") { controller.decide("use", assetID: asset.id) }
       Button("Add to Shortlist") { controller.decide("shortlist", assetID: asset.id) }
       Button("Remove from Shortlist") { controller.decide("remove-shortlist", assetID: asset.id) }
       Button("Reject for This Slide") { controller.decide("reject", assetID: asset.id) }
+      Button("Restore rejected candidate") { controller.decide("clear-reject", assetID: asset.id) }
       Divider()
       Button("Add to Comparison") { controller.toggleCompare(asset.id) }
       Button("Reveal in Finder") {
@@ -320,30 +360,28 @@ struct NativeAssetTile: View {
 struct NativeAssetImage: View {
   let source: NativeMediaSource?
   var longestSide: Int = 2048
-  @State private var data: Data?
+  @State private var image: NSImage?
+  @State private var message: String?
   @State private var loading = true
   var body: some View {
     Group {
-      if let data, let image = NSImage(data: data) {
-        Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
-      } else {
+      if let image { Image(nsImage: image).resizable().aspectRatio(contentMode: .fit) }
+      else {
         VStack(spacing: 8) {
-          if loading {
-            ProgressView().controlSize(.small)
-          } else {
+          if loading { ProgressView().controlSize(.small) }
+          else {
             Image(systemName: "photo")
-            Text(source == nil ? "Reconnect media" : "Original available; preview unsupported")
-              .font(.caption).multilineTextAlignment(.center)
+            Text(message ?? "Media unavailable. Reconnect or rescan its folder.").font(.caption).multilineTextAlignment(.center)
           }
         }.foregroundStyle(.secondary).padding(12)
       }
-    }
-    .task(id: "\(source?.cacheKey ?? "missing"):\(longestSide)") {
-      loading = true
-      data = nil
-      if let source {
-        data = await NativeThumbnailService.shared.data(for: source, longestSide: longestSide)
-      }
+    }.task(id: "\(source?.cacheKey ?? "missing"):\(longestSide)") {
+      image = nil; message = nil; loading = true
+      guard let source else { loading = false; return }
+      let result = await NativeThumbnailService.shared.preview(for: source, longestSide: longestSide)
+      guard !Task.isCancelled else { return }
+      image = result.data.flatMap { NSImage(data: $0) }
+      message = result.message
       loading = false
     }
   }
@@ -358,6 +396,7 @@ struct NativeCurateActions: View {
         }.frame(maxWidth: 160)
       }
       Button("Choose · M") { controller.decide("use") }.buttonStyle(.borderedProminent)
+        .disabled(controller.selectedSlide?.imageRoles.isEmpty != false)
       Button("Shortlist · S") { controller.decide("shortlist") }
       Button("Reject · X") { controller.decide("reject") }
       Spacer()
@@ -398,9 +437,9 @@ struct NativePreviewView: View {
           Image(systemName: "chevron.right")
         }
       }
-      Text("← → Browse this collection · S Shortlist · M Choose · X Reject · C Compare · Esc Close")
+      Text("← → Browse · S Shortlist · M Choose · X Reject · C Compare · Space/Esc Close")
         .font(.caption).foregroundStyle(.secondary)
-    }.padding(18).frame(minWidth: 850, idealWidth: 1100, minHeight: 650, idealHeight: 780)
+    }.padding(18).frame(maxWidth: .infinity, maxHeight: .infinity)
   }
   private var position: String {
     guard let id = controller.focusedAssetID, let index = controller.previewIDs.firstIndex(of: id)
@@ -418,20 +457,22 @@ struct NativeCompareView: View {
         Button("Done") { controller.compareOpen = false }
       }
       HStack {
-        ForEach(Array(controller.compareIDs).sorted(), id: \.self) { id in
+        ForEach(controller.compareIDs, id: \.self) { id in
           VStack {
             NativeAssetImage(source: controller.sources[id])
-            Text(controller.assets.first { $0.id == id }?.filename ?? id).font(.caption).lineLimit(
+            Text(controller.assetIndex[id]?.filename ?? id).font(.caption).lineLimit(
               1)
             Button("Choose this image") { controller.decide("use", assetID: id) }
-          }
+          }.padding(6).overlay(RoundedRectangle(cornerRadius: 5).stroke(controller.comparedAssetID == id ? Color.accentColor : Color.clear, lineWidth: 2))
+            .onTapGesture { controller.comparedAssetID = id }
         }
       }
+      Text("← → Select candidate · M Choose · S Shortlist · 1/2/3 Choose directly · Esc Close").font(.caption).foregroundStyle(.secondary)
       Button("Clear comparison") {
         controller.compareIDs = []
         controller.compareOpen = false
       }
-    }.padding(20).frame(width: 1000, height: 650)
+    }.padding(16).frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 }
 struct NativeAssembleView: View {
@@ -442,7 +483,8 @@ struct NativeAssembleView: View {
         Text(controller.selectedSlide?.title ?? "").font(.headline).lineLimit(1)
         Spacer()
         Toggle("Guides", isOn: $controller.showGuides).toggleStyle(.button)
-        Button("Fit") { controller.zoom = 1 }
+        Toggle("Clean preview", isOn: $controller.cleanPreview).toggleStyle(.button)
+        Button("Fit") { controller.fitCanvas() }
         Slider(value: $controller.zoom, in: 0.25...3).frame(width: 110).help(
           "Canvas zoom; does not change export")
       }.padding(12)
@@ -455,77 +497,13 @@ struct NativeAssembleView: View {
     }
   }
 }
-struct NativeContextPanel: View {
-  @ObservedObject var controller: NativeWorkbenchController
-  var body: some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: 18) {
-        if let slide = controller.selectedSlide {
-          HStack {
-            Text("Approved copy").font(.headline)
-            Spacer()
-            Image(systemName: "lock.fill").foregroundStyle(.secondary)
-            Button("Edit…") { controller.copyEditorOpen = true }.controlSize(.small)
-          }
-          ForEach(slide.copyBlocks) { block in
-            VStack(alignment: .leading, spacing: 5) {
-              HStack {
-                Text(block.role.uppercased()).font(.caption).foregroundStyle(.secondary)
-                Spacer()
-                Button {
-                  NSPasteboard.general.clearContents()
-                  NSPasteboard.general.setString(block.text, forType: .string)
-                } label: {
-                  Image(systemName: "doc.on.doc")
-                }.buttonStyle(.plain).help("Copy \(block.role)")
-              }
-              Text(block.text.isEmpty ? "—" : block.text).textSelection(.enabled).font(
-                .system(size: 13 * controller.interfaceScale))
-            }
-          }
-          Divider()
-          if controller.phase == "assemble" {
-            NativeAssemblyInspector(controller: controller, slide: slide)
-            Divider()
-          }
-          Text("Designer notes").font(.headline)
-          TextEditor(text: Binding(get: { controller.notes }, set: { controller.setNotes($0) }))
-            .font(.system(size: 13 * controller.interfaceScale)).frame(minHeight: 150).overlay(
-              RoundedRectangle(cornerRadius: 4).stroke(Color.secondary.opacity(0.25)))
-          Text("Direction, not on-slide copy. Included in the notes PDF and Copy.md.").font(
-            .caption
-          ).foregroundStyle(.secondary)
-          Toggle(
-            "Include in handoff",
-            isOn: Binding(
-              get: { slide.settings.included }, set: { controller.patchSlide(["included": $0]) }))
-          if !slide.settings.shortlist.isEmpty {
-            Divider()
-            Text("Shortlist").font(.headline)
-            ForEach(slide.settings.shortlist, id: \.self) { id in
-              HStack {
-                NativeAssetImage(source: controller.sources[id], longestSide: 512).frame(
-                  width: 64, height: 42)
-                Text(controller.assets.first { $0.id == id }?.filename ?? "Reconnect media").font(
-                  .caption
-                ).lineLimit(2)
-                Spacer()
-                Button("Use") { controller.decide("use", assetID: id) }.controlSize(.small)
-              }.onTapGesture { controller.focusedAssetID = id }
-            }
-          }
-        } else {
-          Text("Choose a slide.").foregroundStyle(.secondary)
-        }
-      }.padding(16)
-    }
-  }
-}
 struct NativeAssemblyInspector: View {
   @ObservedObject var controller: NativeWorkbenchController
   let slide: DeckSlide
   @State private var bodySize: Double = 32
   @State private var opacity: Double = 0.78
+  @State private var editingSize = false
+  @State private var editingOpacity = false
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
       Text("Prototype layout").font(.headline)
@@ -547,6 +525,11 @@ struct NativeAssemblyInspector: View {
           Text("Preserved legacy layout").tag("legacy")
         }
       }
+      if slide.settings.layout.preset == "legacy" {
+        Text("Preserved layout. Text fitting and region controls require conversion; unsupported legacy shapes are not rendered.").font(.caption).foregroundStyle(.secondary)
+        Button("Convert to native prototype layout") { controller.chooseLayout("left") }
+      }
+      Group {
       Picker(
         "Columns",
         selection: Binding(
@@ -564,8 +547,11 @@ struct NativeAssemblyInspector: View {
       Slider(
         value: $bodySize, in: 20...48, step: 1,
         onEditingChanged: { editing in
+          editingSize = editing
           if !editing { controller.patchLayout(["bodySize": bodySize]) }
         })
+      }.disabled(slide.settings.layout.preset == "legacy")
+      Button("Apply arrangement to other slides…") { controller.showApplyLayout = true }.controlSize(.small)
       Picker("Adjust", selection: $controller.selectionTarget) {
         Text("Text region").tag("text")
         ForEach(slide.imageRoles, id: \.self) { Text("Image · \($0)").tag($0) }
@@ -580,22 +566,25 @@ struct NativeAssemblyInspector: View {
         Slider(
           value: $opacity, in: 0...1,
           onEditingChanged: { editing in
+            editingOpacity = editing
             if !editing {
-              var g = slide.settings.layout.gradient ?? PrototypeGradient()
+              var g = controller.resolvedScene?.gradient ?? PrototypeGradient()
               g.opacity = opacity
               setGradient(g)
             }
           })
         HStack {
-          Button("Left") { setGradient(PrototypeGradient()) }
+          Button("Left") { var g = PrototypeGradient(); g.opacity = opacity; setGradient(g) }
           Button("Right") {
             var g = PrototypeGradient()
+            g.opacity = opacity
             g.start = PrototypePoint(x: 1, y: 0.5)
             g.end = PrototypePoint(x: 0.28, y: 0.5)
             setGradient(g)
           }
           Button("Bottom") {
             var g = PrototypeGradient()
+            g.opacity = opacity
             g.start = PrototypePoint(x: 0.5, y: 1)
             g.end = PrototypePoint(x: 0.5, y: 0.25)
             setGradient(g)
@@ -617,24 +606,41 @@ struct NativeAssemblyInspector: View {
           ])
         }.controlSize(.small)
       }
-      if let canvas = controller.document?.deck.canvasPreset {
-        let resolved = NativeSlideRenderer.resolve(slide: slide, canvas: canvas)
+      if let canvas = controller.document?.deck.canvasPreset, let resolved = controller.resolvedScene {
         Text(
           "Fit size: \(Int(resolved.effectiveBodySize)) · \(Int(canvas.width)) × \(Int(canvas.height))"
         ).font(.caption).foregroundStyle(.secondary)
         if resolved.overflowCharacters > 0 {
           Text(
-            "Some copy does not fit this rough layout. Export remains available; the companion contains all writing."
+            "Some copy does not fit this rough layout. Export remains available; include a notes or copy companion to deliver the complete writing."
           ).font(.caption).foregroundStyle(.orange)
         }
       }
-    }.onAppear {
-      bodySize = slide.settings.layout.bodySize
-      opacity = slide.settings.layout.gradient?.opacity ?? 0.78
-    }.onChange(of: slide.id) { _ in
-      bodySize = slide.settings.layout.bodySize
-      opacity = slide.settings.layout.gradient?.opacity ?? 0.78
-    }
+      if controller.selectionTarget == "text", slide.settings.layout.preset != "legacy" {
+        Button("Reset text region") { controller.patchLayout(["textFrame": NSNull()]) }.controlSize(.small)
+      }
+      if let scene = controller.resolvedScene {
+        HStack {
+          ForEach(["Left", "Up", "Down", "Right"], id: \.self) { direction in
+            Button(direction) {
+              let target = controller.selectionTarget
+              if let frame = target == "text" ? scene.textRegion : scene.imageLayers.first(where: { $0.role == target })?.frame {
+                controller.nudge(dx: direction == "Left" ? -10 : direction == "Right" ? 10 : 0,
+                  dy: direction == "Up" ? -10 : direction == "Down" ? 10 : 0, frame: PrototypeFrame(frame))
+              }
+            }.help("Move selected region \(direction.lowercased()) by ten canvas units")
+          }
+        }.controlSize(.small).disabled(controller.selectionTarget == "gradient" || scene.legacy)
+      }
+    }.onAppear { synchronize() }
+      .onChange(of: slide.id) { _, _ in synchronize() }
+      .onChange(of: slide.settings.layout.bodySize) { _, value in if !editingSize { bodySize = value } }
+      .onChange(of: controller.resolvedScene?.gradient) { _, value in if !editingOpacity { opacity = value?.opacity ?? 0 } }
+  }
+  private func synchronize() {
+    bodySize = slide.settings.layout.bodySize
+    opacity = controller.resolvedScene?.gradient?.opacity ?? 0
+
   }
   private func setGradient(_ gradient: PrototypeGradient) {
     do { controller.patchLayout(["gradient": try nativeObject(gradient)]) } catch {
@@ -644,13 +650,14 @@ struct NativeAssemblyInspector: View {
 }
 struct NativeExportSheet: View {
   @ObservedObject var controller: NativeWorkbenchController
-  @State private var prototype = true
-  @State private var notes = true
-  @State private var copy = true
-  @State private var approved = true
-  @State private var shortlisted = true
+  @AppStorage("native.export.prototype") private var prototype = true
+  @AppStorage("native.export.notes") private var notes = true
+  @AppStorage("native.export.copy") private var copy = true
+  @AppStorage("native.export.approved") private var approved = true
+  @AppStorage("native.export.shortlisted") private var shortlisted = true
   @State private var acceptChanged = false
-  @State private var onlyCurrent = false
+  @State private var scope = "all"
+  @State private var selectedIDs: Set<String> = []
   var body: some View {
     VStack(alignment: .leading, spacing: 18) {
       Text("Export designer handoff").font(.title2)
@@ -661,7 +668,18 @@ struct NativeExportSheet: View {
       Toggle("Approved Media · original files per slide", isOn: $approved)
       Toggle("Shortlisted Media · candidates per slide", isOn: $shortlisted)
       Divider()
-      Toggle("Export only the current slide", isOn: $onlyCurrent)
+      Picker("Slides", selection: $scope) {
+        Text("All included").tag("all"); Text("Current slide").tag("current"); Text("Choose slides").tag("selected")
+      }.pickerStyle(.segmented)
+      if scope == "selected" {
+        ScrollView {
+          VStack(alignment: .leading) {
+            ForEach(controller.slides.filter { $0.settings.included }) { slide in
+              Toggle(slide.title, isOn: Binding(get: { selectedIDs.contains(slide.id) }, set: { if $0 { selectedIDs.insert(slide.id) } else { selectedIDs.remove(slide.id) } }))
+            }
+          }
+        }.frame(maxHeight: 180)
+      }
       Toggle("Accept externally changed source files", isOn: $acceptChanged)
       Text(
         "Leave this off to detect originals that changed after selection. Missing media and layout warnings are reported, not hidden."
@@ -677,39 +695,44 @@ struct NativeExportSheet: View {
           options.approved = approved
           options.shortlisted = shortlisted
           options.acceptChangedSources = acceptChanged
-          options.selectedSlideIDs = onlyCurrent ? Set([controller.selectedSlideID ?? ""]) : nil
+          options.selectedSlideIDs = scope == "current" ? Set([controller.selectedSlideID ?? ""]) : scope == "selected" ? selectedIDs : nil
           controller.export(options)
         }.buttonStyle(.borderedProminent).disabled(
-          !prototype && !notes && !copy && !approved && !shortlisted)
+          (!prototype && !notes && !copy && !approved && !shortlisted) || (scope == "selected" && selectedIDs.isEmpty))
       }
-    }.padding(28).frame(width: 530)
+    }.padding(24).frame(width: min(570, (NSScreen.main?.visibleFrame.width ?? 1000) - 100))
   }
 }
 struct NativeImportSheet: View {
   @ObservedObject var controller: NativeWorkbenchController
   let imported: ImportedCopyDocument
+  @State private var matching = false
   var body: some View {
     VStack(alignment: .leading, spacing: 18) {
       Text("Import \(imported.title)").font(.title2)
       Text("\(imported.slides.count) slides · \(imported.canvasID) · copy locked by default")
         .foregroundStyle(.secondary)
+      if matching {
+        NativeReplacementPanel(controller: controller, imported: imported)
+      } else {
       List(imported.slides) { slide in
         VStack(alignment: .leading, spacing: 5) {
           Text(slide.title).font(.headline)
           Text(slide.blocks.map(\.text).joined(separator: "\n")).lineLimit(4).font(.caption)
         }
-      }.frame(height: 350)
+      }.frame(maxHeight: .infinity)
+      }
       Text("No text is rewritten. Slide boundaries and optional copy fields come from the file.")
         .font(.caption).foregroundStyle(.secondary)
       HStack {
         Button("Cancel") { controller.imported = nil }
         if controller.document != nil {
-          Button("Replace Matching Copy") { controller.replaceCopy(with: imported) }
+          Button(matching ? "Show import" : "Preview replacement…") { matching.toggle() }
         }
         Spacer()
         Button("Create New Deck…") { controller.createImported() }.buttonStyle(.borderedProminent)
       }
-    }.padding(24).frame(width: 700)
+    }.padding(24).nativeSheetFrame(width: 740, height: 650)
   }
 }
 struct NativeCopyEditor: View {
@@ -736,7 +759,7 @@ struct NativeCopyEditor: View {
         Spacer()
         Button("Save and Lock Copy") { controller.editCopy(blocks) }.buttonStyle(.borderedProminent)
       }
-    }.padding(24).frame(width: 650, height: 700)
+    }.padding(24).nativeSheetFrame(width: 650, height: 680)
   }
 }
 struct NativeSettingsView: View {
@@ -751,6 +774,7 @@ struct NativeSettingsView: View {
       Picker("Interface size", selection: $controller.interfaceScale) {
         ForEach([0.9, 1.0, 1.1, 1.25, 1.5, 1.75], id: \.self) { Text("\(Int($0*100))%").tag($0) }
       }
+      Toggle("Advance after choosing, shortlisting or rejecting", isOn: $controller.autoAdvance)
       Text("Interface size does not change the canvas or exported deck.").font(.caption)
         .foregroundStyle(.secondary)
       Button("Done") { controller.showSettings = false }

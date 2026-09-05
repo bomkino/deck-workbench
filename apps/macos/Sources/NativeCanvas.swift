@@ -21,6 +21,8 @@ final class PrototypeCanvasView: NSView {
   private var imageKeys: [String: String] = [:]
   private var imageTasks: [String: Task<Void, Never>] = [:]
   private var sceneKey = ""
+  private var viewportRevision = -1
+  private var currentDeckID: String?
   private var artboard = CGRect.zero
   private var pan = CGPoint.zero
   private var spaceHeld = false
@@ -45,10 +47,18 @@ final class PrototypeCanvasView: NSView {
   required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
   func update(_ controller: NativeWorkbenchController) {
     self.controller = controller
+    let deckID = controller.document?.deck.deckId
+    if viewportRevision != controller.viewportRevision || currentDeckID != deckID {
+      viewportRevision = controller.viewportRevision; currentDeckID = deckID
+      pan = .zero; spaceHeld = false; cancelGesture()
+    }
     guard let slide = controller.selectedSlide, let canvas = controller.document?.deck.canvasPreset
     else {
       self.slide = nil
       scene = nil
+      sceneKey = ""
+      for task in imageTasks.values { task.cancel() }
+      imageTasks = [:]; imageKeys = [:]; images = [:]
       needsDisplay = true
       return
     }
@@ -64,11 +74,16 @@ final class PrototypeCanvasView: NSView {
       sceneKey = key
       self.slide = slide
       self.canvas = canvas
-      scene = NativeSlideRenderer.resolve(slide: slide, canvas: canvas)
+      scene = controller.resolvedScene
       if gesture?.slideID != slide.id { cancelGesture() }
     }
     for id in slide.chosenIDs {
-      guard let source = controller.sources[id], imageKeys[id] != source.cacheKey else { continue }
+      guard let source = controller.sources[id] else {
+        imageTasks.removeValue(forKey: id)?.cancel(); imageKeys[id] = nil; images[id] = nil
+        continue
+      }
+      guard imageKeys[id] != source.cacheKey else { continue }
+      images[id] = nil
       imageKeys[id] = source.cacheKey
       imageTasks[id]?.cancel()
       imageTasks[id] = Task { [weak self] in
@@ -105,7 +120,12 @@ final class PrototypeCanvasView: NSView {
       if gesture.target == "text" {
         var copy = slide
         copy.native?.layout.textFrame = PrototypeFrame(frame)
-        scene = NativeSlideRenderer.resolve(slide: copy, canvas: canvas)
+        if gesture.mode == "move" {
+          // Position changes do not require typesetting again for every pointer event.
+          let dx = frame.minX - scene.textRegion.minX, dy = frame.minY - scene.textRegion.minY
+          scene.textRegion = frame
+          scene.texts = scene.texts.map { PrototypeTextPlacement(frame: $0.frame.offsetBy(dx: dx, dy: dy), content: $0.content, textFrame: $0.textFrame, visible: $0.visible) }
+        } else { scene = NativeSlideRenderer.resolve(slide: copy, canvas: canvas) }
       } else {
         scene.imageLayers = scene.imageLayers.map {
           $0.role == gesture.target
@@ -126,6 +146,7 @@ final class PrototypeCanvasView: NSView {
     context.saveGState()
     defer { context.restoreGState() }
     context.clip(to: bounds)
+    if controller.cleanPreview { return }
     if controller.showGuides {
       context.setStrokeColor(NSColor.secondaryLabelColor.withAlphaComponent(0.22).cgColor)
       context.setLineWidth(0.5)
@@ -201,6 +222,7 @@ final class PrototypeCanvasView: NSView {
     guard let controller, let scene, let slide, let deckID = controller.document?.deck.deckId else {
       return
     }
+    guard !controller.cleanPreview else { return }
     let point = canvasPoint(event)
     let view = convert(event.locationInWindow, from: nil)
     if spaceHeld || event.buttonNumber == 2 {
@@ -241,6 +263,7 @@ final class PrototypeCanvasView: NSView {
     controller.selectionTarget = target
     let layer = scene.imageLayers.first { $0.role == target }
     let frame = target == "text" ? scene.textRegion : layer!.frame
+    if target == "text" && scene.legacy { controller.status = "Convert this preserved layout before changing its text region."; return }
     let handle = viewPoint(CGPoint(x: frame.maxX, y: frame.maxY))
     let resize = hypot(view.x - handle.x, view.y - handle.y) < 16
     let mode =
@@ -306,19 +329,23 @@ final class PrototypeCanvasView: NSView {
         f.origin.x = min(canvas.width - f.width, max(0, f.minX + dx))
         f.origin.y = min(canvas.height - f.height, max(0, f.minY + dy))
       }
-      if !event.modifierFlags.contains(.option) {
+      if controller?.showGuides == true && !event.modifierFlags.contains(.option) {
         let xs = (0..<24).map { (96 + Double($0) * 100) * canvas.width / 2576 }
         let ys = (0..<12).map { (64 + Double($0) * 80) * canvas.height / 1080 }
         let tolerance = 6 * canvas.width / max(artboard.width, 1)
-        if let x = xs.min(by: { abs($0 - f.minX) < abs($1 - f.minX) }), abs(x - f.minX) < tolerance
-        {
-          f.origin.x = x
+        let edgeX = gesture.mode == "resize" ? f.maxX : f.minX
+        let edgeY = gesture.mode == "resize" ? f.maxY : f.minY
+        if let x = xs.min(by: { abs($0 - edgeX) < abs($1 - edgeX) }), abs(x - edgeX) < tolerance {
+          if gesture.mode == "resize" { f.size.width = max(64, x - f.minX) } else { f.origin.x = x }
         }
-        if let y = ys.min(by: { abs($0 - f.minY) < abs($1 - f.minY) }), abs(y - f.minY) < tolerance
-        {
-          f.origin.y = y
+        if let y = ys.min(by: { abs($0 - edgeY) < abs($1 - edgeY) }), abs(y - edgeY) < tolerance {
+          if gesture.mode == "resize" { f.size.height = max(64, y - f.minY) } else { f.origin.y = y }
         }
       }
+      f.origin.x = max(0, min(canvas.width - f.width, f.minX))
+      f.origin.y = max(0, min(canvas.height - f.height, f.minY))
+      f.size.width = min(canvas.width - f.minX, f.width)
+      f.size.height = min(canvas.height - f.minY, f.height)
       previewFrame = f
     }
     needsDisplay = true
@@ -353,8 +380,25 @@ final class PrototypeCanvasView: NSView {
     previewGradient = nil
     needsDisplay = true
   }
+  override func resignFirstResponder() -> Bool {
+    spaceHeld = false
+    cancelGesture()
+    NSCursor.arrow.set()
+    return super.resignFirstResponder()
+  }
+  override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    if window == nil {
+      spaceHeld = false; cancelGesture()
+      for task in imageTasks.values { task.cancel() }
+      imageTasks = [:]; imageKeys = [:]; images = [:]
+    }
+  }
   override func keyDown(with event: NSEvent) {
     if event.keyCode == 53 {
+      if gesture?.mode == "pan", let origin = gesture?.frame.origin { pan = origin }
+      spaceHeld = false
+      NSCursor.arrow.set()
       cancelGesture()
     } else if event.keyCode == 49 {
       spaceHeld = true
@@ -374,7 +418,7 @@ final class PrototypeCanvasView: NSView {
   override func scrollWheel(with event: NSEvent) {
     if event.modifierFlags.contains(.command) {
       controller?.zoom = min(
-        4, max(0.25, (controller?.zoom ?? 1) * (1 + event.scrollingDeltaY / 150)))
+        3, max(0.25, (controller?.zoom ?? 1) * (1 + event.scrollingDeltaY / 150)))
     } else {
       pan.x -= event.scrollingDeltaX
       pan.y += event.scrollingDeltaY
@@ -382,7 +426,7 @@ final class PrototypeCanvasView: NSView {
     }
   }
   override func magnify(with event: NSEvent) {
-    controller?.zoom = min(4, max(0.25, (controller?.zoom ?? 1) * (1 + event.magnification)))
+    controller?.zoom = min(3, max(0.25, (controller?.zoom ?? 1) * (1 + event.magnification)))
   }
   override func resetCursorRects() {
     super.resetCursorRects()

@@ -1,9 +1,25 @@
-# v0.1.0 — Native Mac user-test release
+# v0.1.1 — native workflow and handoff repair
 
-This release becomes the active Mac version at the studio's explicit request, without the full acceptance suite. The studio will test it hands-on. Successful compilation and packaging do not establish behavioural correctness.
+This release fixes ordinary operations that could reject edits, overwrite another image's adjustments or resurrect undone notes. It retains the Mac-native prototype/handoff direction rather than rebuilding the application again.
 
-The rebuild replaces the WebKit workspace with native Curate/Assemble surfaces. Source implements whole-deck and notes PDFs, complete copy and per-slide original-media handoff, independent shortlist membership, queued decisions, provisional text fitting, native image handling and saved-copy recovery. Linux/Electron/web distribution paths are retired and current documentation has been rewritten.
+## Correctness
 
-**Use a duplicate deck first.** First native editing upgrades the working package reader schema. Keep the original deck and v0.0.6 as a fallback. This build requires Apple-Silicon macOS 26+ and is ad-hoc signed, not notarized. Import, PDF appearance, media exports, migration/recovery, performance and accessibility remain unverified. The complete master plan is not claimed finished.
+Layout picker resets are valid. Frame/crop/fill changes affect only the intended image. Batch arrangement application is reversible and idempotent. Visible slots follow the explicit layout; displaced images remain shortlisted. Cross-slot assignment moves/swaps correctly. Definitively rejected commands no longer hold subsequent valid actions. Acknowledged note drafts clear by generation; notes Undo survives save and reopen.
 
-Download the .app.zip asset and retain its .sha256 checksum. Automatic GitHub source archives are not the installable app.
+## Working flow
+
+Chosen-image slots, remove-but-keep-shortlisted, ordered keyboard comparison, natural/folder/date sorting, visible filters and filter-aware focus. Preview uses the working area instead of an oversized fixed sheet. Paste imports through the same parser. Replacement-copy preview explicitly matches slides and preserves their media/layout/notes. Apply Arrangement targets selected slides in one Undo step. Clean Preview, recentering Fit, better gesture cancellation, saved-value inspector synchronization and optional auto-advance. Pending command files can be restored to the matching deck with validation and confirmation.
+
+## Handoff
+
+Copy-only export no longer reads originals. Output resource selection and reports follow the actual requested/delivered components. Completed components can survive an independent failure; cancellation removes staging. Literal copy is protected in editable Markdown. Normal filename extensions survive truncation; spreadsheet-active CSV values are neutralized. Media index includes relative paths, roles, hashes, source notes and unavailable-file status. Generated handoffs are excluded by their own marker, not by excluding their parent media directory.
+
+## Performance
+
+Indexed slide/asset lookup, cached sorted/filtered collections, shared bounded thumbnails, cancelled-work cleanup, reconnect-aware cache identity, one image construction per request and reuse of text layout during translation. No general speed multiplier is claimed. The release artifact includes a synthetic native journey receipt and timing/caching observations.
+
+## Install / limits
+
+Apple Silicon, macOS 26+. Quit the old app, unzip the `.app.zip`, drag Deck Workbench.app into Applications and launch it. It is ad-hoc signed, not notarized. Keep a duplicate of pre-native decks: the first native edit upgrades their reader schema. v0.1.1 retains v0.1.0's schema. Preserve original files and older releases as fallbacks.
+
+The package journey checks core operations and synthetic handoff outputs. Studio-scale performance, exhaustive accessibility, every source format and every recovery/permission environment are not established by it. See docs/KNOWN_LIMITATIONS.md. The entire historical master plan is not claimed complete.

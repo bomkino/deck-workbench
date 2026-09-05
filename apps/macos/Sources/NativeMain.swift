@@ -72,6 +72,7 @@ struct NativeWorkbenchCommands: Commands {
         openWindow(id: "workbench")
         controller.importFile()
       }.keyboardShortcut("n")
+      Button("Paste Final Copy") { openWindow(id: "workbench"); controller.pasteCopy() }.keyboardShortcut("v", modifiers: [.command, .shift])
       Button("Open Deck…") {
         openWindow(id: "workbench")
         controller.openPanel()
@@ -98,11 +99,10 @@ struct NativeWorkbenchCommands: Commands {
       ).disabled(controller.document == nil || controller.exportRunning)
     }
     CommandGroup(replacing: .undoRedo) {
-      Button("Undo") { controller.undo() }.keyboardShortcut("z").disabled(
-        controller.document?.history.canUndo != true)
+      Button("Undo") { controller.undo() }.keyboardShortcut("z").disabled(controller.document == nil)
       Button("Redo") { controller.undo(redo: true) }.keyboardShortcut(
         "z", modifiers: [.command, .shift]
-      ).disabled(controller.document?.history.canRedo != true)
+      ).disabled(controller.document == nil)
     }
     CommandGroup(replacing: .appSettings) {
       Button("Settings…") { controller.showSettings = true }.keyboardShortcut(",")
@@ -110,14 +110,18 @@ struct NativeWorkbenchCommands: Commands {
     CommandMenu("Workbench") {
       Button("Curate") { controller.phase = "curate" }.keyboardShortcut("1")
       Button("Assemble") { controller.phase = "assemble" }.keyboardShortcut("2")
+      Button("Search media") { controller.phase = "curate"; controller.searchRequest += 1 }.keyboardShortcut("f")
+      Button("Show / Hide context panel") { controller.showContext.toggle() }.keyboardShortcut("i", modifiers: [.command, .option])
+      Button("Fit canvas") { controller.fitCanvas() }.keyboardShortcut("0")
+      Button("Clean canvas preview") { controller.phase = "assemble"; controller.cleanPreview.toggle() }.keyboardShortcut("p", modifiers: [.command, .shift])
       Divider()
       Button("Reveal Focused Media in Finder") { controller.revealFocused() }.keyboardShortcut(
         "r", modifiers: [.command, .shift]
       ).disabled(controller.focusedAssetID == nil)
       Button("Retry Pending Actions") { controller.retryPending() }.disabled(
         controller.failedCommands.isEmpty)
-      Button("Save Pending Actions…") { controller.savePending() }.disabled(
-        controller.failedCommands.isEmpty)
+      Button("Save Pending Actions…") { controller.savePending() }.disabled(controller.failedCommands.isEmpty)
+      Button("Restore Pending Actions…") { controller.restorePending() }.disabled(controller.document == nil)
     }
     CommandGroup(replacing: .help) {
       Button("Keyboard Shortcuts") {

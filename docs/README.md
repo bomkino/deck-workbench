@@ -1,5 +1,11 @@
-# Documentation index
+# Current documentation
 
-Current: MAC_APP.md, NATIVE_ARCHITECTURE.md, KNOWN_LIMITATIONS.md and RELEASE_NOTES.md. Start with the root README for download/build commands.
+Start with README.md and these current guides:
 
-The product/, architecture/, implementation/, evidence/ and 03-build/ directories preserve earlier specifications and evidence. Historical reports are not proof that v0.1.0 works. The active product is Mac-only, with native Curate/Assemble and a designer handoff rather than a production-design application.
+- MAC_APP.md — import, curate, assemble, export, shortcuts and recovery.
+- KNOWN_LIMITATIONS.md — tested boundaries and unresolved scope.
+- NATIVE_ARCHITECTURE.md — current owners and implementation decisions.
+- RELEASE_NOTES.md — changes in the current version.
+- examples/native-copy.md — bounded Markdown import example.
+
+Older numbered product/architecture/ticket/audit documents describe earlier milestones. They remain historical evidence, not current operating instructions. Release evidence belongs to the exact build artifact; never rewrite past results to imply new verification.

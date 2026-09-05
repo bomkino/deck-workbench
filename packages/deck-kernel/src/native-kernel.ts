@@ -32,6 +32,21 @@ function nativeState(deck: DeckSnapshot, slide: Slide): NativeSlideState {
     sourceFingerprints: {}, layout: { preset: authored ? 'legacy' : 'auto', columns: 1, bodySize: 32, fitCopy: true, frames: {}, crops: {}, imageFits: {} },
   }
 }
+// Visible slots follow an explicit prototype layout, never obsolete assignments.
+function nativeImageRoles(slide: Slide, state: NativeSlideState): string[] {
+  const preset = state.layout.preset === 'auto'
+    ? (slide.intent === 'text-only' ? 'text-only' : slide.intent === 'triptych' ? 'three-images' : slide.intent === 'diptych' ? 'two-images' : 'left')
+    : state.layout.preset
+  if (preset === 'text-only') return []
+  if (preset === 'legacy') {
+    const option = slide.designOptions?.find((o) => o.id === slide.activeDesignOptionId)
+    const roles = (option?.composition.elements ?? []).filter((e) => e.kind === 'image').map((e) => e.mediaRole).filter((r): r is string => typeof r === 'string')
+    return [...new Set(roles.length ? roles : (slide.mediaAssignments ?? []).map((a) => a.role))]
+  }
+  const count = preset === 'three-images' ? 3 : preset === 'two-images' ? 2 : 1
+  return Array.from({ length: count }, (_, i) => i ? `primary:${i + 1}` : 'primary')
+}
+
 function nativeNumber(value: unknown, field: string, min: number, max: number): number {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) throw new Error(`${field} is outside ${min}–${max}`)
   return value
@@ -73,6 +88,20 @@ function nativeMutation(deck: DeckSnapshot, slide: Slide, next: NativeSlideState
     noop: JSON.stringify(nativeState(deck, slide)) === JSON.stringify(next) }
 }
 function prepareNativeCommand(deck: DeckSnapshot, command: CommandEnvelope): NativeMutation {
+  if (command.type === 'native.layout.apply') {
+    const ids = command.payload.slideIds
+    if (!Array.isArray(ids) || !ids.length || ids.length > 1000 || new Set(ids).size !== ids.length) throw new Error('Select unique slides for the layout')
+    const layout = assertRecord(command.payload.layout, 'layout')
+    const forward: HistoryOperation[] = [], inverse: HistoryOperation[] = []
+    let firstMutation: NativeMutation | undefined
+    for (const slideId of ids) {
+      const m = prepareNativeCommand(deck, { ...command, type: 'native.slide.patch', payload: { slideId, patch: { layout } } })
+      firstMutation ??= m
+      if (!m.noop) appendOperationPair(forward, inverse, m.forward, m.inverse)
+    }
+    if (!forward.length) return { ...firstMutation!, label: 'Apply prototype arrangement', noop: true }
+    return { forward: operationList(forward), inverse: operationList(inverse), label: 'Apply prototype arrangement' }
+  }
   if (command.type === 'native.copy.replace') {
     const updates = command.payload.slides
     if (!Array.isArray(updates) || !updates.length || updates.length > 1000) throw new Error('Copy replacement needs Slide updates')
@@ -111,13 +140,51 @@ function prepareNativeCommand(deck: DeckSnapshot, command: CommandEnvelope): Nat
     if (Object.keys(patch).some((k) => !['notes', 'included', 'copyLocked', 'layout'].includes(k))) throw new Error('Unsupported native Slide property')
     if (patch.notes !== undefined) state.notes = nativeText(patch.notes)
     for (const k of ['included', 'copyLocked'] as const) if (patch[k] !== undefined) { if (typeof patch[k] !== 'boolean') throw new Error(`${k} must be boolean`); state[k] = patch[k] as boolean }
+    const forward: HistoryOperation[] = [], inverse: HistoryOperation[] = []
     if (patch.layout !== undefined) {
       const layout = assertRecord(patch.layout, 'layout patch')
       if (Object.keys(layout).some((k) => !['preset', 'columns', 'bodySize', 'fitCopy', 'textFrame', 'frames', 'crops', 'imageFits', 'gradient'].includes(k))) throw new Error('Unsupported layout property')
-      state.layout = { ...state.layout, ...clone(layout) } as NativeLayout
-      if (layout.textFrame === null) delete state.layout.textFrame
+      const previousPreset = state.layout.preset
+      // Null resets a map; a dictionary changes only the named entries. Null
+      // entries reset one image. Ordinary edits must never replace sibling data.
+      const next = { ...state.layout, ...clone(layout) } as NativeLayout
+      for (const key of ['frames', 'crops', 'imageFits'] as const) {
+        if (layout[key] === undefined) continue
+        if (layout[key] === null) { next[key] = {} as never; continue }
+        const entries = assertRecord(layout[key], key)
+        const merged: Record<string, unknown> = { ...state.layout[key] }
+        for (const [role, value] of Object.entries(entries)) {
+          if (value === null) delete merged[role]
+          else merged[role] = clone(value)
+        }
+        next[key] = merged as never
+      }
+      if (layout.textFrame === null) delete next.textFrame
+      if (layout.gradient === null) delete next.gradient
+      state.layout = next
+      validateNativeState(state)
+      if (layout.preset !== undefined && (previousPreset !== next.preset || next.preset !== 'legacy')) {
+        const roles = nativeImageRoles(slide, state)
+        const assignments = slide.mediaAssignments ?? []
+        const occupied = new Set(assignments.filter((a) => roles.includes(a.role)).map((a) => a.role))
+        for (const assignment of assignments.filter((a) => !roles.includes(a.role))) {
+          const vacant = roles.find((role) => !occupied.has(role))
+          appendOperationPair(forward, inverse,
+            { type: 'asset.assignment.remove', payload: { slideId: id, mediaAssignmentId: assignment.id } },
+            { type: 'asset.assignment.insert', payload: { slideId: id, assignment: clone(assignment) } })
+          if (vacant) {
+            occupied.add(vacant)
+            appendOperationPair(forward, inverse,
+              { type: 'asset.assignment.insert', payload: { slideId: id, assignment: { ...assignment, role: vacant } } },
+              { type: 'asset.assignment.remove', payload: { slideId: id, mediaAssignmentId: assignment.id } })
+          } else if (!state.shortlist.includes(assignment.assetReferenceId)) state.shortlist.push(assignment.assetReferenceId)
+        }
+      }
     }
-    return nativeMutation(deck, slide, state, command.source.label ?? 'Adjust prototype')
+    const mutation = nativeMutation(deck, slide, state, command.source.label ?? 'Adjust prototype')
+    if (!forward.length) return mutation
+    appendOperationPair(forward, inverse, mutation.forward, mutation.inverse)
+    return { forward: operationList(forward), inverse: operationList(inverse), label: mutation.label }
   }
   if (command.type === 'native.nudge') {
     const target = assertIdentity(command.payload.target, 'target', 512)
@@ -135,12 +202,25 @@ function prepareNativeCommand(deck: DeckSnapshot, command: CommandEnvelope): Nat
   else if (action === 'remove-shortlist') state.shortlist = state.shortlist.filter((a) => a !== assetId)
   else if (action === 'clear-reject') state.rejected = state.rejected.filter((a) => a !== assetId)
   else if (action === 'reject' || action === 'unassign') {
+    if (action === 'unassign') candidate(assetId)
     if (action === 'reject') { if (!state.rejected.includes(assetId)) state.rejected.push(assetId); state.shortlist = state.shortlist.filter((a) => a !== assetId) }
     for (const a of slide.mediaAssignments ?? []) if (a.assetReferenceId === assetId) appendOperationPair(forward, inverse, { type: 'asset.assignment.remove', payload: { slideId: id, mediaAssignmentId: a.id } }, { type: 'asset.assignment.insert', payload: { slideId: id, assignment: clone(a) } })
   } else if (action === 'use') {
     const role = assertIdentity(command.payload.role ?? 'primary', 'role', 512)
-    if (slide.mediaAssignments?.some((a) => a.assetReferenceId === assetId && a.role !== role)) throw new Error('This image already fills another slot; remove it there before moving it')
+    if (!nativeImageRoles(slide, state).includes(role)) throw new Error('Choose a visible image slot for this layout')
     const old = slide.mediaAssignments?.find((a) => a.role === role)
+    const other = slide.mediaAssignments?.find((a) => a.assetReferenceId === assetId && a.role !== role)
+    if (other) {
+      if (old) {
+        appendOperationPair(forward, inverse,
+          { type: 'asset.assignment.asset.set', payload: { slideId: id, mediaAssignmentId: other.id, assetReferenceId: old.assetReferenceId } },
+          { type: 'asset.assignment.asset.set', payload: { slideId: id, mediaAssignmentId: other.id, assetReferenceId: assetId } })
+      } else {
+        appendOperationPair(forward, inverse,
+          { type: 'asset.assignment.remove', payload: { slideId: id, mediaAssignmentId: other.id } },
+          { type: 'asset.assignment.insert', payload: { slideId: id, assignment: clone(other) } })
+      }
+    }
     if (old && old.assetReferenceId !== assetId) {
       candidate(old.assetReferenceId)
       appendOperationPair(forward, inverse, { type: 'asset.assignment.asset.set', payload: { slideId: id, mediaAssignmentId: old.id, assetReferenceId: assetId } }, { type: 'asset.assignment.asset.set', payload: { slideId: id, mediaAssignmentId: old.id, assetReferenceId: old.assetReferenceId } })

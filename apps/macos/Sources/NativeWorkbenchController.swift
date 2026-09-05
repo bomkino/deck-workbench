@@ -9,26 +9,31 @@ struct NativePendingCommand: Codable, Sendable {
   let deckID: String
   let commandID: String
   let label: String
+  var noteSlideID: String? = nil
+  var noteGeneration: Int? = nil
 }
 
 @MainActor
 final class NativeWorkbenchController: ObservableObject {
-  @Published var document: DeckDocumentSnapshot?
-  @Published var selectedSlideID: String?
-  @Published var focusedAssetID: String?
+  @Published var document: DeckDocumentSnapshot? { didSet { indexDocument() } }
+  @Published var selectedSlideID: String? { didSet { if oldValue != selectedSlideID { selectionChanged() } } }
+  @Published var focusedAssetID: String? { didSet { if oldValue != focusedAssetID { prefetchAdjacent() } } }
   @Published var phase = "curate"
   @Published var status = "Import final copy to begin."
   @Published var failure: String?
-  @Published var assets: [NativeMediaAsset] = []
+  @Published var assets: [NativeMediaAsset] = [] { didSet { indexAssets() } }
   @Published var roots: [NativeMediaRoot] = []
   @Published var sources: [String: NativeMediaSource] = [:]
-  @Published var query = ""
-  @Published var collection = "all"
-  @Published var selectedRootID: String?
+  @Published var query = "" { didSet { if oldValue != query { refreshMediaScope(resetPreview: true) } } }
+  @Published var collection = "all" { didSet { if oldValue != collection { refreshMediaScope(resetPreview: true) } } }
+  @Published var selectedRootID: String? { didSet { if oldValue != selectedRootID { refreshMediaScope(resetPreview: true) } } }
   @Published var previewIDs: [String] = []
-  @Published var previewOpen = false
+  private var previewUsesCandidates = false
+  @Published var previewOpen = false { didSet { prefetchAdjacent() } }
   @Published var compareOpen = false
-  @Published var compareIDs: Set<String> = []
+  @Published var comparedAssetID: String?
+  @Published var searchRequest = 0
+  @Published var compareIDs: [String] = []
   @Published var gridColumns = 3
   @Published var curateRole = "primary"
   @Published var showShortcuts = false
@@ -36,6 +41,29 @@ final class NativeWorkbenchController: ObservableObject {
   @Published var showCopy = false
   @Published var copyEditorOpen = false
   @Published var showSettings = false
+  @Published var showApplyLayout = false
+  @Published var showExportResult = false
+  @Published var cleanPreview = false
+  @Published var viewportRevision = 0
+  @Published var showContext = true
+  @Published var contextWidth: Double = UserDefaults.standard.object(forKey: "native.contextWidth") as? Double ?? 310 {
+    didSet { UserDefaults.standard.set(contextWidth, forKey: "native.contextWidth") }
+  }
+  @Published var autoAdvance = UserDefaults.standard.bool(forKey: "native.autoAdvance") {
+    didSet { UserDefaults.standard.set(autoAdvance, forKey: "native.autoAdvance") }
+  }
+  @Published var sortOrder = "filename" { didSet { sortAssets() } }
+  @Published private(set) var filteredAssets: [NativeMediaAsset] = []
+  private(set) var assetIndex: [String: NativeMediaAsset] = [:]
+  private(set) var slideIndex: [String: DeckSlide] = [:]
+  private(set) var slides: [DeckSlide] = []
+  private(set) var chosenAssetIDs: Set<String> = []
+  private(set) var shortlistedAssetIDs: Set<String> = []
+  private var orderedAssets: [NativeMediaAsset] = []
+  private var filterSignature = ""
+  private var assetGeneration = 0
+  private var noteGenerations: [String: Int] = [:]
+  private var enqueuedNoteGenerations: [String: Int] = [:]
   @Published var imported: ImportedCopyDocument?
   @Published var pendingCount = 0
   @Published var scanRunning = false
@@ -63,9 +91,32 @@ final class NativeWorkbenchController: ObservableObject {
   private var noteTasks: [String: Task<Void, Never>] = [:]
   private var scanTask: Task<Void, Never>?
   private var exportTask: Task<Void, Never>?
-  private var lifecycleBusy = false
+  @Published private(set) var lifecycleBusy = false
   private var catalogRevision: Int = -1
   private var catalogGeneration = 0
+  private var mediaAccessGeneration = 0
+  private var prefetchTask: Task<Void, Never>?
+  private var resolvedKey: Int?
+  private var resolvedValue: ResolvedPrototype?
+  var resolvedScene: ResolvedPrototype? {
+    guard let slide = selectedSlide, let canvas = document?.deck.canvasPreset else { return nil }
+    var hash = Hasher()
+    hash.combine(slide.id); hash.combine(slide.intent)
+    hash.combine(try? nativeJSON(slide.settings.layout)); hash.combine(try? nativeJSON(slide.copyBlocks))
+    hash.combine(try? nativeJSON(slide.mediaAssignments)); hash.combine(try? nativeJSON(slide.legacyComposition))
+    hash.combine(canvas.width); hash.combine(canvas.height)
+    let key = hash.finalize()
+    if resolvedKey != key { resolvedKey = key; resolvedValue = NativeSlideRenderer.resolve(slide: slide, canvas: canvas) }
+    return resolvedValue
+  }
+  private func prefetchAdjacent() {
+    prefetchTask?.cancel()
+    guard previewOpen, let id = focusedAssetID, let index = previewIDs.firstIndex(of: id) else { return }
+    let candidates = [index + 1, index - 1].filter { previewIDs.indices.contains($0) }.compactMap { sources[previewIDs[$0]] }
+    prefetchTask = Task {
+      for source in candidates { guard !Task.isCancelled else { return }; _ = await NativeThumbnailService.shared.data(for: source, longestSide: 2048) }
+    }
+  }
 
   init() throws {
     guard
@@ -78,26 +129,87 @@ final class NativeWorkbenchController: ObservableObject {
     session = try NativeDocumentSession(kernelURL: url)
     applyTheme()
   }
-  var selectedSlide: DeckSlide? { document?.deck.slides.first { $0.id == selectedSlideID } }
-  var focusedAsset: NativeMediaAsset? { assets.first { $0.id == focusedAssetID } }
-  var filteredAssets: [NativeMediaAsset] {
-    let slide = selectedSlide
-    return assets.filter { asset in
-      if let root = selectedRootID, asset.rootId != root { return false }
-      if !query.isEmpty
-        && !"\(asset.filename) \(asset.folder) \(asset.title)".localizedCaseInsensitiveContains(
-          query)
-      {
-        return false
-      }
-      switch collection {
-      case "shortlist": return slide?.settings.shortlist.contains(asset.id) == true
-      case "chosen": return slide?.chosenIDs.contains(asset.id) == true
-      case "rejected": return slide?.settings.rejected.contains(asset.id) == true
-      default: return slide?.settings.rejected.contains(asset.id) != true
-      }
+  var selectedSlide: DeckSlide? { selectedSlideID.flatMap { slideIndex[$0] } }
+  var focusedAsset: NativeMediaAsset? { focusedAssetID.flatMap { assetIndex[$0] } }
+  private func indexDocument() {
+    slides = document?.deck.slides ?? []
+    slideIndex = Dictionary(uniqueKeysWithValues: slides.map { ($0.id, $0) })
+    refreshMediaScope()
+    if let slide = selectedSlide {
+      if !slide.imageRoles.contains(curateRole) { curateRole = slide.imageRoles.first ?? "primary" }
+      if !["text", "gradient"].contains(selectionTarget) && !slide.imageRoles.contains(selectionTarget) { selectionTarget = "text" }
     }
   }
+  private func indexAssets() {
+    assetIndex = Dictionary(uniqueKeysWithValues: assets.map { ($0.id, $0) })
+    assetGeneration += 1
+    sortAssets()
+  }
+  private func sortAssets() {
+    orderedAssets = assets.sorted { a, b in
+      if sortOrder == "modified", a.modifiedAt != b.modifiedAt { return (a.modifiedAt ?? 0) > (b.modifiedAt ?? 0) }
+      let left = sortOrder == "folder" ? a.folder + "/" + a.filename : a.filename
+      let right = sortOrder == "folder" ? b.folder + "/" + b.filename : b.filename
+      let order = left.localizedStandardCompare(right)
+      return order == .orderedSame ? a.id < b.id : order == .orderedAscending
+    }
+    filterSignature = ""
+    refreshMediaScope(resetPreview: true)
+  }
+  private func selectionChanged() {
+    selectionTarget = "text"
+    curateRole = selectedSlide?.imageRoles.first ?? "primary"
+    compareOpen = false
+    compareIDs = []
+    viewportRevision += 1
+    refreshMediaScope(resetPreview: true)
+  }
+  private func refreshMediaScope(resetPreview: Bool = false) {
+    let slide = selectedSlide
+    let chosen = slide?.chosenIDs ?? []
+    let shortlist = Set(slide?.settings.shortlist ?? [])
+    let rejected = Set(slide?.settings.rejected ?? [])
+    var hash = Hasher()
+    hash.combine(assetGeneration); hash.combine(sortOrder); hash.combine(query); hash.combine(collection)
+    hash.combine(selectedRootID); hash.combine(selectedSlideID); hash.combine(chosen); hash.combine(shortlist); hash.combine(rejected)
+    let signature = String(hash.finalize())
+    guard signature != filterSignature || resetPreview else { return }
+    filterSignature = signature
+    chosenAssetIDs = chosen
+    shortlistedAssetIDs = shortlist
+    let oldIDs = filteredAssets.map(\.id)
+    let search = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    filteredAssets = orderedAssets.filter { asset in
+      if let root = selectedRootID, asset.rootId != root { return false }
+      if !search.isEmpty && !"\(asset.filename) \(asset.folder) \(asset.title)".localizedCaseInsensitiveContains(search) { return false }
+      switch collection {
+      case "shortlist": return shortlist.contains(asset.id)
+      case "chosen": return chosen.contains(asset.id)
+      case "rejected": return rejected.contains(asset.id)
+      default: return !rejected.contains(asset.id)
+      }
+    }
+    let ids = filteredAssets.map(\.id)
+    let available = Set(ids)
+    if previewOpen {
+      let previous = previewIDs
+      if previewUsesCandidates {
+        let candidateIDs = (slide?.mediaAssignments ?? []).map(\.assetReferenceId) + (slide?.settings.shortlist ?? [])
+        var seen = Set<String>()
+        previewIDs = candidateIDs.filter { assetIndex[$0] != nil && seen.insert($0).inserted }
+      } else { previewIDs = resetPreview ? ids : previewIDs.filter { available.contains($0) } }
+      if let focused = focusedAssetID, !previewIDs.contains(focused) {
+        let index = previous.firstIndex(of: focused) ?? 0
+        focusedAssetID = previewIDs.isEmpty ? nil : previewIDs[min(index, previewIDs.count - 1)]
+      }
+      if previewIDs.isEmpty { previewOpen = false }
+    } else if let focused = focusedAssetID, !available.contains(focused) {
+      let index = oldIDs.firstIndex(of: focused) ?? 0
+      focusedAssetID = ids.isEmpty ? nil : ids[min(index, ids.count - 1)]
+    }
+  }
+  func clearFilters() { query = ""; selectedRootID = nil; collection = "all" }
+  func fitCanvas() { zoom = 1; viewportRevision += 1 }
   var notes: String {
     guard let slide = selectedSlide else { return "" }
     return notesDrafts[slide.id] ?? slide.settings.notes
@@ -123,6 +235,8 @@ final class NativeWorkbenchController: ObservableObject {
       focusedAssetID = nil
       previewOpen = false
       notesDrafts = [:]
+      noteGenerations = [:]
+      enqueuedNoteGenerations = [:]
       query = ""
       collection = "all"
       selectedRootID = nil
@@ -152,7 +266,7 @@ final class NativeWorkbenchController: ObservableObject {
   func moveSlide(_ delta: Int) {
     guard let slides = document?.deck.slides, !slides.isEmpty else { return }
     let current = slides.firstIndex { $0.id == selectedSlideID } ?? 0
-    selectedSlideID = slides[min(slides.count - 1, max(0, current + delta))].id
+    selectSlide(slides[min(slides.count - 1, max(0, current + delta))].id)
   }
   func focusAsset(_ id: String) {
     focusedAssetID = id
@@ -161,18 +275,32 @@ final class NativeWorkbenchController: ObservableObject {
   func focusNext(_ delta: Int) {
     let ids = previewOpen ? previewIDs : filteredAssets.map(\.id)
     guard !ids.isEmpty else { return }
-    let index = ids.firstIndex(of: focusedAssetID ?? "") ?? 0
+    guard let index = ids.firstIndex(of: focusedAssetID ?? "") else {
+      focusedAssetID = delta < 0 ? ids.last : ids.first
+      return
+    }
     focusedAssetID = ids[min(ids.count - 1, max(0, index + delta))]
   }
   func preview(_ id: String? = nil) {
+    previewUsesCandidates = false
     if let id { focusedAssetID = id }
-    if focusedAssetID == nil { focusedAssetID = filteredAssets.first?.id }
     previewIDs = filteredAssets.map(\.id)
+    if !previewIDs.contains(focusedAssetID ?? "") { focusedAssetID = previewIDs.first }
     previewOpen = focusedAssetID != nil
   }
 
+  func previewCandidate(_ id: String) {
+    guard let slide = selectedSlide else { return }
+    previewUsesCandidates = true
+    var seen = Set<String>()
+    previewIDs = ((slide.mediaAssignments ?? []).map(\.assetReferenceId) + slide.settings.shortlist).filter { assetIndex[$0] != nil && seen.insert($0).inserted }
+    guard previewIDs.contains(id) else { return }
+    focusedAssetID = id
+    previewOpen = true
+    compareOpen = false
+  }
   func enqueue(type: String, payload: [String: Any], label: String, slideID: String? = nil) {
-    guard let deckID = document?.deck.deckId else { return }
+    guard let deckID = document?.deck.deckId, !lifecycleBusy else { return }
     do {
       let data = try JSONSerialization.data(withJSONObject: payload, options: .sortedKeys)
       submit(
@@ -202,40 +330,63 @@ final class NativeWorkbenchController: ObservableObject {
           type: command.type, payload: command.payload, deckID: command.deckID,
           commandID: command.commandID, label: command.label, source: "keyboard")
         self.accept(receipt)
+        self.acknowledgeNote(command)
       } catch {
+        let rejected = WorkbenchFailure.unexpected(error)
+        if ["InvalidCommand", "DocumentChanged", "NoDocument"].contains(rejected.name) {
+          // Definitive validation rejection did not touch the journal. Keep later
+          // independent actions usable; only uncertain storage failures fence it.
+          self.failure = "\(command.label) was not applied: \(rejected.message)"
+          if let id = command.noteSlideID { self.enqueuedNoteGenerations[id] = nil }
+          return
+        }
         self.failedCommands.append(command)
         self.failure =
           "\(command.label) was not acknowledged as saved. \(error.localizedDescription) Your pending actions are retained; use Retry Pending Actions or Save Pending Actions before closing."
       }
     }
   }
+  private func acknowledgeNote(_ command: NativePendingCommand) {
+    guard let id = command.noteSlideID, let generation = command.noteGeneration else { return }
+    if enqueuedNoteGenerations[id] == generation { enqueuedNoteGenerations[id] = nil }
+    // Acknowledging older text must not erase keystrokes typed during its write.
+    if noteGenerations[id] == generation { notesDrafts[id] = nil }
+  }
   func setNotes(_ value: String) {
-    guard let slide = selectedSlide else { return }
-    notesDrafts[slide.id] = value
-    noteTasks[slide.id]?.cancel()
+    guard let slide = selectedSlide, !lifecycleBusy else { return }
     let id = slide.id
+    notesDrafts[id] = value
+    noteGenerations[id, default: 0] += 1
+    let generation = noteGenerations[id]!
+    noteTasks[id]?.cancel()
     let deckID = document?.deck.deckId
     noteTasks[id] = Task { [weak self] in
       try? await Task.sleep(for: .milliseconds(350))
-      guard !Task.isCancelled, let self, self.document?.deck.deckId == deckID else { return }
+      guard !Task.isCancelled, let self, self.document?.deck.deckId == deckID,
+        self.noteGenerations[id] == generation else { return }
       self.commitNote(id)
       self.noteTasks[id] = nil
     }
   }
   private func commitNote(_ id: String) {
-    guard let text = notesDrafts[id] else { return }
-    enqueue(
-      type: "native.slide.patch", payload: ["slideId": id, "patch": ["notes": text]],
-      label: "Save designer notes")
+    guard let text = notesDrafts[id], let generation = noteGenerations[id],
+      enqueuedNoteGenerations[id] != generation, let deckID = document?.deck.deckId else { return }
+    if slideIndex[id]?.settings.notes == text && enqueuedNoteGenerations[id] == nil {
+      notesDrafts[id] = nil
+      return
+    }
+    do {
+      let data = try JSONSerialization.data(withJSONObject: ["slideId": id, "patch": ["notes": text]], options: .sortedKeys)
+      enqueuedNoteGenerations[id] = generation
+      submit(NativePendingCommand(type: "native.slide.patch", payload: data, deckID: deckID,
+        commandID: UUID().uuidString.lowercased(), label: "Save designer notes", noteSlideID: id, noteGeneration: generation))
+    } catch { failure = error.localizedDescription }
   }
   func flush() async {
     for task in noteTasks.values { task.cancel() }
     noteTasks = [:]
-    for (id, text) in notesDrafts
-    where document?.deck.slides.first(where: { $0.id == id })?.settings.notes != text {
-      commitNote(id)
-    }
-    await writeTail?.value
+    for id in Array(notesDrafts.keys) { commitNote(id) }
+    repeat { await writeTail?.value } while pendingCount > 0
   }
   func patchSlide(_ patch: [String: Any], id: String? = nil) {
     guard let id = id ?? selectedSlideID else { return }
@@ -247,20 +398,28 @@ final class NativeWorkbenchController: ObservableObject {
     patchSlide(["layout": patch], id: id)
   }
   func chooseLayout(_ preset: String) {
+    curateRole = "primary"
+    selectionTarget = "text"
     patchLayout(["preset": preset, "textFrame": NSNull(), "frames": NSNull()])
   }
   func decide(_ action: String, assetID: String? = nil, role: String? = nil) {
     guard let slideID = selectedSlideID,
-      let asset = assets.first(where: { $0.id == (assetID ?? focusedAssetID) })
+      let asset = (assetID ?? focusedAssetID).flatMap({ assetIndex[$0] })
     else { return }
+    let targetRole = role ?? curateRole
+    if action == "use", selectedSlide?.imageRoles.contains(targetRole) != true {
+      failure = "This layout has no such image slot. Choose an image layout or another visible slot."
+      return
+    }
     do {
       enqueue(
         type: "native.curate.set",
         payload: [
           "slideId": slideID, "asset": try nativeObject(asset.reference), "action": action,
-          "role": role ?? curateRole, "assignmentId": UUID().uuidString.lowercased(),
+          "role": targetRole, "assignmentId": UUID().uuidString.lowercased(),
           "fingerprint": asset.fingerprint,
         ], label: action == "use" ? "Choose image" : "Update shortlist")
+      if autoAdvance && ["use", "shortlist", "reject"].contains(action) && focusedAssetID == asset.id { focusNext(1) }
     } catch { failure = error.localizedDescription }
   }
   func nudge(dx: Double, dy: Double, frame: PrototypeFrame) {
@@ -274,34 +433,64 @@ final class NativeWorkbenchController: ObservableObject {
         ], label: "Nudge prototype")
     } catch { failure = error.localizedDescription }
   }
-  func undo(redo: Bool = false) {
-    guard let deckID = document?.deck.deckId else { return }
+  func undo(redo: Bool = false, documentOnly: Bool = false) {
+    if !documentOnly, let editor = NSApp.keyWindow?.firstResponder as? NSTextView, editor.isEditable,
+      let manager = editor.undoManager {
+      if redo { if manager.canRedo { manager.redo() } }
+      else { if manager.canUndo { manager.undo() } }
+      return
+    }
+    guard let deckID = document?.deck.deckId, !lifecycleBusy else { return }
+    for task in noteTasks.values { task.cancel() }
+    noteTasks = [:]
+    for id in Array(notesDrafts.keys) { commitNote(id) }
     let prior = writeTail
     pendingCount += 1
     writeTail = Task { [weak self] in
       await prior?.value
       guard let self else { return }
       defer { self.pendingCount -= 1 }
-      guard self.failedCommands.isEmpty else { return }
-      do { self.accept(try await self.session.history(redo: redo, deckID: deckID)) } catch {
-        self.failure = error.localizedDescription
-      }
+      guard self.failedCommands.isEmpty, self.document?.deck.deckId == deckID else { return }
+      let history = self.document?.history
+      guard redo ? history?.canRedo == true : history?.canUndo == true else { return }
+      do { self.accept(try await self.session.history(redo: redo, deckID: deckID)) }
+      catch { self.failure = error.localizedDescription }
     }
   }
-  func replaceCopy(with imported: ImportedCopyDocument) {
-    guard let old = document?.deck.slides else { return }
-    let titles = old.map(\.title)
+  func applyArrangement(to slideIDs: [String]) {
+    guard let slide = selectedSlide, !slideIDs.isEmpty else { return }
+    let layout = slide.settings.layout
+    do {
+      var patch: [String: Any] = ["preset": layout.preset == "legacy" ? "left" : NativeSlideRenderer.resolvedPreset(slide: slide),
+        "columns": layout.columns, "bodySize": layout.bodySize, "fitCopy": layout.fitCopy,
+        "frames": NSNull()]
+      patch["textFrame"] = try layout.textFrame.map { try nativeObject($0) } ?? NSNull()
+      patch["gradient"] = try layout.gradient.map { try nativeObject($0) } ?? NSNull()
+      enqueue(type: "native.layout.apply", payload: ["slideIds": slideIDs, "layout": patch], label: "Apply prototype arrangement")
+      showApplyLayout = false
+    } catch { failure = error.localizedDescription }
+  }
+  func replacementMatches(for incoming: ImportedCopyDocument) -> [String: String] {
+    let old = slides
+    var matches: [String: String] = [:]
+    for slide in old where old.filter({ $0.title == slide.title }).count == 1 {
+      let candidates = incoming.slides.filter { $0.title == slide.title }
+      if candidates.count == 1 { matches[slide.id] = candidates[0].id }
+    }
+    return matches
+  }
+  func replaceCopy(with imported: ImportedCopyDocument, matches: [String: String]? = nil) {
+    let mapping = matches ?? replacementMatches(for: imported)
+    let old = slides.filter { mapping[$0.id] != nil }
     let incoming = imported.slides
-    guard old.count == incoming.count, Set(titles).count == titles.count,
-      Set(titles) == Set(incoming.map(\.title))
-    else {
-      failure =
-        "Replacement requires the same uniquely named slides. Nothing was changed. Import as a new deck when boundaries or titles differ."
+    guard !old.isEmpty, Set(mapping.values).count == mapping.count,
+      mapping.allSatisfy({ pair in slideIndex[pair.key] != nil && incoming.contains(where: { $0.id == pair.value }) }) else {
+      failure = "Map each incoming slide to one existing slide. Nothing was changed."
       return
     }
     do {
       let replacements: [[String: Any]] = try old.map { slide in
-        let new = incoming.first { $0.title == slide.title }!
+        let new = incoming.first { $0.id == mapping[slide.id] }!
         var roleCounts: [String: Int] = [:]
         let blocks = new.blocks.map { block -> DeckCopyBlock in
           let index = roleCounts[block.role, default: 0]
@@ -333,6 +522,14 @@ final class NativeWorkbenchController: ObservableObject {
     } catch { failure = error.localizedDescription }
   }
 
+  func pasteCopy() {
+    guard let text = NSPasteboard.general.string(forType: .string), !text.isEmpty else {
+      failure = "Copy the final writing to the clipboard first."
+      return
+    }
+    do { imported = try NativeCopyImport.parse(Data(text.utf8), filename: "Pasted copy.md") }
+    catch { failure = error.localizedDescription }
+  }
   func importFile() {
     let panel = NSOpenPanel()
     panel.allowedContentTypes = [.plainText, UTType(filenameExtension: "md") ?? .plainText]
@@ -378,6 +575,7 @@ final class NativeWorkbenchController: ObservableObject {
   }
   func open(_ url: URL) async {
     guard !lifecycleBusy else { return }
+    if documentURL?.standardizedFileURL == url.standardizedFileURL { return }
     lifecycleBusy = true
     defer { lifecycleBusy = false }
     guard await closeForSwitch() else { return }
@@ -394,9 +592,9 @@ final class NativeWorkbenchController: ObservableObject {
   }
   @discardableResult func closeForSwitch() async -> Bool {
     await flush()
-    guard failedCommands.isEmpty else {
+    guard failedCommands.isEmpty && notesDrafts.isEmpty else {
       failure =
-        "Some actions are not saved. Retry them or save the pending-actions file before closing."
+        "Some notes or actions are not saved. Retry them, or save the pending-actions file and explicitly discard the queue before closing."
       return false
     }
     if exportRunning {
@@ -411,6 +609,12 @@ final class NativeWorkbenchController: ObservableObject {
       document = nil
       documentURL = nil
       selectedSlideID = nil
+      notesDrafts = [:]
+      noteGenerations = [:]
+      enqueuedNoteGenerations = [:]
+      previewOpen = false
+      compareIDs = []
+      failure = nil
       assets = []
       roots = []
       sources = [:]
@@ -440,6 +644,9 @@ final class NativeWorkbenchController: ObservableObject {
       do {
         try await session.close()
         try apply(await session.open(at: url))
+        catalogRevision = -1
+        catalogGeneration += 1
+        await refreshCatalog()
         failedCommands = []
         failure = nil
         for command in pending { submit(command) }
@@ -467,7 +674,44 @@ final class NativeWorkbenchController: ObservableObject {
     alert.addButton(withTitle: "Discard unsaved actions")
     if alert.runModal() == .alertSecondButtonReturn {
       failedCommands = []
+      notesDrafts = [:]
+      enqueuedNoteGenerations = [:]
+      for task in noteTasks.values { task.cancel() }
+      noteTasks = [:]
       failure = nil
+    }
+  }
+  func restorePending() {
+    guard let deckID = document?.deck.deckId, failedCommands.isEmpty else {
+      failure = "Open the intended deck and resolve its current pending queue before restoring actions."
+      return
+    }
+    let panel = NSOpenPanel()
+    panel.allowedContentTypes = [.json]
+    panel.allowsMultipleSelection = false
+    panel.begin { [weak self] response in
+      guard response == .OK, let url = panel.url, let self else { return }
+      do {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        let data = try handle.read(upToCount: 8 * 1024 * 1024 + 1) ?? Data()
+        guard data.count <= 8 * 1024 * 1024 else { throw WorkbenchFailure(name: "InvalidRecovery", message: "The recovery file is too large.") }
+        let commands = try JSONDecoder().decode([NativePendingCommand].self, from: data)
+        let allowed: Set<String> = ["native.slide.patch", "native.curate.set", "native.copy.replace", "native.nudge", "native.layout.apply", "slide.move"]
+        guard !commands.isEmpty, commands.count <= 1000,
+          Set(commands.map(\.commandID)).count == commands.count,
+          commands.allSatisfy({ $0.deckID == deckID && allowed.contains($0.type) && !$0.commandID.isEmpty && $0.commandID.utf8.count <= 256 && $0.payload.count <= 1_048_576 }) else {
+          throw WorkbenchFailure(name: "InvalidRecovery", message: "This file has invalid actions or belongs to a different deck. Nothing was changed.")
+        }
+        for command in commands { guard try JSONSerialization.jsonObject(with: command.payload) is [String: Any] else { throw WorkbenchFailure(name: "InvalidRecovery", message: "An action has no valid payload.") } }
+        let alert = NSAlert()
+        alert.messageText = "Restore \(commands.count) saved actions?"
+        alert.informativeText = "Only the currently open matching deck can receive them. Already-saved command IDs are not applied twice. Keep your recovery file until you have checked the result."
+        alert.addButton(withTitle: "Cancel"); alert.addButton(withTitle: "Restore actions")
+        if alert.runModal() == .alertSecondButtonReturn, self.document?.deck.deckId == deckID {
+          for var command in commands { command.noteSlideID = nil; command.noteGeneration = nil; self.submit(command) }
+        }
+      } catch { self.failure = error.localizedDescription }
     }
   }
   func recoverCopy() {
@@ -527,6 +771,8 @@ final class NativeWorkbenchController: ObservableObject {
       } else {
         result = try await media.scanRootJSON(rootId: rootID!)
       }
+      catalogRevision = -1
+      mediaAccessGeneration += 1
       await refreshCatalog()
       let object = try JSONSerialization.jsonObject(with: result) as? [String: Any]
       let scan = object?["scan"] as? [String: Any]
@@ -551,7 +797,8 @@ final class NativeWorkbenchController: ObservableObject {
       let catalog = try JSONDecoder().decode(NativeCatalogSnapshot.self, from: data)
       guard generation == catalogGeneration else { return }
       guard catalog.revision != catalogRevision else { return }
-      let resolved = try await media.nativeSources(assetIds: catalog.assets.map(\.id))
+      var resolved = try await media.nativeSources(assetIds: catalog.assets.map(\.id))
+      for id in Array(resolved.keys) { resolved[id]?.accessGeneration = mediaAccessGeneration }
       guard generation == catalogGeneration else { return }
       assets = catalog.assets
       roots = catalog.roots
@@ -564,9 +811,11 @@ final class NativeWorkbenchController: ObservableObject {
   func toggleCompare(_ id: String? = nil) {
     guard let id = id ?? focusedAssetID else { return }
     if compareIDs.contains(id) {
-      compareIDs.remove(id)
+      compareIDs.removeAll { $0 == id }
+      if comparedAssetID == id { comparedAssetID = compareIDs.first }
     } else if compareIDs.count < 3 {
-      compareIDs.insert(id)
+      compareIDs.append(id)
+      if comparedAssetID == nil { comparedAssetID = id }
     } else {
       status = "Comparison holds up to three images."
     }
@@ -594,9 +843,9 @@ final class NativeWorkbenchController: ObservableObject {
   }
   private func performExport(parent: URL, options: HandoffOptions) async {
     await flush()
-    guard failedCommands.isEmpty else {
+    guard failedCommands.isEmpty && notesDrafts.isEmpty else {
       failure =
-        "Pending actions must be saved or explicitly discarded before taking the handoff snapshot."
+        "Pending notes and actions must be saved or explicitly discarded before taking the handoff snapshot."
       return
     }
     exportRunning = true
@@ -606,8 +855,7 @@ final class NativeWorkbenchController: ObservableObject {
       let frozen = try JSONDecoder().decode(
         DeckDocumentSnapshot.self, from: await session.snapshot())
       let media = try await session.mediaSession()
-      await media.excludeNativeDestination(parent)
-      let ids = Set(frozen.deck.slides.flatMap { Array($0.chosenIDs) + $0.settings.shortlist })
+      let ids = NativeHandoffExporter.requiredAssetIDs(snapshot: frozen, options: options)
       let sources = try await media.nativeSources(assetIds: Array(ids))
       let work = Task.detached(priority: .userInitiated) {
         try NativeHandoffExporter.export(
@@ -622,6 +870,7 @@ final class NativeWorkbenchController: ObservableObject {
       let result = try await withTaskCancellationHandler(
         operation: { try await work.value }, onCancel: { work.cancel() })
       exportResult = result
+      showExportResult = true
       status =
         result.issues.isEmpty
         ? "Handoff exported: \(result.slideCount) slides, \(result.originalCopies) original copies."

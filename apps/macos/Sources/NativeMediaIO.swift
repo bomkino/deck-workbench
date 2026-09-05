@@ -164,7 +164,6 @@ enum NativeMediaIO {
 private actor ImageWorkLimiter {
   private var active = 0
   private var waiting: [(UUID, CheckedContinuation<Bool, Never>)] = []
-  private var cancelled: Set<UUID> = []
   func acquire(_ id: UUID) async -> Bool {
     if Task.isCancelled { return false }
     if active < 2 {
@@ -174,7 +173,7 @@ private actor ImageWorkLimiter {
     return await withTaskCancellationHandler(
       operation: {
         await withCheckedContinuation { continuation in
-          if cancelled.remove(id) != nil || Task.isCancelled {
+          if Task.isCancelled {
             continuation.resume(returning: false)
           } else {
             waiting.append((id, continuation))
@@ -185,8 +184,6 @@ private actor ImageWorkLimiter {
   private func cancel(_ id: UUID) {
     if let index = waiting.firstIndex(where: { $0.0 == id }) {
       waiting.remove(at: index).1.resume(returning: false)
-    } else {
-      cancelled.insert(id)
     }
   }
   func release() {
@@ -198,46 +195,70 @@ private actor ImageWorkLimiter {
   }
 }
 
+struct NativePreviewResult: Sendable {
+  let data: Data?
+  let message: String?
+  static func failed(_ error: Error) -> NativePreviewResult {
+    let failure = WorkbenchFailure.unexpected(error)
+    let code = (error as? POSIXError)?.code
+    let message: String
+    if code == .ENOENT || failure.name == "MissingMedia" { message = "Original missing. Reconnect or rescan its folder." }
+    else if code == .EACCES || code == .EPERM || failure.name == "MediaRootNeedsPermission" { message = "Folder access needed. Reconnect this media folder." }
+    else if failure.name == "MediaRootUnavailable" { message = "Media folder unavailable. Reconnect its drive or folder." }
+    else if ["PreviewUnsupported", "UnsupportedMediaPreview"].contains(failure.name) { message = "Preview unsupported. The original can still be included in handoff." }
+    else { message = "Preview failed. Rescan or reconnect the media folder." }
+    return NativePreviewResult(data: nil, message: message)
+  }
+}
+
 actor NativeThumbnailService {
   static let shared = NativeThumbnailService()
   private let limiter = ImageWorkLimiter()
   private let cache = NSCache<NSString, NSData>()
-  private var jobs: [String: Task<Data?, Never>] = [:]
+  private var jobs: [String: Task<NativePreviewResult, Never>] = [:]
   private var consumers: [String: Set<UUID>] = [:]
+  private(set) var cacheHits = 0
+  private(set) var decodeCount = 0
   init() {
     cache.totalCostLimit = 96 * 1024 * 1024
     cache.countLimit = 512
   }
   func data(for source: NativeMediaSource, longestSide: Int = 512) async -> Data? {
-    let key = "\(source.cacheKey):\(longestSide)"
-    if let cached = cache.object(forKey: key as NSString) { return cached as Data }
+    await preview(for: source, longestSide: longestSide).data
+  }
+  func preview(for source: NativeMediaSource, longestSide: Int = 512) async -> NativePreviewResult {
+    guard !Task.isCancelled else { return NativePreviewResult(data: nil, message: nil) }
+    let size = min(3072, max(64, longestSide))
+    let key = "\(source.cacheKey):\(size)"
+    if let cached = cache.object(forKey: key as NSString) {
+      cacheHits += 1
+      return NativePreviewResult(data: cached as Data, message: nil)
+    }
     let consumer = UUID()
     consumers[key, default: []].insert(consumer)
-    let work: Task<Data?, Never>
-    if let existing = jobs[key] {
-      work = existing
-    } else {
+    let work: Task<NativePreviewResult, Never>
+    if let existing = jobs[key] { work = existing }
+    else {
+      decodeCount += 1
       let limiter = self.limiter
       work = Task {
-        guard await limiter.acquire(UUID()) else { return nil }
+        guard await limiter.acquire(UUID()) else { return NativePreviewResult(data: nil, message: nil) }
         let worker = Task.detached(priority: .userInitiated) {
-          try? NativeMediaIO.thumbnail(source, longestSide: longestSide)
+          do { return NativePreviewResult(data: try NativeMediaIO.thumbnail(source, longestSide: size), message: nil) }
+          catch is CancellationError { return NativePreviewResult(data: nil, message: nil) }
+          catch { return NativePreviewResult.failed(error) }
         }
-        let data = await withTaskCancellationHandler(
-          operation: { await worker.value }, onCancel: { worker.cancel() })
+        let result = await withTaskCancellationHandler(operation: { await worker.value }, onCancel: { worker.cancel() })
         await limiter.release()
-        return data
+        return result
       }
       jobs[key] = work
     }
-    let value = await withTaskCancellationHandler(
-      operation: { await work.value },
+    let result = await withTaskCancellationHandler(operation: { await work.value },
       onCancel: { Task { await self.removeConsumer(consumer, key: key) } })
-    if let value, !Task.isCancelled {
-      cache.setObject(value as NSData, forKey: key as NSString, cost: value.count)
-    }
+    if let data = result.data, !Task.isCancelled { cache.setObject(data as NSData, forKey: key as NSString, cost: data.count) }
     removeConsumer(consumer, key: key)
-    return Task.isCancelled ? nil : value
+    return Task.isCancelled ? NativePreviewResult(data: nil, message: nil) : result
   }
   private func removeConsumer(_ consumer: UUID, key: String) {
     consumers[key]?.remove(consumer)

@@ -1,41 +1,54 @@
 # Deck Workbench
 
-A Mac-only tool for turning final copy and selected media into a clear prototype and designer handoff. It does not replace the designer.
+A native Mac tool for turning final writing and a pile of references into a clear prototype and designer handoff. It helps communicate intent; it does not replace the designer.
 
-## Current version: v0.1.0 — native Mac user-test build
+## v0.1.1 — workflow repair
 
-The native repair is the active source and build path. This version is being promoted at the studio's explicit request without running the full acceptance suite. A published app archive means it compiled and was packaged; it does **not** mean that export appearance, migration, recovery, keyboard behaviour, performance or accessibility have been validated.
+[Download the Mac app](https://github.com/bomkino/deck-workbench/releases/latest). Choose the **.app.zip** asset, not GitHub's automatic source archive. Requires **Apple Silicon and macOS 26+**. Ad-hoc signed; not notarized.
 
-[Download v0.1.0](https://github.com/bomkino/deck-workbench/releases/tag/v0.1.0). Use the `.app.zip`, not the automatic GitHub source archive. Apple Silicon and macOS 26 or newer are required. The app is ad-hoc signed, not notarized. macOS may require approval through its security controls. Do not disable system security globally.
+1. Quit the old Workbench. Unzip the download.
+2. Drag **Deck Workbench.app** into **Applications**, replacing the old app.
+3. Open it. Keep an untouched copy of existing decks before migration.
 
-**Start with a duplicate of a deck and retain v0.0.6 as a fallback.** The first native edit upgrades the package's reader schema; v0.0.6 cannot reopen that upgraded working copy. The original v0.0.6 release remains available. Source media is not intentionally modified.
+If macOS blocks the first launch, open **System Settings → Privacy & Security → Open Anyway** after attempting to open the app. Do not disable Gatekeeper globally. A malware warning is different: do not override it.
 
-## Working flow
+## Work
 
-Import final copy, curate the images, suggest the arrangement, export the handoff. The two main workspaces are Curate and Assemble; notes and copy remain associated with each slide. New prototypes default to 2576 x 1080. Copy is protected by default, not a writing assignment to complete in the app.
+Import or paste final copy. Curate images per slide. Suggest text placement, crops and gradients in Assemble. Export a handoff the designer can use without Workbench:
 
-The native source implements whole-deck Prototype.pdf, Prototype with notes.pdf, editable Copy.md, and original files grouped per slide under Approved Media and Shortlisted Media. Chosen assignments and shortlist membership are independent. Creative warnings do not veto an otherwise possible export. These behaviours still need the studio's hands-on testing.
+```text
+Prototype.pdf
+Prototype with notes.pdf
+Copy.md
+Approved Media/<slide>/original files
+Shortlisted Media/<slide>/original files
+Media index.csv
+```
 
-Keyboard reference: Help > Keyboard Shortcuts, or Command-/. In Curate, arrows browse; Space opens preview; S shortlists; Shift-S removes shortlist membership; M chooses for the active role; X rejects; [ and ] switch slides. Shortcuts pause while editing text. Command-Shift-E opens Export Handoff.
+New prototypes default to **2576 × 1080**, the studio grid and readable provisional text. Copy remains separate from presentation. Shortlist membership is independent of the chosen image. Creative warnings do not veto export; unresolved saving errors are not silently ignored.
 
-## Build
+**Help → Keyboard Shortcuts** or **Command-/** opens the reference. Curate: arrows browse, Space opens/closes preview, S shortlists, Shift-S removes shortlist membership, M chooses, X rejects, [ and ] switch slides. Commands pause while editing text. Command-F focuses search. Command-Shift-E exports.
 
-On Apple-Silicon macOS 26+, with Xcode command-line tools and Node.js 24+:
+v0.1.1 repairs layout switching, independent image adjustments, notes/Undo and rejected-command handling. It adds chosen-slot controls, ordered comparison, sorting, replacement-copy preview, paste import, bulk arrangement application, independent export components and restore-pending actions. Caches/indexes avoid redundant filtering, image reconstruction and text layout. See the release notes for exact scope and verification evidence.
+
+## Existing decks
+
+A first native edit upgrades the working package's reader schema. **v0.0.6 cannot reopen the upgraded copy.** v0.1.0 native decks keep the same reader schema in v0.1.1. An inherited legacy layout is preserved until you explicitly convert it; conversion is undoable, but not a promise of pixel-perfect legacy fidelity. Original media is copied, never edited.
+
+## Build and maintain
+
+On an Apple-Silicon Mac with Xcode command-line tools and Node.js 24+:
 
 ```sh
 npm run build
+npm test
+npm run verify:package
 ```
 
-The archive and SHA-256 file are written under artifacts/. No Electron installation or web build is required.
+Build produces an ad-hoc-signed `.app.zip` and SHA-256 file under `artifacts/`. The package journey runs the actual extracted app with a synthetic 20-slide handoff. It does not establish every interactive, accessibility or performance property. Check the receipt associated with the exact release commit.
 
-Optional development checks (not release claims): `npm test` for document-kernel behaviour, and `npm run verify:package` for the scripted Mac package journey. The latter is not run by this user-test release workflow.
+Normal CI builds artifacts; only an explicit version tag publishes a release. No Electron installation, browser build, account, cloud service, model or telemetry is required.
 
-## Documentation
+[Workflow](docs/MAC_APP.md) · [Limitations](docs/KNOWN_LIMITATIONS.md) · [Architecture](docs/NATIVE_ARCHITECTURE.md) · [Release notes](docs/RELEASE_NOTES.md) · [Documentation index](docs/README.md)
 
-- [Mac workflow and handoff](docs/MAC_APP.md)
-- [Known limitations and testing boundary](docs/KNOWN_LIMITATIONS.md)
-- [Architecture and remaining work](docs/NATIVE_ARCHITECTURE.md)
-- [Release notes](docs/RELEASE_NOTES.md)
-- [Documentation index](docs/README.md)
-
-Linux, Electron packaging and the web workspace are retired. Previous architecture/product/ticket documents are historical evidence, not current operating instructions. No account, cloud service, model or telemetry is required. Licensed under AGPL-3.0; see LICENSE, NOTICE and THIRD_PARTY.md.
+AGPL-3.0. See LICENSE, NOTICE and THIRD_PARTY.md. Historical product/ticket documents are evidence, not current instructions.

@@ -57,20 +57,22 @@ struct DeckSlide: Codable, Sendable, Identifiable {
   var legacyComposition: LegacyComposition? {
     designOptions?.first { $0.id == activeDesignOptionId }?.composition
   }
-  var chosenIDs: Set<String> { Set((mediaAssignments ?? []).map(\.assetReferenceId)) }
-  var imageRoles: [String] {
-    let assigned = (mediaAssignments ?? []).map(\.role)
-    let preset = settings.layout.preset
-    let count =
-      preset == "three-images" || intent == "triptych"
-      ? 3 : preset == "two-images" || intent == "diptych" ? 2 : 1
-    let defaults = (0..<count).map { $0 == 0 ? "primary" : "primary:\($0 + 1)" }
-    return Array(Set(assigned + defaults)).sorted { a, b in
-      if a == "primary" { return true }
-      if b == "primary" { return false }
-      return a.localizedStandardCompare(b) == .orderedAscending
-    }
+  var chosenIDs: Set<String> {
+    let visible = Set(imageRoles)
+    return Set((mediaAssignments ?? []).filter { visible.contains($0.role) }.map(\.assetReferenceId))
   }
+  var imageRoles: [String] {
+    let preset = NativeSlideRenderer.resolvedPreset(slide: self)
+    if preset == "text-only" { return [] }
+    if preset == "legacy" {
+      let roles = legacyComposition?.elements.compactMap { $0.kind == "image" ? $0.mediaRole : nil } ?? []
+      var seen = Set<String>()
+      return (roles.isEmpty ? (mediaAssignments ?? []).map(\.role) : roles).filter { seen.insert($0).inserted }
+    }
+    let count = preset == "three-images" ? 3 : preset == "two-images" ? 2 : 1
+    return (0..<count).map { $0 == 0 ? "primary" : "primary:\($0 + 1)" }
+  }
+
 }
 struct DeckCopyBlock: Codable, Sendable, Identifiable {
   let id: String
@@ -226,6 +228,7 @@ struct NativeMediaAsset: Codable, Sendable, Identifiable {
   let byteSize: Int
   let fingerprint: String
   let previewReason: String?
+  var modifiedAt: Int64? = nil
   var reference: DeckAssetReference {
     DeckAssetReference(
       id: id, label: filename, mediaKind: mediaKind,
@@ -244,10 +247,12 @@ struct NativeMediaSource: Codable, Sendable {
   let rootDevice: String
   let rootInode: String
   var bookmark: Data?
+  var accessGeneration: Int? = nil
+  var note: String? = nil
   var url: URL {
     URL(fileURLWithPath: rootPath, isDirectory: true).appendingPathComponent(relativePath)
   }
-  var cacheKey: String { "\(assetId):\(sourceRevisionId):\(fingerprint)" }
+  var cacheKey: String { "\(assetId):\(sourceRevisionId):\(fingerprint):\(rootPath):\(rootDevice):\(rootInode):\(accessGeneration ?? 0)" }
 }
 extension String { var nonempty: String? { isEmpty ? nil : self } }
 func nativeJSON<T: Encodable>(_ value: T) throws -> Data { try JSONEncoder().encode(value) }

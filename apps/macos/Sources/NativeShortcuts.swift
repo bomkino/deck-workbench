@@ -28,8 +28,8 @@ enum NativeShortcuts {
       key: "down", shift: false, display: "↓", label: "Next grid row", scope: "curate",
       action: { $0.focusNext($0.gridColumns) }),
     .init(
-      key: " ", shift: false, display: "Space", label: "Open image preview", scope: "curate",
-      action: { $0.preview() }),
+      key: " ", shift: false, display: "Space", label: "Open / close image preview", scope: "curate",
+      action: { if $0.previewOpen { $0.previewOpen = false } else { $0.preview() } }),
     .init(
       key: "s", shift: false, display: "S", label: "Add image to this slide’s shortlist",
       scope: "curate", action: { $0.decide("shortlist") }),
@@ -68,14 +68,35 @@ enum NativeShortcuts {
   static func handle(_ event: NSEvent, controller: NativeWorkbenchController) -> Bool {
     guard event.type == .keyDown, controller.document != nil else { return false }
     if controller.showShortcuts || controller.showExport || controller.showSettings
-      || controller.copyEditorOpen || controller.imported != nil || controller.compareOpen
+      || controller.copyEditorOpen || controller.imported != nil || controller.showApplyLayout || controller.showExportResult
     {
       return false
     }
     if let text = NSApp.keyWindow?.firstResponder as? NSTextView, text.isEditable { return false }
-    if NSApp.keyWindow?.firstResponder is NSSlider { return false }
+    if NSApp.keyWindow?.firstResponder is NSSlider || NSApp.keyWindow?.firstResponder is NSPopUpButton || NSApp.keyWindow?.firstResponder is NSComboBox { return false }
+    if event.keyCode == 49 && NSApp.keyWindow?.firstResponder is NSButton { return false }
     let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
     guard !flags.contains(.command), !flags.contains(.control), !flags.contains(.option) else {
+      return false
+    }
+    if controller.compareOpen {
+      let ids = controller.compareIDs
+      if event.keyCode == 53 { controller.compareOpen = false; return true }
+      guard !ids.isEmpty else { return false }
+      let index = ids.firstIndex(of: controller.comparedAssetID ?? "") ?? 0
+      let name = (event.charactersIgnoringModifiers ?? "").lowercased()
+      if event.keyCode == 123 || event.keyCode == 124 {
+        controller.comparedAssetID = ids[max(0, min(ids.count - 1, index + (event.keyCode == 123 ? -1 : 1)))]
+        return true
+      }
+      if let number = Int(name), (1...ids.count).contains(number) {
+        if !event.isARepeat { controller.decide("use", assetID: ids[number - 1]) }
+        return true
+      }
+      if name == "m" || name == "s" {
+        if !event.isARepeat { controller.decide(name == "m" ? "use" : "shortlist", assetID: ids[index]) }
+        return true
+      }
       return false
     }
     if event.keyCode == 53 && controller.previewOpen {
@@ -84,10 +105,11 @@ enum NativeShortcuts {
     }
     let key: [UInt16: String] = [123: "left", 124: "right", 125: "down", 126: "up"]
     let name = key[event.keyCode] ?? (event.charactersIgnoringModifiers ?? "").lowercased()
-    if controller.phase == "assemble", let arrow = key[event.keyCode],
+    if controller.phase == "assemble", !controller.previewOpen, !controller.cleanPreview, let arrow = key[event.keyCode],
       let slide = controller.selectedSlide, let canvas = controller.document?.deck.canvasPreset
     {
-      let scene = NativeSlideRenderer.resolve(slide: slide, canvas: canvas)
+      guard let scene = controller.resolvedScene else { return false }
+      if scene.legacy && controller.selectionTarget == "text" { return false }
       let target = controller.selectionTarget
       guard
         let frame = target == "text"
@@ -102,7 +124,7 @@ enum NativeShortcuts {
     guard
       let definition = definitions.first(where: {
         $0.key == name && $0.shift == flags.contains(.shift)
-          && ($0.scope == "any" || $0.scope == controller.phase)
+          && ($0.scope == "any" || $0.scope == (controller.previewOpen ? "curate" : controller.phase))
       })
     else { return false }
     if event.isARepeat && !["left", "right", "up", "down", "[", "]"].contains(name) { return true }
@@ -163,7 +185,7 @@ struct NativeShortcutSheet: View {
           }
         }
       }
-    }.padding(24).frame(width: 720, height: 620)
+    }.padding(24).nativeSheetFrame(width: 720, height: 620)
   }
 }
 struct NativeKeyboardRouter: NSViewRepresentable {

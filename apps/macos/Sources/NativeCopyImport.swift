@@ -62,7 +62,20 @@ enum NativeCopyImport {
     }
     let source = input.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(
       of: "\r", with: "\n")
-    let structured = source.contains("Format: workbench-markdown/") || source.contains("### Slide:")
+    // Fence contents are literal copy, never document structure.
+    var detectingFence: String?
+    var structured = false
+    for line in source.components(separatedBy: "\n") {
+      let trimmed = line.trimmingCharacters(in: .whitespaces)
+      if let fence = detectingFence {
+        if trimmed.hasPrefix(fence) && trimmed.allSatisfy({ $0 == fence.first! }) { detectingFence = nil }
+        continue
+      }
+      if trimmed.hasPrefix("```") || trimmed.hasPrefix("~~~") {
+        detectingFence = String(trimmed.prefix { $0 == trimmed.first! }); continue
+      }
+      if line.hasPrefix("Format: workbench-markdown/") || line.hasPrefix("### Slide:") { structured = true }
+    }
     var result = ImportedCopyDocument(
       title: URL(fileURLWithPath: filename).deletingPathExtension().lastPathComponent, parts: [])
     var part = ImportedCopyPart(id: UUID().uuidString.lowercased(), title: "Deck", slides: [])
@@ -111,8 +124,20 @@ enum NativeCopyImport {
       "headline", "subheadline", "body", "caption", "credit", "notes", "designer notes",
       "direction",
     ]
+    var literalFence: String?
     for (index, line) in source.components(separatedBy: "\n").enumerated() {
-      if line.hasPrefix("\\") {
+      let trimmed = line.trimmingCharacters(in: .whitespaces)
+      if let fence = literalFence {
+        if trimmed.hasPrefix(fence) && trimmed.allSatisfy({ $0 == fence.first! }) { literalFence = nil }
+        else { lines.append(line) }
+        continue
+      }
+      if trimmed.hasPrefix("```") || trimmed.hasPrefix("~~~") {
+        if slide == nil { slide = ImportedCopySlide(id: UUID().uuidString.lowercased(), title: result.title); role = "body" }
+        literalFence = String(trimmed.prefix { $0 == trimmed.first! })
+        continue
+      }
+      if line.hasPrefix("\\#") || line.hasPrefix("\\State:") || line.hasPrefix("\\\\") {
         lines.append(String(line.dropFirst()))
         continue
       }
@@ -203,6 +228,7 @@ enum NativeCopyImport {
         lines.append(line)
       }
     }
+    if literalFence != nil { throw WorkbenchFailure(name: "ImportFormat", message: "Close the literal-copy fence before importing. The source file was not changed.") }
     finishPart()
     guard !result.slides.isEmpty, result.slides.count <= 1000 else {
       throw WorkbenchFailure(
@@ -212,7 +238,7 @@ enum NativeCopyImport {
     if result.title.isEmpty { result.title = "Untitled Deck" }
     guard result.title.count <= 240,
       result.slides.allSatisfy({
-        $0.title.count <= 240 && $0.blocks.allSatisfy { $0.text.utf16.count <= 262144 }
+        $0.title.count <= 240 && $0.notes.utf16.count <= 262144 && $0.blocks.allSatisfy { $0.text.utf16.count <= 262144 }
       })
     else {
       throw WorkbenchFailure(

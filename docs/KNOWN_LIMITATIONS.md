@@ -1,13 +1,15 @@
-# Known limitations — v0.1.0
+# Known boundaries — v0.1.1
 
-This is a user-test release, not a declaration that the master plan is complete. The studio explicitly waived full acceptance testing for promotion on 5 September 2026.
+Apple Silicon and macOS 26+ only. Ad-hoc signed, not notarized. The application is a prototype/intent tool, not final production design software.
 
-## Not established by a successful build
+The meaningful package check uses the actual extracted Mac app: native keyboard decisions, layout changes, per-image edits, notes undo, invalid-command continuation, save/reopen, original-media handoff, clean/notes PDFs, copy-only export and saved-copy recovery. Inspect `native-acceptance.json` for the exact release SHA. A successful scripted journey does not establish every user path.
 
-Actual PDF appearance and notes pagination; original-media folder correctness; existing-deck migration and fault recovery; fast keyboard/focus behaviour; scan cancellation and permissions across volumes; performance/memory on target hardware; VoiceOver and larger interface scales. Test a duplicate deck first.
+Still requiring hands-on evaluation: VoiceOver and full keyboard navigation of every native control; all display/window/scaling combinations; large real media libraries on studio machines; network/removable/cloud-managed folders and permission recovery; every supported source codec. Performance counters are evidence from a synthetic hosted-Mac workload, not a blanket speed multiplier.
 
-## Scope and differences
+Import handles bounded Markdown/text, not DOCX/PDF conversion. Copy replacement maps existing slides; it does not automatically add/remove/reorder slides. Comparison supports at most three candidates. Ratings/project-wide picks remain secondary legacy metadata, not a complete native feature. The UI uses native Mac controls, with restrained branding rather than a production typography system.
 
-Apple Silicon, macOS 26+ only. Ad-hoc signed, not notarized. No Linux, web or Electron product. Import is bounded Markdown/text, not a universal document converter. Ratings and project-wide picks are not fully exposed in the native UI; no complete legacy-feature parity claim. Provisional typography is intentionally modest. Very dense copy may overflow the suggested visual region; copy/notes outputs retain the complete writing. Some media may be copyable without a preview. Media scanning and export still have bounded resource limits.
+Legacy compositions preserve supported text/image/gradient data; their old typography and unsupported shapes are not an exact reproduction guarantee. Convert deliberately and keep the original. Very dense copy can overflow a prototype at the lower type limit; complete text is retained in copy/notes companions when selected. PDFs represent GIF/video as a still frame, and PDF media as its first page; original files remain intact in media handoff.
 
-The local kernel checks recorded in the previous handoff are historical evidence, not acceptance of this package. The build workflow deliberately does not run the optional native self-test. New failures should be fixed from the smallest reproducible user journey, without another broad test or architecture project.
+Media sizes, scan depth/count, preview decoding and import/command payloads remain bounded. Unsupported previews do not imply that an original cannot be handed off. Partial handoff failures are shown; cancelled exports discard unfinished staging. No source media is intentionally changed.
+
+A first native edit upgrades a pre-native deck's reader schema. v0.0.6 cannot read the upgraded working copy. v0.1.1 does not introduce a further reader-schema increase over v0.1.0. No multi-writer/cloud collaboration, automatic updates or notarization is included.
