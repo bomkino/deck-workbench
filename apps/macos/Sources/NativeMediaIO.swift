@@ -200,6 +200,9 @@ struct NativePreviewResult: Sendable {
   let message: String?
   static func failed(_ error: Error) -> NativePreviewResult {
     let failure = WorkbenchFailure.unexpected(error)
+    if CommandLine.arguments.contains("--native-self-test") {
+      fputs("NATIVE_PREVIEW_FAILED: \(failure.name): \(failure.message)\n", stderr)
+    }
     let code = (error as? POSIXError)?.code
     let message: String
     if code == .ENOENT || failure.name == "MissingMedia" { message = "Original missing. Reconnect or rescan its folder." }
