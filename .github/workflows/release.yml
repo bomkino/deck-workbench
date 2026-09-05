@@ -1,0 +1,30 @@
+name: Publish tagged Mac release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to publish
+        required: true
+        type: string
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: workbench-release
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: macos-26
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.tag || github.ref_name }}
+      - name: Publish the exact verified artifact without rebuilding
+        run: scripts/publish-native-release.sh "$RELEASE_TAG"
