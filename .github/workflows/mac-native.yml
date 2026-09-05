@@ -1,33 +1,127 @@
-name: Mac native handoff
+name: Native Mac build
 
 on:
   push:
-    branches: [codex/mac-native-handoff]
+    branches: [main, codex/mac-native-handoff]
+  workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
-  group: mac-native-${{ github.ref }}
-  cancel-in-progress: true
+  group: native-mac-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  source:
+  native:
     runs-on: macos-26
-    timeout-minutes: 10
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          persist-credentials: false
-      - name: Exact source workspace for repair
-        run: |
-          mkdir -p artifacts
-          git archive --format=tar HEAD | gzip > artifacts/source.tar.gz
-          git rev-parse HEAD > artifacts/source-commit.txt
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
-          name: mac-native-source-${{ github.sha }}
+          node-version: 24
+      - name: Apply saved repair once
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test -f scripts/promote-native.py; then
+            python3 scripts/promote-native.py
+            git config user.name 'Chattie Intern'
+            git config user.email 'hello@pitch.dog'
+            git add -A
+            git commit -m 'Promote native Mac repair and retire Linux/web; document user-test release'
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi
+          SHA=$(git rev-parse HEAD)
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          VERSION=$(node -p 'JSON.parse(require("fs").readFileSync("package.json")).version')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Source revision: $SHA" >> "$GITHUB_STEP_SUMMARY"
+          echo 'Full acceptance testing waived by the studio for this user-test release.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Reuse exact already-published build
+        id: existing
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          VERSION: ${{ steps.source.outputs.version }}
+        run: |
+          set -euo pipefail
+          if gh api "repos/$GITHUB_REPOSITORY/releases/tags/v$VERSION" > "$RUNNER_TEMP/release.json" 2>/dev/null; then
+            if SOURCE_SHA="$SOURCE_SHA" python3 - <<'PY'
+          import json, os
+          r = json.load(open(os.environ['RUNNER_TEMP'] + '/release.json'))
+          names = {a['name'] for a in r.get('assets', [])}
+          expected = 'Deck-Workbench-apple-silicon-' + os.environ['SOURCE_SHA'] + '.app.zip'
+          raise SystemExit(0 if not r['draft'] and r['target_commitish'] == os.environ['SOURCE_SHA'] and {expected, expected + '.sha256'} <= names else 1)
+          PY
+            then
+              echo 'skip=true' >> "$GITHUB_OUTPUT"
+            fi
+          fi
+      - name: Compile and package native application
+        if: steps.existing.outputs.skip != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          scripts/build-native-macos.sh 2>&1 | tee "$RUNNER_TEMP/native-build.log"
+      - name: Verify archive integrity, not application behaviour
+        if: steps.existing.outputs.skip != 'true'
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          set -euo pipefail
+          ZIP="artifacts/Deck-Workbench-apple-silicon-$SOURCE_SHA.app.zip"
+          (cd artifacts; shasum -a 256 -c "$(basename "$ZIP").sha256")
+          unzip -t "$ZIP" > /dev/null
+          mkdir -p artifacts/build-info
+          SOURCE_SHA="$SOURCE_SHA" python3 - <<'PY'
+          import json, os
+          json.dump({'source_commit': os.environ['SOURCE_SHA'], 'compiled': True, 'ad_hoc_signed': True, 'notarized': False, 'functional_tests_run': False, 'acceptance': 'USER_TESTING_REQUESTED'}, open('artifacts/build-info/build-status.json', 'w'), indent=2)
+          PY
+      - name: Publish user-test release without overwriting an older release
+        if: steps.existing.outputs.skip != 'true'
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          VERSION: ${{ steps.source.outputs.version }}
+        run: |
+          set -euo pipefail
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            echo 'A different release already owns this version; refusing to overwrite it.' >&2
+            exit 1
+          fi
+          gh release create "v$VERSION" \
+            "artifacts/Deck-Workbench-apple-silicon-$SOURCE_SHA.app.zip" \
+            "artifacts/Deck-Workbench-apple-silicon-$SOURCE_SHA.app.zip.sha256" \
+            artifacts/build-info/build-status.json \
+            --target "$SOURCE_SHA" --title "Deck Workbench v$VERSION — Native Mac (user-test build)" \
+            --notes-file docs/RELEASE_NOTES.md --latest
+      - name: Remove only merged repair branch
+        if: github.ref_name == 'main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          MAIN=$(git rev-parse HEAD)
+          if BRANCH=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/codex/mac-native-handoff" --jq .object.sha 2>/dev/null); then
+            if test "$BRANCH" = "$MAIN"; then
+              gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/codex/mac-native-handoff"
+            fi
+          fi
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always() && steps.existing.outputs.skip != 'true'
+        with:
+          name: native-mac-${{ steps.source.outputs.sha }}
           path: |
-            artifacts/source.tar.gz
-            artifacts/source-commit.txt
-          if-no-files-found: error
+            artifacts/*.app.zip
+            artifacts/*.sha256
+            artifacts/build-info/*
+            ${{ runner.temp }}/native-build.log
+          if-no-files-found: warn
