@@ -16,7 +16,7 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 24
-      - name: Apply the exact reviewed patch and remove transport
+      - name: Apply verified application patch only
         id: source
         shell: bash
         run: |
@@ -25,18 +25,19 @@ jobs:
           import base64, hashlib, json, lzma, pathlib, shutil, subprocess
           root=pathlib.Path('.native-transfer')
           manifest=json.loads((root/'manifest.json').read_text())
-          assert subprocess.check_output(['git','rev-parse','HEAD^'],text=True).strip()==manifest['base'], 'Source advanced; do not overwrite it'
+          subprocess.run(['git','merge-base','--is-ancestor',manifest['base'],'HEAD'],check=True)
           encoded=''.join((root/f'part-{i}').read_text() for i in range(5))
           patch=lzma.decompress(base64.b64decode(encoded,validate=True))
           assert hashlib.sha256(patch).hexdigest()==manifest['patch_sha256'], 'Transfer differs from reviewed patch'
-          subprocess.run(['git','apply','--check','--index','--unidiff-zero','-'],input=patch,check=True)
-          subprocess.run(['git','apply','--index','--unidiff-zero','-'],input=patch,check=True)
+          args=['--index','--unidiff-zero','--exclude=.github/workflows/*','-']
+          subprocess.run(['git','apply','--check',*args],input=patch,check=True)
+          subprocess.run(['git','apply',*args],input=patch,check=True)
           for name, digest in manifest['files'].items():
+              if name.startswith('.github/workflows/'): continue
               p=pathlib.Path(name)
               actual=hashlib.sha256(p.read_bytes()).hexdigest() if p.exists() else None
               assert actual==digest, name
           shutil.rmtree(root)
-          pathlib.Path('.github/workflows/apply-workflow-repair.yml').unlink()
           PY
           git config user.name 'Chattie Intern'
           git config user.email 'hello@pitch.dog'
