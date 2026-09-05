@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPOSITORY_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SOURCE="$REPOSITORY_ROOT/apps/macos/Resources/Workspace/workbench-mark.svg"
+SOURCE="$REPOSITORY_ROOT/apps/macos/Resources/workbench-mark.svg"
 OUTPUT="${1:-$REPOSITORY_ROOT/build/macos/DeckWorkbench.icns}"
 ICON_ROOT="$(mktemp -d)"
 ICONSET="$ICON_ROOT/DeckWorkbench.iconset"

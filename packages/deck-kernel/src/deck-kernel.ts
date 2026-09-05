@@ -183,6 +183,7 @@ type Slide = {
   mediaAssignments?: MediaAssignment[]
   designOptions?: DesignOption[]
   activeDesignOptionId?: string
+  native?: NativeSlideState
 }
 
 type Section = {
@@ -435,7 +436,7 @@ type CurateSlotManifestSetPayload = {
 type CommandEnvelope = {
   commandId: string
   expectedRevision: number
-  type: 'deck.rename' | 'canvas.preset.set' | 'content.add' | 'content.update' | 'content.remove' | 'section.add' | 'section.rename' | 'section.move' | 'section.remove' | 'slide.add' | 'slide.move' | 'slide.intent.set' | 'slide.remove' | 'asset.reference.add' | 'asset.assign' | 'curate.projectJudgment.set' | 'curate.slideDecision.set' | 'curate.findMore.set' | 'curate.reconcile' | 'designOption.applyPattern' | 'designOption.createFromPlan' | 'designOption.rebuildFromPlan' | 'designOption.activate' | 'element.frame.update' | 'element.crop.update' | 'element.gradient.update' | 'element.textSize.update' | 'element.imageFit.update'
+  type: 'native.slide.patch' | 'native.curate.set' | 'native.copy.replace' | 'native.nudge' | 'deck.rename' | 'canvas.preset.set' | 'content.add' | 'content.update' | 'content.remove' | 'section.add' | 'section.rename' | 'section.move' | 'section.remove' | 'slide.add' | 'slide.move' | 'slide.intent.set' | 'slide.remove' | 'asset.reference.add' | 'asset.assign' | 'curate.projectJudgment.set' | 'curate.slideDecision.set' | 'curate.findMore.set' | 'curate.reconcile' | 'designOption.applyPattern' | 'designOption.createFromPlan' | 'designOption.rebuildFromPlan' | 'designOption.activate' | 'element.frame.update' | 'element.crop.update' | 'element.gradient.update' | 'element.textSize.update' | 'element.imageFit.update'
   payload: JsonObject
   source: {
     kind: 'ui' | 'keyboard' | 'cli' | 'mcp' | 'migration'
@@ -445,6 +446,7 @@ type CommandEnvelope = {
 }
 
 type HistoryOperation =
+  | { type: 'native.slide.set'; payload: { slideId: string; value: NativeSlideState | null } }
   | { type: 'compound'; payload: { operations: HistoryOperation[] } }
   | { type: 'deck.rename'; payload: DeckRenamePayload }
   | { type: 'canvas.preset.set'; payload: CanvasPresetSetPayload }
@@ -1526,6 +1528,7 @@ function assertWorkbenchCurateEnvelope(deck: DeckSnapshot): void {
 function assertDeckIntegrity(deck: DeckSnapshot): void {
   assertDeckMediaIntegrity(deck)
   assertWorkbenchCurateEnvelope(deck)
+  validateNativeDeck(deck)
 }
 
 function operationList(operations: HistoryOperation[]): HistoryOperation {
@@ -2141,6 +2144,13 @@ function applyHistoryOperation(deck: DeckSnapshot, operation: HistoryOperation, 
     throw new Error('History operation payload must be an object')
   }
   const next = reuseDeck ? deck : clone(deck)
+  if (operation.type === 'native.slide.set') {
+    const slide = findSlide(next, operation.payload.slideId)
+    if (!slide) throw new Error('Slide does not exist')
+    if (operation.payload.value === null) delete slide.native
+    else slide.native = validateNativeState(operation.payload.value)
+    return next
+  }
   if (operation.type === 'compound') {
     if (!Array.isArray(operation.payload.operations) || operation.payload.operations.length === 0) {
       throw new Error('Compound history operation must contain operations')
@@ -2516,6 +2526,7 @@ function applyHistoryOperation(deck: DeckSnapshot, operation: HistoryOperation, 
 }
 
 const HISTORY_OPERATION_TYPES = new Set([
+  'native.slide.set',
   'compound',
   'deck.rename',
   'canvas.preset.set',
@@ -3007,6 +3018,11 @@ function curateSlideProjection(deck: DeckSnapshot, slide: Slide, revision: numbe
 
 function query(session: KernelSession, name: string, params: JsonObject = {}): JsonObject | KernelError {
   const checkpoint = session.checkpoint
+  if (name === 'native.document') {
+    const deck = clone(checkpoint.deck)
+    for (const section of deck.sections) for (const slide of section.slides) slide.native = nativeState(checkpoint.deck, slide)
+    return { revision: checkpoint.revision, deck, history: { canUndo: checkpoint.undoStack.length > 0, canRedo: checkpoint.redoStack.length > 0 } }
+  }
   if (name === 'curate.queue') {
     try {
       return {
@@ -3284,7 +3300,12 @@ function prepare(session: KernelSession, command: CommandEnvelope): PrepareResul
   let label: string
   let projectionHints: string[] = ['story', 'slide.activeProjection', 'history']
   try {
-    if (command.type === 'deck.rename') {
+    if (command.type.startsWith('native.')) {
+      const mutation = prepareNativeCommand(session.checkpoint.deck, command)
+      if (mutation.noop) return { ok: true, duplicate: true, acknowledgement: { commandId: command.commandId, revision: session.checkpoint.revision, status: 'unchanged', label: mutation.label } }
+      forward = mutation.forward; inverse = mutation.inverse; label = mutation.label
+      projectionHints = ['native.document', 'history']
+    } else if (command.type === 'deck.rename') {
       const title = assertString(command.payload.title, 'title')
       forward = { type: 'deck.rename', payload: { title } }
       inverse = { type: 'deck.rename', payload: { title: session.checkpoint.deck.title } }

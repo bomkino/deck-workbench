@@ -1,6 +1,7 @@
 import CryptoKit
 import Darwin
 import Foundation
+import ImageIO
 
 private let mediaCatalogFormat = "pitchdog.media-catalog"
 private let mediaCatalogVersion = 1
@@ -78,6 +79,7 @@ private struct MediaGrant: Codable, Sendable {
     let rootDevice: String
     let rootInode: String
     var fileIdentities: [String: MediaFileIdentity]
+    var bookmark: Data? = nil
 }
 
 private struct MediaGrantDocument: Codable {
@@ -113,7 +115,7 @@ private struct MediaObservation: Sendable {
     }
 }
 
-private struct AuthorizedMediaRoot: Sendable {
+struct AuthorizedMediaRoot: Sendable {
     let path: String
     let displayName: String
     let device: String
@@ -149,7 +151,7 @@ private final class MediaSessionLease: @unchecked Sendable {
     }
 }
 
-private struct FileMetadata {
+struct FileMetadata {
     let mode: mode_t
     let device: String
     let inode: String
@@ -162,7 +164,7 @@ private struct FileMetadata {
     var isSymbolicLink: Bool { (mode & S_IFMT) == S_IFLNK }
 }
 
-private enum MediaFilesystem {
+enum MediaFilesystem {
     static func metadata(_ path: String) throws -> FileMetadata {
         var value = stat()
         let result = path.withCString { pointer -> Int32 in
@@ -432,6 +434,8 @@ actor MediaCatalogSession {
     private let grants: MacMediaGrantStore
     private let lease = MediaSessionLease()
     private var catalog: PortableMediaCatalog
+    private var nativeScans: [String: Task<NativeScanResult, Error>] = [:]
+    private var excludedNativeRoots: Set<String> = []
 
     init(packageURL: URL, deckId: String, grantStoreURL: URL? = nil) throws {
         let packageMetadata = try MediaFilesystem.metadata(packageURL.path)
@@ -499,7 +503,7 @@ actor MediaCatalogSession {
         throw WorkbenchFailure(name: "InvalidCommand", message: "Unknown media query: \(name)")
     }
 
-    func authorizeRootJSON(_ url: URL) throws -> Data {
+    func authorizeRootJSON(_ url: URL) async throws -> Data {
         try requireOpen()
         let authorized = try MediaFilesystem.authorizeDirectory(url)
         guard !grants.list(deckId: deckId).contains(where: {
@@ -524,16 +528,17 @@ actor MediaCatalogSession {
             authorizedPath: authorized.path,
             rootDevice: authorized.device,
             rootInode: authorized.inode,
-            fileIdentities: [:]
+            fileIdentities: [:],
+            bookmark: try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
         ))
-        let scan = try scanAuthorized(rootId: rootId, root: authorized)
+        let scan = try await scanAuthorized(rootId: rootId, root: authorized)
         return try encodeResult([
             "root": try publicRoot(rootId),
             "scan": scan,
         ])
     }
 
-    func reconnectRootJSON(rootId: String, url: URL) throws -> Data {
+    func reconnectRootJSON(rootId: String, url: URL) async throws -> Data {
         try requireOpen()
         _ = try requireRoot(rootId)
         let previous = grants.get(deckId: deckId, rootId: rootId)
@@ -544,16 +549,17 @@ actor MediaCatalogSession {
             authorizedPath: authorized.path,
             rootDevice: authorized.device,
             rootInode: authorized.inode,
-            fileIdentities: previous?.fileIdentities ?? [:]
+            fileIdentities: previous?.fileIdentities ?? [:],
+            bookmark: try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
         ))
-        let scan = try scanAuthorized(rootId: rootId, root: authorized)
+        let scan = try await scanAuthorized(rootId: rootId, root: authorized)
         return try encodeResult([
             "root": try publicRoot(rootId),
             "scan": scan,
         ])
     }
 
-    func scanRootJSON(rootId: String) throws -> Data {
+    func scanRootJSON(rootId: String) async throws -> Data {
         try requireOpen()
         _ = try requireRoot(rootId)
         guard let grant = grants.get(deckId: deckId, rootId: rootId) else {
@@ -565,7 +571,7 @@ actor MediaCatalogSession {
         }
         return try encodeResult([
             "root": try publicRoot(rootId),
-            "scan": try scanAuthorized(rootId: rootId, root: authorized),
+            "scan": try await scanAuthorized(rootId: rootId, root: authorized),
         ])
     }
 
@@ -613,8 +619,58 @@ actor MediaCatalogSession {
         return data
     }
 
-    private func scanAuthorized(rootId: String, root: AuthorizedMediaRoot) throws -> [String: Any] {
-        let discovery = try discover(root)
+    func nativeCatalogData() throws -> Data {
+        try requireOpen()
+        let encoder = JSONEncoder()
+        return try encoder.encode(catalog)
+    }
+    func nativeSource(assetId: String) throws -> NativeMediaSource {
+        try requireOpen()
+        guard let asset = catalog.assets.first(where: { $0.id == assetId }), let grant = grants.get(deckId: deckId, rootId: asset.rootId) else {
+            throw WorkbenchFailure(name: "MediaRootNeedsPermission", message: "Reconnect the folder containing this image.")
+        }
+        return NativeMediaSource(assetId: asset.id, sourceRevisionId: asset.sourceRevisionId, rootPath: grant.authorizedPath,
+            relativePath: asset.relativePath, filename: asset.filename, fingerprint: asset.fingerprint,
+            byteSize: asset.byteSize, mediaKind: asset.mediaKind, rootDevice: grant.rootDevice, rootInode: grant.rootInode, bookmark: grant.bookmark)
+    }
+    func nativeSources(assetIds: [String]) throws -> [String: NativeMediaSource] {
+        var result: [String: NativeMediaSource] = [:]
+        for id in assetIds { result[id] = try? nativeSource(assetId: id) }
+        return result
+    }
+    func excludeNativeDestination(_ url: URL) { excludedNativeRoots.insert(url.standardizedFileURL.path) }
+    func cancelNativeScans() { for work in nativeScans.values { work.cancel() } }
+    private func publishNativeBatch(_ observations: [MediaObservation], rootId: String) throws {
+        try requireOpen()
+        let previous = catalog
+        let summary = try reconcile(rootId: rootId, observations: observations, completed: false)
+        if summary.changed {
+            do { try persistCatalog() } catch { catalog = previous; throw error }
+        }
+    }
+    private static func nativeImageDimensions(_ url: URL) -> (width: Int, height: Int)? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
+              let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = (props[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue,
+              let height = (props[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue else { return nil }
+        let orientation = (props[kCGImagePropertyOrientation] as? NSNumber)?.intValue ?? 1
+        return orientation >= 5 ? (height, width) : (width, height)
+    }
+
+    private func scanAuthorized(rootId: String, root: AuthorizedMediaRoot) async throws -> [String: Any] {
+        guard nativeScans[rootId] == nil else { throw WorkbenchFailure(name: "ScanBusy", message: "This folder is already being scanned.") }
+        let lease = self.lease
+        let exclusions = excludedNativeRoots
+        let work = Task.detached(priority: .utility) { [weak self] in
+            try await Self.discover(root, lease: lease, exclusions: exclusions) { batch in
+                guard let self else { return }
+                try await self.publishNativeBatch(batch, rootId: rootId)
+            }
+        }
+        nativeScans[rootId] = work
+        defer { nativeScans[rootId] = nil }
+        let discovery = try await withTaskCancellationHandler(operation: { try await work.value }, onCancel: { work.cancel() })
+        try requireOpen()
         let previousCatalog = catalog
         let summary = try reconcile(
             rootId: rootId,
@@ -655,7 +711,7 @@ actor MediaCatalogSession {
         ]
     }
 
-    private func discover(_ root: AuthorizedMediaRoot) throws -> NativeScanResult {
+    private static func discover(_ root: AuthorizedMediaRoot, lease: MediaSessionLease, exclusions: Set<String>, publish: @Sendable ([MediaObservation]) async throws -> Void) async throws -> NativeScanResult {
         let manager = FileManager.default
         var complete = true
         var warningCount = 0
@@ -675,6 +731,7 @@ actor MediaCatalogSession {
         }
         let supported: [String: String] = [
             "jpg": "image", "jpeg": "image", "png": "image", "webp": "image", "gif": "gif",
+            "heic": "image", "heif": "image", "tif": "image", "tiff": "image", "avif": "image", "bmp": "image", "psd": "image", "pdf": "image",
             "mp4": "video", "mov": "video", "m4v": "video", "webm": "video",
         ]
         while let candidate = enumerator.nextObject() as? URL {
@@ -703,6 +760,9 @@ actor MediaCatalogSession {
                     continue
                 }
                 if metadata.isDirectory {
+                    if candidate.pathExtension.lowercased() == "pitchdeck" || candidate.lastPathComponent.hasPrefix(".") || exclusions.contains(path) || manager.fileExists(atPath: candidate.appendingPathComponent(".workbench-handoff").path) {
+                        enumerator.skipDescendants(); continue
+                    }
                     if depth > 64 {
                         complete = false
                         warningCount += 1
@@ -720,9 +780,7 @@ actor MediaCatalogSession {
                     continue
                 }
                 let ext = candidate.pathExtension.lowercased()
-                let dimensions = ["jpg", "jpeg", "png", "webp", "gif"].contains(ext)
-                    ? Self.imageDimensions(try MediaFilesystem.readPrefix(canonical), extension: ext)
-                    : nil
+                let dimensions = kind != "video" ? Self.nativeImageDimensions(URL(fileURLWithPath: canonical)) : nil
                 let validImage = dimensions.map(Self.safeDimensions) == true
                 let safePreview = validImage
                     && metadata.byteSize > 0
@@ -731,7 +789,7 @@ actor MediaCatalogSession {
                 if safePreview { previewReason = nil }
                 else if kind == "video" { previewReason = "video_catalogue_only" }
                 else if validImage { previewReason = "source_outside_preview_bounds" }
-                else { previewReason = "unreadable_image" }
+                else { previewReason = "original_copyable_preview_unsupported" }
                 observations.append(MediaObservation(
                     relativePath: relativePath,
                     filename: candidate.lastPathComponent,
@@ -740,19 +798,21 @@ actor MediaCatalogSession {
                     height: validImage ? dimensions?.height : nil,
                     byteSize: metadata.byteSize,
                     modifiedAt: metadata.modifiedAt,
-                    availability: ["jpg", "jpeg", "png", "webp", "gif"].contains(ext) && !validImage
-                        ? "unreadable" : "available",
+                    availability: "available",
                     previewCapability: safePreview ? (kind == "gif" ? "animated-image" : "still-image") : "unsupported",
                     previewReason: previewReason,
                     fingerprint: try MediaFilesystem.fingerprint(canonical, byteSize: metadata.byteSize),
                     identity: MediaFileIdentity(device: metadata.device, inode: metadata.inode),
                     linkCount: max(1, metadata.linkCount)
                 ))
+                if observations.count.isMultiple(of: 128) { try await publish(Array(observations.suffix(128))) }
             } catch {
                 complete = false
                 warningCount += 1
             }
         }
+        let remainder = observations.count % 128
+        if remainder > 0 { try await publish(Array(observations.suffix(remainder))) }
         return NativeScanResult(observations: observations, complete: complete, warningCount: warningCount)
     }
 
@@ -780,10 +840,11 @@ actor MediaCatalogSession {
         }
         var seen = Set<String>()
         var nextCatalog = catalog
+        var indexByID = Dictionary(uniqueKeysWithValues: nextCatalog.assets.enumerated().map { ($0.element.id, $0.offset) })
 
         for observation in observations {
             if let existing = existingByPath[observation.relativePath],
-               let index = nextCatalog.assets.firstIndex(where: { $0.id == existing.id }) {
+               let index = indexByID[existing.id] {
                 let refreshed = Self.refreshed(existing, with: observation)
                 seen.insert(existing.id)
                 summary.refreshed += 1
@@ -810,7 +871,7 @@ actor MediaCatalogSession {
                 ? matches[0]
                 : nil
             if let candidate, completed,
-               let index = nextCatalog.assets.firstIndex(where: { $0.id == candidate.id }) {
+               let index = indexByID[candidate.id] {
                 nextCatalog.assets[index] = Self.refreshed(candidate, with: observation)
                 seen.insert(candidate.id)
                 summary.changed = true
@@ -819,6 +880,7 @@ actor MediaCatalogSession {
                 summary.deferred += 1
             } else {
                 let asset = Self.newAsset(rootId: rootId, observation: observation)
+                indexByID[asset.id] = nextCatalog.assets.count
                 nextCatalog.assets.append(asset)
                 nextCatalog.sourceRevisions.append(Self.sourceRevision(for: asset))
                 summary.changed = true
@@ -827,7 +889,7 @@ actor MediaCatalogSession {
         }
         if completed {
             for existing in existingRootAssets where !seen.contains(existing.id) {
-                guard let index = nextCatalog.assets.firstIndex(where: { $0.id == existing.id }) else { continue }
+                guard let index = indexByID[existing.id] else { continue }
                 if nextCatalog.assets[index].availability != "missing" {
                     nextCatalog.assets[index].availability = "missing"
                     summary.changed = true

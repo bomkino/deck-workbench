@@ -1,3 +1,5 @@
+> Historical document: superseded for current product/build decisions by the documentation index in docs/README.md. Retained as history, not a v0.1.0 acceptance claim.
+
 # Canonical glossary and command vocabulary
 
 Use the Workbench Constitution as the binding domain definition. This document adds command payload expectations for implementation.

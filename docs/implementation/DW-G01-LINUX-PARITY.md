@@ -1,3 +1,5 @@
+> Historical document: superseded for current product/build decisions by the documentation index in docs/README.md. Retained as history, not a v0.1.0 acceptance claim.
+
 # DW-G01 — Linux parity tracer
 
 Status: Ubuntu/X11 source, package and two-process runtime journey verified by

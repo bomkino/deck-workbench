@@ -1,103 +1,41 @@
 # Deck Workbench
 
-[![DW-T00 macOS arm64](https://github.com/bomkino/deck-workbench/actions/workflows/dw-t00-macos.yml/badge.svg?branch=main)](https://github.com/bomkino/deck-workbench/actions/workflows/dw-t00-macos.yml)
-[![DW-G01 Ubuntu Linux x64](https://github.com/bomkino/deck-workbench/actions/workflows/dw-g01-linux.yml/badge.svg?branch=main)](https://github.com/bomkino/deck-workbench/actions/workflows/dw-g01-linux.yml)
+A Mac-only tool for turning final copy and selected media into a clear prototype and designer handoff. It does not replace the designer.
 
-A local-first, story-first application for prototyping, reviewing and handing off cinematic pitch decks on Apple-Silicon macOS and Garuda Linux.
+## Current version: v0.1.0 — native Mac user-test build
 
-## Status
+The native repair is the active source and build path. This version is being promoted at the studio's explicit request without running the full acceptance suite. A published app archive means it compiled and was packaged; it does **not** mean that export appearance, migration, recovery, keyboard behaviour, performance or accessibility have been validated.
 
-Pre-alpha. `main` is the canonical source branch. The shared Workbench now centres four task workspaces: Plan, Curate, Assemble and Handoff. Production Plan uses the durable Deck command seam, protects unsaved work per Slide, and can paste or locally choose, strictly preview and import a Workbench Markdown v1 `.md` into a new local `.pitchdeck`. Its conversion prompt is copied through the native clipboard; conversion itself stays outside the app. The local file chooser reads the selected bytes into the same textarea and never uploads them. No model, upload, account or network service is built in. The bounded Production Curate source slice adds an authorised, progressively loaded media workflow while keeping project judgment separate from per-Slide decisions. Handoff reviews readiness and exports the active Slide PDF at the selected canvas ratio only. The application chrome uses the pinned pitch.dog v13 Head, Body and Eyebrow families by default, with Phosphor for authored action icons; artboard/export typography remains an independent Deck concern.
+[Download v0.1.0](https://github.com/bomkino/deck-workbench/releases/tag/v0.1.0). Use the `.app.zip`, not the automatic GitHub source archive. Apple Silicon and macOS 26 or newer are required. The app is ad-hoc signed, not notarized. macOS may require approval through its security controls. Do not disable system security globally.
 
-`v0.0.6` is the current source and release line. It retains the v0.0.5 visual-workflow repair and completes Curate’s fullscreen keyboard loop: arrows browse, `0–5` rate, `P` toggles Project Pick, `S` toggles the current-Slide shortlist, `A` toggles Alternate, `M` opens assign-to-Slide, and `Esc` closes. Assignment focuses its first available role and returns to the same fullscreen Asset after assign or cancel. On macOS, one full-content window integrates the native traffic lights with Workbench’s compact phase toolbar while File and View commands remain in the system menu bar. The public GitHub Release, not version text alone, is the authority for whether those exact-commit artifacts are released and Latest.
+**Start with a duplicate of a deck and retain v0.0.6 as a fallback.** The first native edit upgrades the package's reader schema; v0.0.6 cannot reopen that upgraded working copy. The original v0.0.6 release remains available. Source media is not intentionally modified.
 
-`DW-T00` proves the first integrated Apple-Silicon Story Document tracer. `DW-W01` adds durable Deck/Section/Slide structure, ordering, intent and semantic Content Blocks. `DW-G01` adds a sandboxed Electron/utility-process Linux shell and exact x86-64 tarball, Arch-package and AppImage gates on Ubuntu/X11. A real user-chosen Curate media-folder journey is release acceptance reported separately, not an inference from CI.
+## Working flow
 
-The automated macOS and Ubuntu package journeys are binding repository gates. Target-machine Garuda/KDE/Wayland and interactive macOS accessibility checks are explicitly waived for source promotion to `main`; they remain unverified and are not release claims. See [`docs/03-build/RELEASE_DEFINITION.md`](docs/03-build/RELEASE_DEFINITION.md).
+Import final copy, curate the images, suggest the arrangement, export the handoff. The two main workspaces are Curate and Assemble; notes and copy remain associated with each slide. New prototypes default to 2576 x 1080. Copy is protected by default, not a writing assignment to complete in the app.
 
-The tracer creates a native `.pitchdeck`, edits one canonical Story headline through the typed bridge and host-owned durable command seam, reopens with undo history, and exports one PDF page. Its macOS 26 arm64 workflow builds, ad-hoc signs, extracts, verifies, and runs the exact packaged journey at the checked-out SHA.
+The native source implements whole-deck Prototype.pdf, Prototype with notes.pdf, editable Copy.md, and original files grouped per slide under Approved Media and Shortlisted Media. Chosen assignments and shortlist membership are independent. Creative warnings do not veto an otherwise possible export. These behaviours still need the studio's hands-on testing.
 
-## Download and run
+Keyboard reference: Help > Keyboard Shortcuts, or Command-/. In Curate, arrows browse; Space opens preview; S shortlists; Shift-S removes shortlist membership; M chooses for the active role; X rejects; [ and ] switch slides. Shortcuts pause while editing text. Command-Shift-E opens Export Handoff.
 
-Use the CI-built assets on the [`v0.0.6` release](https://github.com/bomkino/deck-workbench/releases/tag/v0.0.6) only when GitHub shows that release as public and Latest. Verify the adjacent `.sha256` file before opening an asset.
+## Build
 
-- **Apple-Silicon macOS 26+:** download the `.app.zip`, extract it, then open `Deck Workbench.app`. The build is ad-hoc signed, not notarized, so macOS may require Control-click → Open on first launch.
-- **Garuda/Arch x86-64:** download the `.pkg.tar.zst` and install it with `sudo pacman -U ./deck-workbench-*.pkg.tar.zst`.
-- **Other x86-64 Linux:** download the AppImage, run `chmod +x Deck-Workbench-*.AppImage`, then launch it; or extract the `.tar.gz` and run `Deck-Workbench-linux-x64/deck-workbench`.
-
-The packaged Ubuntu/X11 journey is automated. Garuda/KDE/Wayland installation and desktop integration remain unverified target-machine checks, as described below.
-
-## Verify
-
-Portable command and contract checks:
+On Apple-Silicon macOS 26+, with Xcode command-line tools and Node.js 24+:
 
 ```sh
-npm run verify
+npm run build
 ```
 
-This single gate regenerates contracts, runs the full test suite, checks the source contract, validates JavaScript and shell syntax, verifies relative documentation links, enforces full-SHA GitHub Action pins, reconciles dependency notices and rejects tracked build clutter.
+The archive and SHA-256 file are written under artifacts/. No Electron installation or web build is required.
 
-On Apple-Silicon macOS 26 or newer:
-
-```sh
-scripts/build-macos.sh
-scripts/verify-packaged-macos.sh
-node scripts/write-evidence-receipt.mjs
-```
-
-The packaged artifact and exact-SHA receipt are written under `artifacts/`.
-
-On Ubuntu 24.04 x86-64, after installing the workflow dependencies listed in
-`.github/workflows/dw-g01-linux.yml`:
-
-```sh
-npm ci
-npm run install:electron
-scripts/linux/fetch-appimage-tools.sh
-npm run build:linux
-npm run verify:linux
-```
-
-This builds and directly verifies a tarball, `.pkg.tar.zst`, and reproducible
-AppImage through distinct create and reopen application processes. Actual Garuda
-installation, KDE portals, Wayland/KWin behavior, drag/drop/reveal, target-machine
-font rendering, codecs and GPU paths remain target-machine gates.
-
-The bounded local CLI and privacy-safe support report adapters are documented in
-`apps/cli/README.md` and `docs/implementation/DW-W10-SUPPORT-REPORT.md`.
-
-## Principles
-
-- Story remains canonical while visual alternatives change.
-- Everything works locally and offline.
-- No bundled AI, account, cloud service, telemetry or analytics.
-- Mac is primary; Garuda Linux targets and requires the same semantic parity.
-- PDF is the visual-fidelity reference.
-- PPTX fallbacks are explicit.
-- Interface Scale never changes the Deck itself.
-- The project is free software under AGPL-3.0.
-
-## Applications
-
-- Apple-Silicon macOS 26+ app using SwiftUI and WebKit.
-- Garuda/Arch/KDE Linux app using Electron; Ubuntu/X11 package journey automated,
-  while target Garuda acceptance remains unverified and outside the `main`
-  promotion gate.
+Optional development checks (not release claims): `npm test` for document-kernel behaviour, and `npm run verify:package` for the scripted Mac package journey. The latter is not run by this user-test release workflow.
 
 ## Documentation
 
-Start with:
+- [Mac workflow and handoff](docs/MAC_APP.md)
+- [Known limitations and testing boundary](docs/KNOWN_LIMITATIONS.md)
+- [Architecture and remaining work](docs/NATIVE_ARCHITECTURE.md)
+- [Release notes](docs/RELEASE_NOTES.md)
+- [Documentation index](docs/README.md)
 
-- `docs/product/PRODUCT_SPEC.md`
-- `docs/product/WORKBENCH_CONSTITUTION.md`
-- `docs/architecture/SYSTEM_ARCHITECTURE.md`
-- `docs/implementation/EXECUTION_INDEX.md`
-- `docs/03-build/RELEASE_DEFINITION.md`
-
-## Privacy
-
-Deck Workbench is designed to work offline and collect nothing. Private decks, commercial fonts and client media must not be committed to this repository.
-
-## Interface character
-
-Workbench uses an editorial desk rather than a generic dashboard: a 44 px physical control floor, pitch.dog v13 role-based typography, Phosphor action icons, scale-aware spacing, hard rules, persistent Light/Dark/System appearance, and a dark focused stage. Interface Scale changes the complete chrome geometry while Artboard Zoom remains independent. The project mark follows the pitch.dog illustration law: one imperfect frame, one impossible coral cord, and enough negative space to stay legible at favicon size.
+Linux, Electron packaging and the web workspace are retired. Previous architecture/product/ticket documents are historical evidence, not current operating instructions. No account, cloud service, model or telemetry is required. Licensed under AGPL-3.0; see LICENSE, NOTICE and THIRD_PARTY.md.

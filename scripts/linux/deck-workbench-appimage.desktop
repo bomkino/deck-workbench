@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Deck Workbench
-Comment=Semantic presentation workbench
-Exec=deck-workbench %U
-Icon=deck-workbench
-Terminal=false
-Categories=Office;Presentation;
-MimeType=application/x-pitchdeck;

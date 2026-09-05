@@ -1,3 +1,5 @@
+> Historical document: superseded for current product/build decisions by the documentation index in docs/README.md. Retained as history, not a v0.1.0 acceptance claim.
+
 # DW-W09 — Bounded local CLI slice
 
 Status: source-ready and covered by causal public-seam tests.

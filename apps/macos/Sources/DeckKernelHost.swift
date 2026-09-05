@@ -1,7 +1,6 @@
 import Foundation
 import JavaScriptCore
 
-@MainActor
 final class DeckKernelHost {
     private let context: JSContext
     private let adapter: JSValue

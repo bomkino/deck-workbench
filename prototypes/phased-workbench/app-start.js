@@ -1,3 +1,0 @@
-seedMediaDecisions()
-bindGlobalEvents()
-renderAll()

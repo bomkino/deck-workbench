@@ -1,3 +1,5 @@
+> Historical document: superseded for current product/build decisions by the documentation index in docs/README.md. Retained as history, not a v0.1.0 acceptance claim.
+
 # WB-R00 — Phased Workbench rebuild
 
 Historical scope note: this document records the disposable tracer tranche before the phased workspace migrated into production. Current implementation and release evidence live in `EXECUTION_INDEX.md` and `../evidence/WORKBENCH-UI-UX-RELEASE-PASS-2026-08-29.md`.

@@ -1,3 +1,5 @@
+> Historical document: superseded for current product/build decisions by the documentation index in docs/README.md. Retained as history, not a v0.1.0 acceptance claim.
+
 # Deck Prototyper parity ledger
 
 This ledger prevents the phased Workbench rebuild from accidentally losing useful Deck Prototyper behaviour.

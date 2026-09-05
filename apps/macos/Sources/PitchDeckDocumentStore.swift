@@ -4,7 +4,7 @@ import Foundation
 
 struct PitchDeckManifest: Codable {
     let format: String
-    let schemaVersion: Int
+    var schemaVersion: Int
     let deckId: String
     var title: String
     let createdAt: String
@@ -32,6 +32,7 @@ final class PitchDeckDocumentStore {
     private(set) var currentRevision: Int
     private let writerLockToken: String
     private var requiresReopen = false
+    var needsRecovery: Bool { requiresReopen }
     private var ownsWriterLock = true
 
     private init(packageURL: URL, manifest: PitchDeckManifest, currentRevision: Int, writerLockToken: String) {
@@ -62,7 +63,7 @@ final class PitchDeckDocumentStore {
             let timestamp = iso8601(now)
             let manifest = PitchDeckManifest(
                 format: "pitchdog.deck-package",
-                schemaVersion: 1,
+                schemaVersion: 2,
                 deckId: metadata.deckId,
                 title: metadata.title,
                 createdAt: timestamp,
@@ -116,7 +117,7 @@ final class PitchDeckDocumentStore {
         } catch {
             throw WorkbenchFailure(name: "UnsupportedSchema", message: "manifest.json is invalid or unsupported")
         }
-        guard manifest.format == "pitchdog.deck-package", manifest.schemaVersion == 1 else {
+        guard manifest.format == "pitchdog.deck-package", [1, 2].contains(manifest.schemaVersion) else {
             throw WorkbenchFailure(name: "UnsupportedSchema", message: "Only .pitchdeck package schema 1 is supported")
         }
 
@@ -264,6 +265,80 @@ final class PitchDeckDocumentStore {
     private func persistManifest(_ value: PitchDeckManifest) throws {
         try requireWriterLock()
         try Self.writeDurable(try Self.encodeManifest(value), relativePath: "manifest.json", in: packageURL)
+    }
+
+    /// Keep an old-reader-compatible checkpoint/journal before first native edit.
+    /// Version 2 makes old apps refuse the file rather than ignore native decisions.
+    func ensureNativeCompatibilityBackup() throws {
+        try requireWriterLock()
+        guard manifest.schemaVersion == 1 else { return }
+        let backup = packageURL.appendingPathComponent("recovery/pre-native-0.0.6", isDirectory: true)
+        if !FileManager.default.fileExists(atPath: backup.path) {
+            try FileManager.default.createDirectory(at: backup, withIntermediateDirectories: false)
+            for name in ["manifest.json", "checkpoint.json", "journal.ndjson"] {
+                try Self.writeDurable(Self.readRequired(name, in: packageURL), relativePath: name, in: backup)
+            }
+            if let catalog = try? Self.readRequired("media/catalog.json", in: packageURL) {
+                try Self.writeDurable(catalog, relativePath: "media-catalog.json", in: backup)
+            }
+            try Self.syncDirectory(backup)
+        }
+        var upgraded = manifest
+        upgraded.schemaVersion = 2
+        try persistManifest(upgraded)
+        manifest = upgraded
+    }
+
+    /// Recovery never steals another process's lock or changes the source package.
+    /// The user explicitly chooses a new destination for the saved-state copy.
+    static func recoverCopy(from source: URL, to destination: URL) throws -> URL {
+        let sourcePath = source.resolvingSymlinksInPath().standardizedFileURL.path
+        let destinationPath = destination.resolvingSymlinksInPath().standardizedFileURL.path
+        guard destination.pathExtension == "pitchdeck", destinationPath != sourcePath,
+              !destinationPath.hasPrefix(sourcePath + "/"),
+              !FileManager.default.fileExists(atPath: destination.path) else {
+            throw WorkbenchFailure(name: "RecoveryDestination", message: "Choose a new .pitchdeck outside the original deck.")
+        }
+        let staging = destination.deletingLastPathComponent().appendingPathComponent(".recovery-\(UUID().uuidString).pitchdeck", isDirectory: true)
+        do {
+            try FileManager.default.copyItem(at: source, to: staging)
+            let copiedLock = staging.appendingPathComponent(writerLockFile)
+            if FileManager.default.fileExists(atPath: copiedLock.path) { try FileManager.default.removeItem(at: copiedLock) }
+            let originalJournal = try readRequired("journal.ndjson", in: staging)
+            // Only a corrupt trailing portion may be discarded, and only in this
+            // explicit copy. The original bytes remain available for inspection.
+            do { _ = try validateJournal(originalJournal) }
+            catch {
+                var prefix = Data(), previousHash = zeroHash, revision = 0
+                var offset = 0
+                while offset < originalJournal.count,
+                      let end = originalJournal[offset...].firstIndex(of: 0x0A) {
+                    let line = originalJournal.subdata(in: offset..<end)
+                    guard var record = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any],
+                          let hash = record.removeValue(forKey: "recordHash") as? String,
+                          record["previousHash"] as? String == previousHash,
+                          record["revision"] as? Int == revision + 1,
+                          let canonical = try? canonicalJSON(record), sha256(canonical) == hash else { break }
+                    prefix.append(originalJournal.subdata(in: offset..<(end + 1)))
+                    previousHash = hash; revision += 1; offset = end + 1
+                }
+                var metadata = try JSONDecoder().decode(PitchDeckManifest.self, from: readRequired("manifest.json", in: staging))
+                guard revision >= metadata.checkpointRevision else {
+                    throw WorkbenchFailure(name: "RecoveryIncomplete", message: "The valid journal ends before the checkpoint. The original remains unchanged; recover its prior checkpoint with support.")
+                }
+                try writeDurable(originalJournal, relativePath: "recovery/interrupted-journal.ndjson", in: staging)
+                try writeDurable(prefix, relativePath: "journal.ndjson", in: staging)
+                metadata.journalHeadHash = previousHash
+                try writeDurable(encodeManifest(metadata), relativePath: "manifest.json", in: staging)
+                let note = "Recovered a saved-state copy. Preserved \(revision) valid journal entries; retained the interrupted original journal in recovery/interrupted-journal.ndjson. The source deck was not changed.\n"
+                try writeDurable(Data(note.utf8), relativePath: "recovery/RECOVERY.txt", in: staging)
+            }
+            let (check, _) = try open(at: staging)
+            try check.close()
+            try FileManager.default.moveItem(at: staging, to: destination)
+            try syncDirectory(destination.deletingLastPathComponent())
+            return destination
+        } catch { try? FileManager.default.removeItem(at: staging); throw error }
     }
 
     func close() throws {

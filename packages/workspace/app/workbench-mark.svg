@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
-  <title id="title">Deck Workbench mark</title>
-  <desc id="desc">An imperfect ink frame whose coral hanging cord escapes into orbit.</desc>
-  <rect width="256" height="256" fill="#dcebf2"/>
-  <path d="M55 144 58 207 158 204 155 139Z" fill="#fffdf7" stroke="#151513" stroke-width="10" stroke-linejoin="miter"/>
-  <path d="M77 164 131 162M78 183 118 182" fill="none" stroke="#151513" stroke-width="8" stroke-linecap="square"/>
-  <path d="M155 141c19-3 29-16 24-32-5-17-27-18-35-4-8 15 5 32 25 31 26-2 43-27 33-51" fill="none" stroke="#ff6847" stroke-width="9" stroke-linecap="round"/>
-  <circle cx="202" cy="84" r="7" fill="#ff6847"/>
-</svg>

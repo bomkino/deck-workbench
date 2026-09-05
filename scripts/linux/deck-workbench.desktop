@@ -1,8 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Deck Workbench
-Comment=Semantic presentation workbench
-Exec=/usr/bin/deck-workbench %U
-Terminal=false
-Categories=Office;Presentation;
-MimeType=application/x-pitchdeck;
