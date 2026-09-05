@@ -252,6 +252,7 @@ enum NativeAcceptance {
         "Page order or selectable headline is wrong")
       try require(
         page.string?.contains("Export Handoff") == false, "Editor controls contaminated the PDF")
+      try require(try hasVisibleSourceImage(page), "The PDF gradient obscured the assigned image")
     }
     let fullCopy = try String(
       contentsOf: exported.url.appendingPathComponent("Copy.md"), encoding: .utf8)
@@ -312,7 +313,7 @@ enum NativeAcceptance {
         ?? "unknown", "slides": 20, "rapidDecisions": 40, "prototypePages": pdf.pageCount,
       "notesPages": notes.pageCount, "originalCopies": exported.originalCopies,
       "copyComplete": true, "previewScope": true, "shortlistIndependent": true, "reopen": true,
-      "savedCopyRecovery": true, "uiIndependentPDF": true, "nativeKeyEvents": true,
+      "savedCopyRecovery": true, "uiIndependentPDF": true, "imageVisibleInPDF": true, "nativeKeyEvents": true,
       "layoutPicker": true, "perImageEdits": true, "notesUndo": true, "validationDoesNotFence": true,
       "copyOnlyIndependent": true, "literalCopy": true, "safeFilenames": true, "thumbnailCache": true,
       "nativeBurstAndSaveSeconds": inputAndSaveSeconds,
@@ -359,6 +360,22 @@ enum NativeAcceptance {
       throw WorkbenchFailure(name: "AcceptanceFailure", message: "Could not read PDF pixels")
     }
     return data as Data
+  }
+  private static func hasVisibleSourceImage(_ page: PDFPage) throws -> Bool {
+    let image = try pageImage(page)
+    guard let data = image.dataProvider?.data else { return false }
+    let pixels = CFDataGetBytePtr(data)!
+    var colored = 0
+    // Fixtures contain colored source images; text/background alone are gray.
+    // Detect actual exported image pixels, not merely embedded image objects.
+    for y in stride(from: 0, to: image.height, by: 4) {
+      for x in stride(from: 0, to: image.width, by: 4) {
+        let offset = y * image.bytesPerRow + x * 4
+        let red = Int(pixels[offset]), green = Int(pixels[offset + 1]), blue = Int(pixels[offset + 2])
+        if max(red, max(green, blue)) - min(red, min(green, blue)) > 15 { colored += 1 }
+      }
+    }
+    return colored > image.width * image.height / 320
   }
   private static func pageImage(_ page: PDFPage) throws -> CGImage {
     let width = 1288

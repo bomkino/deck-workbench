@@ -272,27 +272,51 @@ enum NativeSlideRenderer {
       guard let id = layer.assetID, let image = images[id] else { continue }
       drawImage(image, layer: layer, context: context)
     }
-    if let gradient = scene.gradient {
+    if let gradient = scene.gradient,
+      let overlay = gradientImage(gradient, size: scene.gradientFrame.size)
+    {
+      // Quartz PDF axial shadings omit varying alpha. Rasterize only this
+      // overlay, not the source image or selectable text, for screen/PDF parity.
+      let frame = scene.gradientFrame
       context.saveGState()
-      context.clip(to: scene.gradientFrame)
-      let colors = [
-        color(gradient.colors?.start ?? "#000000", alpha: gradient.opacity),
-        color(gradient.colors?.end ?? "#000000", alpha: 0),
-      ]
-      if let cgGradient = CGGradient(
-        colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors as CFArray, locations: [0, 1])
-      {
-        let f = scene.gradientFrame
-        context.drawLinearGradient(
-          cgGradient,
-          start: CGPoint(
-            x: f.minX + gradient.start.x * f.width, y: f.minY + gradient.start.y * f.height),
-          end: CGPoint(x: f.minX + gradient.end.x * f.width, y: f.minY + gradient.end.y * f.height),
-          options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
-      }
+      context.clip(to: frame)
+      context.translateBy(x: frame.minX, y: frame.maxY)
+      context.scaleBy(x: 1, y: -1)
+      context.draw(overlay, in: CGRect(origin: .zero, size: frame.size))
       context.restoreGState()
     }
     for item in scene.texts { drawText(item, context: context) }
+  }
+  private static let gradientCache: NSCache<NSString, CGImage> = {
+    let cache = NSCache<NSString, CGImage>()
+    cache.totalCostLimit = 32 * 1024 * 1024
+    cache.countLimit = 24
+    return cache
+  }()
+  private static func gradientImage(_ gradient: PrototypeGradient, size: CGSize) -> CGImage? {
+    guard size.width > 0, size.height > 0 else { return nil }
+    let scale = min(1, 2048 / max(size.width, size.height))
+    let width = max(1, Int(ceil(size.width * scale)))
+    let height = max(1, Int(ceil(size.height * scale)))
+    let startColor = gradient.colors?.start ?? "#000000"
+    let endColor = gradient.colors?.end ?? "#000000"
+    let key = "\(width):\(height):\(gradient.start.x):\(gradient.start.y):\(gradient.end.x):\(gradient.end.y):\(gradient.opacity):\(startColor):\(endColor)" as NSString
+    if let image = gradientCache.object(forKey: key) { return image }
+    guard let bitmap = CGContext(data: nil, width: width, height: height,
+      bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+      let fill = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+        colors: [color(startColor, alpha: gradient.opacity), color(endColor, alpha: 0)] as CFArray,
+        locations: [0, 1]) else { return nil }
+    bitmap.translateBy(x: 0, y: CGFloat(height))
+    bitmap.scaleBy(x: 1, y: -1)
+    bitmap.drawLinearGradient(fill,
+      start: CGPoint(x: gradient.start.x * Double(width), y: gradient.start.y * Double(height)),
+      end: CGPoint(x: gradient.end.x * Double(width), y: gradient.end.y * Double(height)),
+      options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
+    guard let image = bitmap.makeImage() else { return nil }
+    gradientCache.setObject(image, forKey: key, cost: width * height * 4)
+    return image
   }
   static func drawText(_ item: PrototypeTextPlacement, context: CGContext) {
     context.saveGState()

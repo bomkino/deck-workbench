@@ -12,6 +12,8 @@ Chosen-image slots, remove-but-keep-shortlisted, ordered keyboard comparison, na
 
 ## Handoff
 
+PDF gradients now retain transparency instead of hiding their source images. Only the gradient overlay is rasterized and cached; copy remains selectable. Canonical Mac media paths no longer reject legitimate directory aliases. The package journey inspects actual visible image pixels, not just embedded image objects.
+
 Copy-only export no longer reads originals. Output resource selection and reports follow the actual requested/delivered components. Completed components can survive an independent failure; cancellation removes staging. Literal copy is protected in editable Markdown. Normal filename extensions survive truncation; spreadsheet-active CSV values are neutralized. Media index includes relative paths, roles, hashes, source notes and unavailable-file status. Generated handoffs are excluded by their own marker, not by excluding their parent media directory.
 
 ## Performance
