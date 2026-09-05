@@ -1,0 +1,33 @@
+name: Mac native handoff
+
+on:
+  push:
+    branches: [codex/mac-native-handoff]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mac-native-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source:
+    runs-on: macos-26
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Exact source workspace for repair
+        run: |
+          mkdir -p artifacts
+          git archive --format=tar HEAD | gzip > artifacts/source.tar.gz
+          git rev-parse HEAD > artifacts/source-commit.txt
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: mac-native-source-${{ github.sha }}
+          path: |
+            artifacts/source.tar.gz
+            artifacts/source-commit.txt
+          if-no-files-found: error
