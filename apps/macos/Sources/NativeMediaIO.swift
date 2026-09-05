@@ -27,12 +27,14 @@ enum NativeMediaIO {
         name: "MediaRootNeedsPermission",
         message: "Reconnect \(root.lastPathComponent); the saved folder identity changed.")
     }
-    _ = try MediaFilesystem.safeSegments(source.relativePath)
-    let url = URL(fileURLWithPath: authorized.path, isDirectory: true).appendingPathComponent(
-      source.relativePath)
-    let canonical = try MediaFilesystem.canonicalPath(url.path)
+    let segments = try MediaFilesystem.safeSegments(source.relativePath)
+    // Compare canonical paths, not Foundation's display-standardized aliases
+    // (for example /private/var versus /var). Each child must remain no-follow.
+    let expectedPath = (authorized.path == "/" ? "" : authorized.path) + "/" + segments.joined(separator: "/")
+    let url = URL(fileURLWithPath: expectedPath)
+    let canonical = try MediaFilesystem.canonicalPath(expectedPath)
     guard MediaFilesystem.isContained(rootPath: authorized.path, candidatePath: canonical),
-      canonical == url.standardizedFileURL.path
+      canonical == expectedPath
     else {
       throw WorkbenchFailure(
         name: "UnsafeMediaLocation", message: "The media file is linked outside its chosen folder.")
