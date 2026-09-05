@@ -6,31 +6,7 @@ struct NativeWorkbenchRoot: View {
   @State private var columns: NavigationSplitViewVisibility = .all
   var body: some View {
     NavigationSplitView(columnVisibility: $columns) {
-      List(
-        selection: Binding(
-          get: { controller.selectedSlideID },
-          set: { if let id = $0 { controller.selectSlide(id) } })
-      ) {
-        ForEach(controller.document?.deck.sections ?? []) { section in
-          Section(section.title) {
-            ForEach(section.slides) { slide in
-              HStack(alignment: .top) {
-                Text(ordinal(slide)).font(.system(.caption, design: .monospaced)).foregroundStyle(
-                  .secondary
-                ).frame(width: 28)
-                VStack(alignment: .leading, spacing: 4) {
-                  Text(slide.title).lineLimit(2)
-                  Text(
-                    slide.settings.included
-                      ? "\(slide.chosenIDs.count) chosen · \(slide.settings.shortlist.count) shortlisted"
-                      : "Excluded from export"
-                  ).font(.caption).foregroundStyle(.secondary)
-                }
-              }.padding(.vertical, 5).tag(slide.id)
-            }
-          }
-        }
-      }.navigationTitle("Slides").navigationSplitViewColumnWidth(min: 170, ideal: 220, max: 360)
+      NativeSlideSidebar(controller: controller)
     } detail: {
       VStack(spacing: 0) {
         if let failure = controller.failure {
@@ -165,6 +141,78 @@ struct NativeWorkbenchRoot: View {
   }
 }
 
+struct NativeSlideSidebar: View {
+  @ObservedObject var controller: NativeWorkbenchController
+  private var selection: Binding<String?> {
+    Binding(get: { controller.selectedSlideID },
+            set: { if let id = $0 { controller.selectSlide(id) } })
+  }
+  var body: some View {
+    List(selection: selection) {
+      ForEach(controller.document?.deck.sections ?? []) { section in
+        Section(section.title) {
+          ForEach(section.slides) { slide in
+            NativeSlideRow(slide: slide, ordinal: ordinal(slide)).tag(slide.id)
+          }
+        }
+      }
+    }.navigationTitle("Slides")
+      .navigationSplitViewColumnWidth(min: 170, ideal: 220, max: 360)
+  }
+  private func ordinal(_ slide: DeckSlide) -> String {
+    guard let index = controller.document?.deck.slides.firstIndex(where: { $0.id == slide.id })
+    else { return "" }
+    return String(format: "%02d", index + 1)
+  }
+}
+struct NativeSlideRow: View {
+  let slide: DeckSlide
+  let ordinal: String
+  private var summary: String {
+    guard slide.settings.included else { return "Excluded from export" }
+    let chosen: Int = slide.chosenIDs.count
+    let shortlisted: Int = slide.settings.shortlist.count
+    return "\(chosen) chosen · \(shortlisted) shortlisted"
+  }
+  var body: some View {
+    HStack(alignment: .top) {
+      Text(ordinal).font(.system(.caption, design: .monospaced))
+        .foregroundStyle(.secondary).frame(width: 28)
+      VStack(alignment: .leading, spacing: 4) {
+        Text(slide.title).lineLimit(2)
+        Text(summary).font(.caption).foregroundStyle(.secondary)
+      }
+    }.padding(.vertical, 5)
+  }
+}
+struct NativeMediaGrid: View {
+  @ObservedObject var controller: NativeWorkbenchController
+  let width: CGFloat
+  private var columns: [GridItem] {
+    [GridItem(.adaptive(minimum: CGFloat(controller.gridSize)), spacing: 10)]
+  }
+  var body: some View {
+    ScrollViewReader { scroll in
+      ScrollView {
+        LazyVGrid(columns: columns, spacing: 10) {
+          ForEach(controller.filteredAssets) { asset in
+            NativeAssetTile(controller: controller, asset: asset).id(asset.id)
+          }
+        }.padding(12)
+      }.onChange(of: controller.focusedAssetID) { _, id in
+        if !controller.previewOpen, let id { scroll.scrollTo(id, anchor: .center) }
+      }
+    }.onAppear { updateColumns() }
+      .onChange(of: width) { _, _ in updateColumns() }
+      .onChange(of: controller.gridSize) { _, _ in updateColumns() }
+  }
+  private func updateColumns() {
+    let available = max(0.0, Double(width) - 24.0)
+    let tileWidth = controller.gridSize + 10.0
+    controller.gridColumns = max(1, Int(available / tileWidth))
+  }
+}
+
 struct NativeCurateView: View {
   @ObservedObject var controller: NativeWorkbenchController
   var body: some View {
@@ -215,29 +263,7 @@ struct NativeCurateView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
       } else {
         GeometryReader { geometry in
-          ScrollViewReader { scroll in
-            ScrollView {
-              LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: controller.gridSize), spacing: 10)],
-                spacing: 10
-              ) {
-                ForEach(controller.filteredAssets) { asset in
-                  NativeAssetTile(controller: controller, asset: asset).id(asset.id)
-                }
-              }.padding(12)
-            }.onChange(of: controller.focusedAssetID) { id in
-              if !controller.previewOpen, let id { scroll.scrollTo(id, anchor: .center) }
-            }
-          }.onAppear {
-            controller.gridColumns = max(
-              1, Int((geometry.size.width - 24) / (controller.gridSize + 10)))
-          }
-          .onChange(of: geometry.size.width) { width in
-            controller.gridColumns = max(1, Int((width - 24) / (controller.gridSize + 10)))
-          }
-          .onChange(of: controller.gridSize) { size in
-            controller.gridColumns = max(1, Int((geometry.size.width - 24) / (size + 10)))
-          }
+          NativeMediaGrid(controller: controller, width: geometry.size.width)
         }
       }
       Divider()
@@ -618,8 +644,13 @@ struct NativeAssemblyInspector: View {
 }
 struct NativeExportSheet: View {
   @ObservedObject var controller: NativeWorkbenchController
-  @State private var prototype = true, notes = true, copy = true, approved = true,
-    shortlisted = true, acceptChanged = false, onlyCurrent = false
+  @State private var prototype = true
+  @State private var notes = true
+  @State private var copy = true
+  @State private var approved = true
+  @State private var shortlisted = true
+  @State private var acceptChanged = false
+  @State private var onlyCurrent = false
   var body: some View {
     VStack(alignment: .leading, spacing: 18) {
       Text("Export designer handoff").font(.title2)
