@@ -1,7 +1,7 @@
 name: Native Mac build
 on:
   push:
-    branches: [main, codex/native-workflow-fixes]
+    branches: [main, 'codex/**']
   pull_request:
     branches: [main]
   workflow_dispatch:
