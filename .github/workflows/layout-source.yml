@@ -1,0 +1,19 @@
+name: Layout repair source
+on:
+  push:
+    branches: [codex/slide-editing]
+    paths: ['.github/workflows/layout-source.yml']
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - run: git archive --format=tar HEAD > "$RUNNER_TEMP/source.tar"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: layout-repair-source
+          path: ${{ runner.temp }}/source.tar
+          retention-days: 3
