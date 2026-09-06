@@ -1,0 +1,36 @@
+name: Apply reviewed native polish
+on:
+  push:
+    branches: [codex/final-workflow-polish]
+    paths: ['.polish-transfer/**', '.github/workflows/apply-polish.yml']
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - name: Apply checksum-verified application patch
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64, hashlib, json, lzma, pathlib, shutil, subprocess
+          root = pathlib.Path('.polish-transfer')
+          manifest = json.loads((root/'manifest.json').read_text())
+          subprocess.run(['git','merge-base','--is-ancestor',manifest['base'],'HEAD'],check=True)
+          encoded = ''.join((root/f'part-{i}').read_text() for i in range(manifest['parts']))
+          patch = lzma.decompress(base64.b64decode(encoded,validate=True))
+          assert hashlib.sha256(patch).hexdigest() == manifest['patch_sha256'], 'Patch checksum mismatch'
+          args = ['--index','--unidiff-zero','--exclude=.github/workflows/*','-']
+          subprocess.run(['git','apply','--check',*args],input=patch,check=True)
+          subprocess.run(['git','apply',*args],input=patch,check=True)
+          shutil.rmtree(root)
+          PY
+          git config user.name 'Chattie Intern'
+          git config user.email 'hello@pitch.dog'
+          git add -A
+          git commit -m 'Polish native review, crop, document transitions and catalogue refresh for v0.1.3'
+          git push origin HEAD:codex/final-workflow-polish
