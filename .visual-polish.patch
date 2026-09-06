@@ -1,0 +1,137 @@
+diff --git a/apps/macos/Sources/NativeWorkbenchUI.swift b/apps/macos/Sources/NativeWorkbenchUI.swift
+index 5ddca114cf7da1d49c44b009fe2aa5f4a208ec08..07fca2fc0dbf8c21039c2d35ae686c25969460af 100644
+--- a/apps/macos/Sources/NativeWorkbenchUI.swift
++++ b/apps/macos/Sources/NativeWorkbenchUI.swift
+@@ -255,7 +255,7 @@
+   var body: some View {
+     VStack(spacing: 0) {
+       HStack(spacing: 10) {
+-        TextField("Search filenames and folders", text: $controller.query).textFieldStyle(
++        TextField("Search media", text: $controller.query).accessibilityLabel("Search filenames and folders").textFieldStyle(
+           .roundedBorder).focused($searchFocused)
+           .onChange(of: controller.searchRequest) { _, _ in searchFocused = true }
+           .onAppear { if controller.searchRequest > 0 { searchFocused = true } }
+@@ -265,7 +265,8 @@
+           Text("Shortlist").tag("shortlist")
+           Text("Chosen").tag("chosen")
+           Text("Rejected").tag("rejected")
+-        }.frame(width: 135)
++        }.labelsHidden().frame(width: 130).accessibilityLabel("Media collection")
++          .help("Show all media, shortlisted, chosen or rejected images")
+         Menu {
+           Button("Add Media Folder…") { controller.addMediaFolder() }
+           ForEach(controller.roots) { root in
+@@ -281,18 +282,12 @@
+           Label("Folders", systemImage: "folder.badge.plus")
+         }
+       }.padding(12)
+-      HStack {
+-        Text("\(controller.filteredAssets.count) media files").font(.caption).foregroundStyle(.secondary)
+-        Picker("Sort", selection: $controller.sortOrder) {
+-          Text("Filename").tag("filename")
+-          Text("Folder").tag("folder")
+-          Text("Recently modified").tag("modified")
+-        }.frame(maxWidth: 165).controlSize(.small)
+-        Spacer()
+-        if !controller.compareIDs.isEmpty {
+-          Button("Compare \(controller.compareIDs.count)") { controller.compareOpen = true }
+-        }
+-        Slider(value: $controller.gridSize, in: 100...240).frame(width: 110).help("Thumbnail size")
++      ViewThatFits(in: .horizontal) {
++        HStack(spacing: 8) { mediaCount; sortPicker; Spacer(minLength: 4); compareButton; thumbnailSize }
++        VStack(alignment: .leading, spacing: 8) {
++          HStack { mediaCount; Spacer(); compareButton }
++          HStack { sortPicker; Spacer(); thumbnailSize }
++        }
+       }.padding(.horizontal, 14).padding(.bottom, 8)
+       if controller.selectedRootID != nil || !controller.query.isEmpty || controller.collection != "all" {
+         HStack {
+@@ -327,6 +322,25 @@
+       Divider()
+       NativeCurateActions(controller: controller).padding(12)
+     }
++  }
++  private var mediaCount: some View {
++    Text("\(controller.filteredAssets.count) media files").font(.caption).foregroundStyle(.secondary).fixedSize()
++  }
++  private var sortPicker: some View {
++    Picker("Sort media", selection: $controller.sortOrder) {
++      Text("Filename").tag("filename")
++      Text("Folder").tag("folder")
++      Text("Newest first").tag("modified")
++    }.labelsHidden().frame(width: 130).controlSize(.small)
++      .help("Sort by filename, folder or modification date")
++  }
++  @ViewBuilder private var compareButton: some View {
++    if !controller.compareIDs.isEmpty {
++      Button("Compare \(controller.compareIDs.count)") { controller.compareOpen = true }.fixedSize()
++    }
++  }
++  private var thumbnailSize: some View {
++    Slider(value: $controller.gridSize, in: 100...240).frame(width: 100).help("Thumbnail size").accessibilityLabel("Thumbnail size")
+   }
+ }
+ struct NativeAssetTile: View {
+@@ -579,7 +593,7 @@
+         Button("Reset placement") { controller.resetPlacement() }.controlSize(.small)
+           .help("Restore this layout’s text region, image frames and gradient. Keep copy, crops, notes and candidates.")
+       }
+-      Button("Apply arrangement to other slides…") { controller.showApplyLayout = true }.controlSize(.small)
++      Button("Apply arrangement…") { controller.showApplyLayout = true }.help("Apply this layout to selected slides without changing their copy or image crops").controlSize(.small)
+       Picker("Adjust", selection: $controller.selectionTarget) {
+         if NativeSlideRenderer.resolvedPreset(slide: slide) != "image-only" { Text("Text region").tag("text") }
+         ForEach(slide.imageRoles, id: \.self) { Text("Image · \($0)").tag($0) }
+diff --git a/apps/macos/Sources/NativeSelfTest.swift b/apps/macos/Sources/NativeSelfTest.swift
+index aec31f4cd414b4a6f19510677f4c96d8b38e3255..52a3abb783721ed50c764311ba80aef90965673a 100644
+--- a/apps/macos/Sources/NativeSelfTest.swift
++++ b/apps/macos/Sources/NativeSelfTest.swift
+@@ -29,6 +29,7 @@
+ 
+ @MainActor
+ enum NativeAcceptance {
++  private static var captureMethods: [String: String] = [:]
+   static func require(_ condition: Bool, _ message: String) throws {
+     if !condition { throw WorkbenchFailure(name: "AcceptanceFailure", message: message) }
+   }
+@@ -337,6 +338,7 @@
+       "copyOnlyIndependent": true, "literalCopy": true, "safeFilenames": true, "thumbnailCache": true,
+       "nativeBurstAndSaveSeconds": inputAndSaveSeconds,
+       "manualAccessibility": "not performed", "targetMachinePerformance": "not measured",
++      "windowCaptures": captureMethods,
+       "issues": exported.issues,
+     ]
+     try JSONSerialization.data(withJSONObject: receipt, options: [.prettyPrinted, .sortedKeys])
+@@ -351,6 +353,23 @@
+     try await Task.sleep(for: .milliseconds(350))
+     guard let view = window.contentView else { throw WorkbenchFailure(name: "AcceptanceFailure", message: "No native window content") }
+     view.layoutSubtreeIfNeeded(); view.displayIfNeeded()
++    // Capture the compositor when available; NSView caching omits some native
++    // List/vibrancy layers. Never label a partial fallback as a full screenshot.
++    let number = window.windowNumber
++    let captured = await Task.detached(priority: .utility) {
++      let process = Process()
++      process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
++      process.arguments = ["-x", "-o", "-l", String(number), url.path]
++      process.standardOutput = FileHandle.nullDevice
++      process.standardError = FileHandle.nullDevice
++      do { try process.run(); process.waitUntilExit(); return process.terminationStatus == 0 }
++      catch { return false }
++    }.value
++    if captured, CGImageSourceCreateWithURL(url as CFURL, nil) != nil {
++      captureMethods[url.lastPathComponent] = "WindowServer"
++      return
++    }
++    captureMethods[url.lastPathComponent] = "partial NSView fallback"
+     guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
+       throw WorkbenchFailure(name: "AcceptanceFailure", message: "Native window capture failed")
+     }
+@@ -358,7 +377,8 @@
+     guard let data = bitmap.representation(using: .png, properties: [:]) else {
+       throw WorkbenchFailure(name: "AcceptanceFailure", message: "Native window image could not be written")
+     }
+-    try data.write(to: url)
++    let partial = url.deletingLastPathComponent().appendingPathComponent(url.deletingPathExtension().lastPathComponent + "-partial.png")
++    try data.write(to: partial)
+   }
+   private static func exerciseFinalPolish(_ controller: NativeWorkbenchController,
+     media: MediaCatalogSession, root: URL, window: NSWindow) async throws {
