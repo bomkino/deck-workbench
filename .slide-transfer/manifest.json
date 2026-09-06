@@ -1,0 +1,28 @@
+{
+  "base": "855852d20296e64df188f3268348e2a13864545f",
+  "patch_sha256": "ce1e41f57f0b7d2a1cb3fd8530c9d09cdaa0d8804a69dfe243209ec4f7d6fe1e",
+  "files": {
+    "README.md": "0fdb4b446ad6c03543f244eaaa5f5365635ae560b9aff4ec98a9dca62a6b4552",
+    "apps/macos/Info.plist": "89b4e246dd4bdc7d65e4863412184a6784685f5e5c256a1da94a5df0e6b021bf",
+    "apps/macos/Sources/NativeMain.swift": "bf0df997742e1fb01a8a376cec7416346977db8f99b951e59b995535074c0f70",
+    "apps/macos/Sources/NativeSelfTest.swift": "c5a0152e69b0ba0d528bc288ae3c8ed24051fc081282624336092e39c5e6d001",
+    "apps/macos/Sources/NativeShortcuts.swift": "96abcfb94bf347be267d54c6596d79b382ba9a748547298461e719737c149022",
+    "apps/macos/Sources/NativeSlideEditing.swift": "216aba109ef546f19afc6d757dd5a8eefadc92a1486b44566689f0ed0dafa646",
+    "apps/macos/Sources/NativeWorkbenchController.swift": "1c9ff502bd6488a0910aafb6b60f98f7dd4ce371912c41ff6c2ed9150f91dfa8",
+    "apps/macos/Sources/NativeWorkbenchUI.swift": "d83c017220288f4dfa9a549afbef572af9de88c794a26f0c30dc947bd9208966",
+    "apps/macos/Sources/NativeWorkflowPanels.swift": "5a1fcbcee838be8dd95b22fe29d3f90472ec1efdd753c566bbc974bdbe998166",
+    "docs/KNOWN_LIMITATIONS.md": "f6f142bc18631226b57924954e2564a04e6533a52f5fe0a36ffdb185f4300a3f",
+    "docs/MAC_APP.md": "25ba65ea3bf2cca8b22e594f0a779a6d7b72c27ba1fbedefc14ef607925f9e4e",
+    "docs/NATIVE_ARCHITECTURE.md": "271de1ac6cb3bd01719f36245e63a54343fb8982e8a9123e243101414dd35867",
+    "docs/RELEASE_NOTES.md": "42a9c5c4ba25b3f366b12804c16d06ec7c82d9d34df20cc23aea96a219e365f3",
+    "docs/implementation/SLIDE_EDITING_2026-09-06.md": "df56221a09c94bf7f42339e8545315384c4a5ac1e046ed5e56d1089ac5a6dcb5",
+    "docs/releases/v0.1.1.md": "9b0df4368a050db71de322cfac31120a28cc06e9326261676118f454538e0d86",
+    "package-lock.json": "97f1cf3027c907659f314bdbc6b7d2b882bc6f4b6269e307eec10baed11a3c2b",
+    "package.json": "57cd5be2cdcba163e24fad0cad9cee4b9c7360311a3da4396e54eeaecaa6316d",
+    "packages/deck-kernel/src/deck-kernel.ts": "f3d7715e1dad97c7b1171fce95d8513fb27bf2578e174ef0277b08b564d4a49d",
+    "packages/deck-kernel/src/native-kernel.ts": "da984f1df489b07a67082123b18366375dacb9ace2abfa85ea128b7e1303b89c",
+    "scripts/publish-native-release.sh": "0dce0a6d8fdd02979710d606e8e58467f14f5eb97314d24999cc50c9b62b970f",
+    "scripts/verify-native-package.sh": "b37668ab44cd6663809c7a1156b871c2cc9732463d16e665c2fc19080c2fd828",
+    "tests/native-handoff-kernel.test.mjs": "64190e90c7ef9d134f96df0b05aeacbd88c1e40f0a265ca621784ab7246cb75b"
+  }
+}

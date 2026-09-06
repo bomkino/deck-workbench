@@ -1,0 +1,43 @@
+name: Apply slide editing patch
+on:
+  push:
+    branches: [codex/slide-editing]
+    paths: ['.slide-transfer/**', '.github/workflows/apply-slide-editing.yml']
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - name: Apply exact patch without editing workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64, hashlib, json, lzma, pathlib, shutil, subprocess
+          root = pathlib.Path('.slide-transfer')
+          manifest = json.loads((root/'manifest.json').read_text())
+          subprocess.run(['git','merge-base','--is-ancestor',manifest['base'],'HEAD'],check=True)
+          encoded = ''.join((root/f'part-{i}').read_text() for i in range(4))
+          patch = lzma.decompress(base64.b64decode(encoded,validate=True))
+          assert hashlib.sha256(patch).hexdigest() == manifest['patch_sha256'], 'Patch checksum mismatch'
+          assert all(not name.startswith('.github/workflows/') for name in manifest['files'])
+          args = ['--index','--unidiff-zero','--exclude=.github/workflows/*','-']
+          subprocess.run(['git','apply','--check',*args],input=patch,check=True)
+          subprocess.run(['git','apply',*args],input=patch,check=True)
+          for name, digest in manifest['files'].items():
+              path=pathlib.Path(name)
+              actual=hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else None
+              assert actual == digest, name
+          shutil.rmtree(root)
+          PY
+          git config user.name 'Chattie Intern'
+          git config user.email 'hello@pitch.dog'
+          git add -A
+          git diff --cached --check
+          git commit -m 'Restore native slide management and safe copy editing for v0.1.2'
+          git push origin HEAD:codex/slide-editing
