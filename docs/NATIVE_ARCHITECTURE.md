@@ -1,4 +1,4 @@
-# Active native architecture — v0.1.2
+# Active native architecture — v0.1.3
 
 NativeWorkbenchUI, NativeWorkflowPanels, NativeCanvas and NativeShortcuts are the Mac surfaces. NativeWorkbenchController owns transient selection, drafts, filters, indexed projections and a serial captured-intention queue. NativeDocumentSession owns the document kernel and durable store actor. JavaScriptCore hosts the TypeScript-derived internal kernel without a browser. PitchDeckDocumentStore retains checkpoints, journal/replay, schema compatibility and safe recovery.
 

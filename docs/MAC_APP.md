@@ -1,4 +1,4 @@
-# Mac workflow — v0.1.2
+# Mac workflow — v0.1.3
 
 ## Intake and copy
 

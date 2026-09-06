@@ -1,0 +1,33 @@
+name: Correct crop journey precondition
+on:
+  push:
+    branches: [codex/final-workflow-polish]
+    paths: ['.github/workflows/correct-crop-journey.yml']
+permissions:
+  contents: write
+jobs:
+  correct:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Exercise both Fit and Fill without changing their semantics
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          p=Path('apps/macos/Sources/NativeSelfTest.swift')
+          assert hashlib.sha256(p.read_bytes()).hexdigest()=='671b88faf9edfd69e3ec779eb82e7eef46bd082513f92feff8fac21b1290052c', 'Source changed; refusing blind replacement'
+          s=p.read_text()
+          old='    controller.zoomCrop(2, role: "primary", slideID: ids[0]); await controller.flush()\n    try require(abs((controller.cropZoom(for: "primary") ?? 0) - 2) < 0.001, "Crop zoom does not resolve at the requested scale")'
+          new='    // Fit must remain whole-image; zoom only applies after the user selects Fill / crop.\n    let fitRevision = controller.document!.revision\n    controller.zoomCrop(2, role: "primary", slideID: ids[0]); await controller.flush()\n    try require(layer.fit == "fit" && controller.cropZoom(for: "primary") == nil && controller.document!.revision == fitRevision, "Zoom changed an image in whole-image Fit mode")\n    controller.patchLayout(["imageFits": ["primary": "fill"]]); await controller.flush()\n    controller.zoomCrop(2, role: "primary", slideID: ids[0]); await controller.flush()\n    try require(abs((controller.cropZoom(for: "primary") ?? 0) - 2) < 0.001, "Crop zoom does not resolve at the requested scale")'
+          assert s.count(old)==1
+          p.write_text(s.replace(old,new))
+          assert hashlib.sha256(p.read_bytes()).hexdigest()=='2dc9f16666aeb07da4e7b8f7c0417fb67f3f5c85cbedace3814a74bd56309ce3'
+          PY
+          git config user.name 'Chattie Intern'
+          git config user.email 'hello@pitch.dog'
+          git add apps/macos/Sources/NativeSelfTest.swift
+          git commit -m 'Exercise crop zoom in Fill mode and prove whole-image Fit remains unchanged'
+          git push origin HEAD:codex/final-workflow-polish
