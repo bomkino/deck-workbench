@@ -139,32 +139,65 @@ enum NativeSlideRenderer {
     let blocks = slide.copyBlocks.filter { !$0.text.isEmpty }
     let unitScale = min(canvas.width / 2576, canvas.height / 1080)
     let targetSize = layout.bodySize * unitScale
-    var result = flow(blocks: blocks, region: region, columns: layout.columns, bodySize: targetSize)
-    var chosenSize = targetSize
-    if result.overflow > 0 && layout.fitCopy {
-      var low = min(20 * unitScale, targetSize)
-      var high = targetSize
-      var lowResult = flow(blocks: blocks, region: region, columns: layout.columns, bodySize: low)
-      if lowResult.overflow == 0 {
-        for _ in 0..<8 {
-          let mid = (low + high) / 2
-          let attempt = flow(blocks: blocks, region: region, columns: layout.columns, bodySize: mid)
-          if attempt.overflow == 0 {
-            low = mid
-            lowResult = attempt
-          } else {
-            high = mid
+    let key = TextLayoutKey(blocks: blocks, width: region.width, height: region.height,
+      columns: layout.columns, targetSize: targetSize, minimumSize: min(20 * unitScale, targetSize), fit: layout.fitCopy)
+    let encodedKey = (try? nativeJSON(key)).map { $0 as NSData }
+    let cached: CachedTextLayout
+    if let encodedKey, let hit = textLayoutCache.object(forKey: encodedKey) { cached = hit }
+    else {
+      let localRegion = CGRect(origin: .zero, size: region.size)
+      var result = flow(blocks: blocks, region: localRegion, columns: layout.columns, bodySize: targetSize)
+      var chosenSize = targetSize
+      if result.overflow > 0 && layout.fitCopy {
+        var low = key.minimumSize, high = targetSize
+        var lowResult = flow(blocks: blocks, region: localRegion, columns: layout.columns, bodySize: low)
+        if lowResult.overflow == 0 {
+          for _ in 0..<8 {
+            let mid = (low + high) / 2
+            let attempt = flow(blocks: blocks, region: localRegion, columns: layout.columns, bodySize: mid)
+            if attempt.overflow == 0 { low = mid; lowResult = attempt }
+            else { high = mid }
           }
         }
+        result = lowResult; chosenSize = low
       }
-      result = lowResult
-      chosenSize = low
+      cached = CachedTextLayout(placements: result.placements, overflow: result.overflow, size: chosenSize)
+      if let encodedKey {
+        textLayoutCache.setObject(cached, forKey: encodedKey,
+          cost: encodedKey.length + blocks.reduce(0) { $0 + $1.text.utf16.count * 48 })
+      }
     }
-    scene.texts = result.placements
-    scene.overflowCharacters = result.overflow
-    scene.effectiveBodySize = chosenSize / max(unitScale, 0.001)
+    scene.texts = cached.placements.map {
+      PrototypeTextPlacement(frame: $0.frame.offsetBy(dx: region.minX, dy: region.minY),
+        content: $0.content, textFrame: $0.textFrame, visible: $0.visible)
+    }
+    scene.overflowCharacters = cached.overflow
+    scene.effectiveBodySize = cached.size / max(unitScale, 0.001)
     return scene
   }
+  private struct TextLayoutKey: Encodable {
+    let blocks: [DeckCopyBlock]
+    let width: Double
+    let height: Double
+    let columns: Int
+    let targetSize: Double
+    let minimumSize: Double
+    let fit: Bool
+  }
+  private final class CachedTextLayout {
+    let placements: [PrototypeTextPlacement]
+    let overflow: Int
+    let size: Double
+    init(placements: [PrototypeTextPlacement], overflow: Int, size: Double) {
+      self.placements = placements; self.overflow = overflow; self.size = size
+    }
+  }
+  private static let textLayoutCache: NSCache<NSData, CachedTextLayout> = {
+    let cache = NSCache<NSData, CachedTextLayout>()
+    cache.countLimit = 48
+    cache.totalCostLimit = 8 * 1024 * 1024
+    return cache
+  }()
   private static func flow(blocks: [DeckCopyBlock], region: CGRect, columns: Int, bodySize: Double)
     -> (placements: [PrototypeTextPlacement], overflow: Int)
   {
@@ -258,7 +291,8 @@ enum NativeSlideRenderer {
   }
   /// Both AppKit and PDF contexts call this same top-left canvas transform.
   static func draw(
-    _ scene: ResolvedPrototype, in context: CGContext, rect: CGRect, images: [String: CGImage]
+    _ scene: ResolvedPrototype, in context: CGContext, rect: CGRect, images: [String: CGImage],
+    rasterizeGradient: Bool = true
   ) {
     context.saveGState()
     defer { context.restoreGState() }
@@ -272,17 +306,23 @@ enum NativeSlideRenderer {
       guard let id = layer.assetID, let image = images[id] else { continue }
       drawImage(image, layer: layer, context: context)
     }
-    if let gradient = scene.gradient,
-      let overlay = gradientImage(gradient, size: scene.gradientFrame.size)
-    {
-      // Quartz PDF axial shadings omit varying alpha. Rasterize only this
-      // overlay, not the source image or selectable text, for screen/PDF parity.
+    if let gradient = scene.gradient {
       let frame = scene.gradientFrame
       context.saveGState()
       context.clip(to: frame)
-      context.translateBy(x: frame.minX, y: frame.maxY)
-      context.scaleBy(x: 1, y: -1)
-      context.draw(overlay, in: CGRect(origin: .zero, size: frame.size))
+      if !rasterizeGradient, let fill = gradientFill(gradient) {
+        // Interactive drags draw directly; no multi-megapixel bitmap per event.
+        context.drawLinearGradient(fill,
+          start: CGPoint(x: frame.minX + gradient.start.x * frame.width, y: frame.minY + gradient.start.y * frame.height),
+          end: CGPoint(x: frame.minX + gradient.end.x * frame.width, y: frame.minY + gradient.end.y * frame.height),
+          options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
+      } else if let overlay = gradientImage(gradient, size: frame.size) {
+        // PDF axial shadings omit varying alpha. Keep the tested raster overlay
+        // for PDF only; original images and selectable text remain separate.
+        context.translateBy(x: frame.minX, y: frame.maxY)
+        context.scaleBy(x: 1, y: -1)
+        context.draw(overlay, in: CGRect(origin: .zero, size: frame.size))
+      }
       context.restoreGState()
     }
     for item in scene.texts { drawText(item, context: context) }
@@ -293,6 +333,12 @@ enum NativeSlideRenderer {
     cache.countLimit = 24
     return cache
   }()
+  private static func gradientFill(_ gradient: PrototypeGradient) -> CGGradient? {
+    CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+      colors: [color(gradient.colors?.start ?? "#000000", alpha: gradient.opacity),
+               color(gradient.colors?.end ?? "#000000", alpha: 0)] as CFArray,
+      locations: [0, 1])
+  }
   private static func gradientImage(_ gradient: PrototypeGradient, size: CGSize) -> CGImage? {
     guard size.width > 0, size.height > 0 else { return nil }
     let scale = min(1, 2048 / max(size.width, size.height))
@@ -305,9 +351,7 @@ enum NativeSlideRenderer {
     guard let bitmap = CGContext(data: nil, width: width, height: height,
       bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
-      let fill = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-        colors: [color(startColor, alpha: gradient.opacity), color(endColor, alpha: 0)] as CFArray,
-        locations: [0, 1]) else { return nil }
+      let fill = gradientFill(gradient) else { return nil }
     bitmap.translateBy(x: 0, y: CGFloat(height))
     bitmap.scaleBy(x: 1, y: -1)
     bitmap.drawLinearGradient(fill,

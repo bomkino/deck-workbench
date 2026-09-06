@@ -494,8 +494,6 @@ struct NativeAssembleView: View {
   var body: some View {
     VStack(spacing: 0) {
       HStack {
-        Text(controller.selectedSlide?.title ?? "").font(.headline).lineLimit(1)
-        Spacer()
         Toggle("Guides", isOn: $controller.showGuides).toggleStyle(.button)
         Toggle("Clean preview", isOn: $controller.cleanPreview).toggleStyle(.button)
         Button("Fit") { controller.fitCanvas() }
@@ -547,12 +545,16 @@ struct NativeAssemblyInspector: View {
           editingSize = editing
           if !editing { controller.patchLayout(["bodySize": bodySize]) }
         })
-      }.disabled(slide.settings.layout.preset == "legacy")
+      }.disabled(slide.settings.layout.preset == "legacy" || NativeSlideRenderer.resolvedPreset(slide: slide) == "image-only")
+      if slide.settings.layout.preset != "legacy" {
+        Button("Reset placement") { controller.resetPlacement() }.controlSize(.small)
+          .help("Restore this layout’s text region, image frames and gradient. Keep copy, crops, notes and candidates.")
+      }
       Button("Apply arrangement to other slides…") { controller.showApplyLayout = true }.controlSize(.small)
       Picker("Adjust", selection: $controller.selectionTarget) {
-        Text("Text region").tag("text")
+        if NativeSlideRenderer.resolvedPreset(slide: slide) != "image-only" { Text("Text region").tag("text") }
         ForEach(slide.imageRoles, id: \.self) { Text("Image · \($0)").tag($0) }
-        Text("Gradient").tag("gradient")
+        if controller.resolvedScene?.gradient != nil { Text("Gradient").tag("gradient") }
       }
       if controller.selectionTarget == "gradient" {
         HStack {

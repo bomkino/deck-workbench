@@ -61,3 +61,11 @@ Each completed component can survive an independent component error. The result 
 Open original decks from duplicates during migration. Recover Saved Copy creates a separate recovered package. Save Pending Actions exports the unresolved command queue; Restore Pending Actions checks deck identity, payload bounds, command vocabulary and IDs before asking to replay. Duplicate acknowledged IDs are deduplicated. Never restore another deck's actions into the current one.
 
 This is local single-writer work, not simultaneous collaborative editing. Preserve the original if storage reports corruption or an uncertain write.
+
+## Layout finishing
+
+A new layout restores its default text/image placement and gradient direction while keeping existing crops. **Reset placement** repeats that reset for the current layout; Undo restores it. Apply Arrangement copies custom image frames as well as the text region, columns and gradient, without overwriting the destination's image crops or writing.
+
+Arrow keys nudge the selected visible region or gradient; Shift uses a larger step. Frame movement stays inside the canvas. Guides snap to both sides of each column/row, including the right and bottom margins. Image-only layouts do not offer invisible text controls. With **Fit whole image**, switch to **Fill / crop** before panning the crop; Command-drag still moves the frame.
+
+The screen draws live gradients directly. PDFs retain the alpha-safe overlay export so gradients cannot hide source images. Unchanged text layout is reused while images, gradients or text position change.

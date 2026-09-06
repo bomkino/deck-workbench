@@ -195,6 +195,7 @@ enum NativeAcceptance {
     await controller.flush()
     try require(controller.failedCommands.isEmpty && controller.notes == "Valid action after rejected layout", "A validation rejection blocked later valid actions")
     controller.failure = nil
+    try await exerciseLayoutFinishing(controller)
     try await exerciseSlideEditing(controller)
     controller.setNotes("A final pending note — flushed before handoff.")
     await controller.flush()
@@ -316,6 +317,8 @@ enum NativeAcceptance {
       "copyComplete": true, "previewScope": true, "shortlistIndependent": true, "reopen": true,
       "savedCopyRecovery": true, "uiIndependentPDF": true, "imageVisibleInPDF": true, "nativeKeyEvents": true,
       "slideManagement": true, "copyEditorTarget": true, "editedCopyHandoff": true,
+      "layoutFrameCopy": true, "layoutResetUndo": true, "textLayoutReused": true,
+      "gradientScreenExportParity": true, "visibleLayoutTargets": true,
       "layoutPicker": true, "perImageEdits": true, "notesUndo": true, "validationDoesNotFence": true,
       "copyOnlyIndependent": true, "literalCopy": true, "safeFilenames": true, "thumbnailCache": true,
       "nativeBurstAndSaveSeconds": inputAndSaveSeconds,
@@ -328,6 +331,81 @@ enum NativeAcceptance {
       "Native acceptance: 20-slide handoff, copy, media, keyboard decisions, undo, reopen, saved-copy recovery, UI-independent PDF."
     )
     window.orderOut(nil)
+  }
+  private static func exerciseLayoutFinishing(_ controller: NativeWorkbenchController) async throws {
+    let ids = controller.slides.map(\.id)
+    guard ids.count > 1, let canvas = controller.document?.deck.canvasPreset else { return }
+    controller.selectSlide(ids[0])
+    let original = controller.selectedSlide!
+    let destination = controller.slideIndex[ids[1]]!
+    let startRevision = controller.document!.revision
+    controller.chooseLayout("two-images")
+    await controller.flush()
+    let custom = PrototypeFrame(x: 96, y: 64, width: 940, height: 640)
+    controller.patchLayout(["frames": ["primary": try nativeObject(custom)]])
+    await controller.flush()
+    controller.applyArrangement(to: [ids[1]])
+    await controller.flush()
+    try require(controller.slideIndex[ids[1]]?.settings.layout.frames["primary"] == custom, "Apply Arrangement lost custom image frames")
+    try require(controller.slideIndex[ids[1]]?.settings.layout.crops == destination.settings.layout.crops, "Apply Arrangement changed destination crops")
+    let mutations = controller.document!.revision - startRevision
+    for _ in 0..<mutations { controller.undo(documentOnly: true); await controller.flush() }
+    try require(try nativeJSON(controller.selectedSlide!.settings) == nativeJSON(original.settings), "Undo did not restore the original arrangement")
+    let beforeReset = controller.document!.revision
+    controller.chooseLayout("left"); await controller.flush()
+    let resetCount = controller.document!.revision - beforeReset
+    var gradient = PrototypeGradient(); gradient.opacity = 0.43
+    controller.patchLayout(["gradient": try nativeObject(gradient)]); await controller.flush()
+    controller.chooseLayout("right"); await controller.flush()
+    try require(controller.resolvedScene?.gradient?.start.x == 1, "A new layout kept the previous gradient direction")
+    controller.undo(documentOnly: true); await controller.flush()
+    try require(controller.resolvedScene?.gradient?.opacity == 0.43, "Undo lost the authored gradient")
+    controller.undo(documentOnly: true); await controller.flush()
+    for _ in 0..<resetCount { controller.undo(documentOnly: true); await controller.flush() }
+    try require(try nativeJSON(controller.selectedSlide!.settings) == nativeJSON(original.settings), "Layout reset changed unrelated saved settings")
+    try require(NativeLayoutGeometry.xGuides(canvas).contains(2480) && NativeLayoutGeometry.yGuides(canvas).contains(1016), "Guides lost the right or bottom margin")
+    var value = original
+    value.native?.layout.preset = "left"
+    value.native?.layout.textFrame = PrototypeFrame(x: 96, y: 64, width: 1184, height: 952)
+    let before = NativeSlideRenderer.resolve(slide: value, canvas: canvas)
+    value.native?.layout.textFrame?.x += 50
+    value.native?.layout.gradient = gradient
+    let shifted = NativeSlideRenderer.resolve(slide: value, canvas: canvas)
+    try require(!before.texts.isEmpty && !shifted.texts.isEmpty, "Missing text for layout cache check")
+    try require(before.texts[0].textFrame === shifted.texts[0].textFrame && shifted.texts[0].frame.minX == before.texts[0].frame.minX + 50,
+      "Translation or gradient adjustment re-typeset unchanged copy")
+    value.native?.layout.preset = "image-only"
+    try require(!NativeLayoutGeometry.hasText(NativeSlideRenderer.resolve(slide: value, canvas: canvas)), "Image-only layout has an invisible text target")
+    value.native?.layout.preset = "left"
+    for i in value.contentBlocks.indices where !value.contentBlocks[i].isMetadata { value.contentBlocks[i].setText("") }
+    try require(!NativeLayoutGeometry.hasText(NativeSlideRenderer.resolve(slide: value, canvas: canvas)), "Blank copy has an invisible text target")
+    try compareScreenAndExportGradient(before)
+  }
+  private static func compareScreenAndExportGradient(_ scene: ResolvedPrototype) throws {
+    let width = 644, height = 270
+    func draw(_ raster: Bool) throws -> Data {
+      guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+        bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+      else { throw WorkbenchFailure(name: "AcceptanceFailure", message: "Gradient comparison could not allocate bitmap") }
+      guard let source = CGContext(data: nil, width: 16, height: 16, bitsPerComponent: 8,
+        bytesPerRow: 64, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+        throw WorkbenchFailure(name: "AcceptanceFailure", message: "Missing gradient reference image")
+      }
+      source.setFillColor(CGColor(red: 0.85, green: 0.4, blue: 0.15, alpha: 1))
+      source.fill(CGRect(x: 0, y: 0, width: 16, height: 16))
+      let image = source.makeImage()!
+      let images = Dictionary(uniqueKeysWithValues: scene.imageLayers.compactMap { layer -> (String, CGImage)? in
+        guard let id = layer.assetID else { return nil }; return (id, image)
+      })
+      NativeSlideRenderer.draw(scene, in: context, rect: CGRect(x: 0, y: 0, width: width, height: height), images: images, rasterizeGradient: raster)
+      guard let pixels = context.makeImage()?.dataProvider?.data else {
+        throw WorkbenchFailure(name: "AcceptanceFailure", message: "Gradient comparison has no pixels")
+      }
+      return pixels as Data
+    }
+    let screen = try draw(false), exported = try draw(true)
+    let total = zip(screen, exported).reduce(0) { $0 + abs(Int($1.0) - Int($1.1)) }
+    try require(Double(total) / Double(screen.count) < 2, "Interactive and exported gradients disagree")
   }
   private static func exerciseSlideEditing(_ controller: NativeWorkbenchController) async throws {
     let originalIDs = controller.slides.map(\.id)

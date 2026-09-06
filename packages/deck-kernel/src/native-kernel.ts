@@ -164,7 +164,13 @@ function prepareNativeCommand(deck: DeckSnapshot, command: CommandEnvelope): Nat
     const forward: HistoryOperation[] = [], inverse: HistoryOperation[] = []
     let firstMutation: NativeMutation | undefined
     for (const slideId of ids) {
-      const m = prepareNativeCommand(deck, { ...command, type: 'native.slide.patch', payload: { slideId, patch: { layout } } })
+      const destination = findSlide(deck, assertIdentity(slideId, 'slideId', 256))
+      if (!destination) throw new Error('The destination slide no longer exists')
+      const patch = clone(layout)
+      if (patch.frames !== undefined && patch.frames !== null) {
+        patch.frames = { ...Object.fromEntries(Object.keys(nativeState(deck, destination).layout.frames).map((role) => [role, null])), ...assertRecord(patch.frames, 'frames') }
+      }
+      const m = prepareNativeCommand(deck, { ...command, type: 'native.slide.patch', payload: { slideId, patch: { layout: patch } } })
       firstMutation ??= m
       if (!m.noop) appendOperationPair(forward, inverse, m.forward, m.inverse)
     }
@@ -276,8 +282,21 @@ function prepareNativeCommand(deck: DeckSnapshot, command: CommandEnvelope): Nat
   }
   if (command.type === 'native.nudge') {
     const target = assertIdentity(command.payload.target, 'target', 512)
+    const dx = nativeNumber(command.payload.dx, 'dx', -10000, 10000), dy = nativeNumber(command.payload.dy, 'dy', -10000, 10000)
+    if (target === 'gradient') {
+      const frame = assertElementFrame(command.payload.frame)
+      const gradient = clone(state.layout.gradient ?? assertElementGradient(command.payload.gradient))
+      const x = Math.min(1 - Math.max(gradient.start.x, gradient.end.x), Math.max(-Math.min(gradient.start.x, gradient.end.x), dx / frame.width))
+      const y = Math.min(1 - Math.max(gradient.start.y, gradient.end.y), Math.max(-Math.min(gradient.start.y, gradient.end.y), dy / frame.height))
+      gradient.start.x += x; gradient.end.x += x; gradient.start.y += y; gradient.end.y += y
+      state.layout.gradient = gradient
+      return nativeMutation(deck, slide, state, 'Nudge gradient')
+    }
+    if (target !== 'text' && !nativeImageRoles(slide, state).includes(target)) throw new Error('Choose a visible element to nudge')
     const frame = clone((target === 'text' ? state.layout.textFrame : state.layout.frames[target]) ?? assertElementFrame(command.payload.frame))
-    frame.x += nativeNumber(command.payload.dx, 'dx', -10000, 10000); frame.y += nativeNumber(command.payload.dy, 'dy', -10000, 10000)
+    const maxX = deck.canvasPreset.width - frame.width, maxY = deck.canvasPreset.height - frame.height
+    frame.x = Math.min(Math.max(0, maxX), Math.max(Math.min(0, maxX), frame.x + dx))
+    frame.y = Math.min(Math.max(0, maxY), Math.max(Math.min(0, maxY), frame.y + dy))
     if (target === 'text') state.layout.textFrame = frame; else state.layout.frames[target] = frame
     return nativeMutation(deck, slide, state, 'Nudge prototype')
   }

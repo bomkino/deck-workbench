@@ -20,7 +20,7 @@ final class PrototypeCanvasView: NSView {
   private var images: [String: CGImage] = [:]
   private var imageKeys: [String: String] = [:]
   private var imageTasks: [String: Task<Void, Never>] = [:]
-  private var sceneKey = ""
+  private var sceneKey = -1
   private var viewportRevision = -1
   private var currentDeckID: String?
   private var artboard = CGRect.zero
@@ -56,25 +56,18 @@ final class PrototypeCanvasView: NSView {
     else {
       self.slide = nil
       scene = nil
-      sceneKey = ""
+      sceneKey = -1
       for task in imageTasks.values { task.cancel() }
       imageTasks = [:]; imageKeys = [:]; images = [:]
       needsDisplay = true
       return
     }
-    var hasher = Hasher()
-    hasher.combine(slide.id)
-    hasher.combine(try? nativeJSON(slide.settings.layout))
-    hasher.combine(try? nativeJSON(slide.copyBlocks))
-    hasher.combine(try? nativeJSON(slide.mediaAssignments))
-    hasher.combine(canvas.width)
-    hasher.combine(canvas.height)
-    let key = String(hasher.finalize())
-    if key != sceneKey {
-      sceneKey = key
+    let resolved = controller.resolvedScene
+    if sceneKey != controller.sceneGeneration {
+      sceneKey = controller.sceneGeneration
       self.slide = slide
       self.canvas = canvas
-      scene = controller.resolvedScene
+      scene = resolved
       if gesture?.slideID != slide.id { cancelGesture() }
     }
     for id in slide.chosenIDs {
@@ -142,7 +135,7 @@ final class PrototypeCanvasView: NSView {
       }
     }
     if let gradient = previewGradient { scene.gradient = gradient }
-    NativeSlideRenderer.draw(scene, in: context, rect: artboard, images: images)
+    NativeSlideRenderer.draw(scene, in: context, rect: artboard, images: images, rasterizeGradient: false)
     context.saveGState()
     defer { context.restoreGState() }
     context.clip(to: bounds)
@@ -152,17 +145,11 @@ final class PrototypeCanvasView: NSView {
       context.setLineWidth(0.5)
       let sx = scene.canvas.width / 2576
       let sy = scene.canvas.height / 1080
-      for col in 0...24 {
-        let x = 96 + Double(col) * 100 - (col == 24 ? 16 : 0)
-        line(
-          from: CGPoint(x: x * sx, y: 64 * sy), to: CGPoint(x: x * sx, y: 1016 * sy),
-          context: context)
+      for x in NativeLayoutGeometry.xGuides(scene.canvas) {
+        line(from: CGPoint(x: x, y: 64 * sy), to: CGPoint(x: x, y: 1016 * sy), context: context)
       }
-      for row in 0...12 {
-        let y = 64 + Double(row) * 80 - (row == 12 ? 8 : 0)
-        line(
-          from: CGPoint(x: 96 * sx, y: y * sy), to: CGPoint(x: 2480 * sx, y: y * sy),
-          context: context)
+      for y in NativeLayoutGeometry.yGuides(scene.canvas) {
+        line(from: CGPoint(x: 96 * sx, y: y), to: CGPoint(x: 2480 * sx, y: y), context: context)
       }
     }
     context.setStrokeColor(NSColor.controlAccentColor.cgColor)
@@ -182,7 +169,7 @@ final class PrototypeCanvasView: NSView {
         controller.selectionTarget == "text"
         ? scene.textRegion
         : scene.imageLayers.first { $0.role == controller.selectionTarget }?.frame
-      if let selected {
+      if let selected, controller.selectionTarget != "text" || NativeLayoutGeometry.hasText(scene) {
         context.stroke(viewRect(selected))
         drawHandle(viewPoint(CGPoint(x: selected.maxX, y: selected.maxY)), context: context)
       }
@@ -246,12 +233,23 @@ final class PrototypeCanvasView: NSView {
       gesture = (slide.id, deckID, "gradient", mode, point, f, .full, gradient)
       return
     }
+    let hasText = NativeLayoutGeometry.hasText(scene)
+    let selectedFrame = controller.selectionTarget == "text"
+      ? (hasText ? scene.textRegion : nil)
+      : scene.imageLayers.first { $0.role == controller.selectionTarget }?.frame
+    // Handles have a fixed screen-space hit area even when zoomed out.
+    let selectedHandleHit = selectedFrame.map {
+      let handle = viewPoint(CGPoint(x: $0.maxX, y: $0.maxY))
+      return hypot(view.x - handle.x, view.y - handle.y) < 16
+    } ?? false
     let target: String
-    if controller.selectionTarget == "text"
-      && scene.textRegion.insetBy(dx: -8, dy: -8).contains(point)
+    if selectedHandleHit { target = controller.selectionTarget }
+    else if hasText && controller.selectionTarget == "text"
+      && scene.textRegion.contains(point) && !event.modifierFlags.contains(.option)
+      && !event.modifierFlags.contains(.command)
     {
       target = "text"
-    } else if scene.textRegion.contains(point) && !event.modifierFlags.contains(.option)
+    } else if hasText && scene.textRegion.contains(point) && !event.modifierFlags.contains(.option)
       && !event.modifierFlags.contains(.command)
     {
       target = "text"
@@ -269,6 +267,10 @@ final class PrototypeCanvasView: NSView {
     let mode =
       resize
       ? "resize" : target == "text" || event.modifierFlags.contains(.command) ? "move" : "crop"
+    if mode == "crop" && layer?.fit == "fit" {
+      controller.status = "The whole image is fitted. Choose Fill / crop to pan it, or Command-drag to move its frame."
+      return
+    }
     var crop = layer?.crop ?? .full
     if mode == "crop", let id = layer?.assetID, let image = images[id] {
       let placement = NativeSlideRenderer.imageRect(
@@ -319,6 +321,8 @@ final class PrototypeCanvasView: NSView {
         g.start.y += y
         g.end.y += y
       }
+      // Keep endpoints distinct; collapsing them would create an invalid saved gradient.
+      guard hypot((g.end.x - g.start.x) * gesture.frame.width, (g.end.y - g.start.y) * gesture.frame.height) >= 1 else { return }
       previewGradient = g
     } else {
       var f = gesture.frame
@@ -330,8 +334,8 @@ final class PrototypeCanvasView: NSView {
         f.origin.y = min(canvas.height - f.height, max(0, f.minY + dy))
       }
       if controller?.showGuides == true && !event.modifierFlags.contains(.option) {
-        let xs = (0..<24).map { (96 + Double($0) * 100) * canvas.width / 2576 }
-        let ys = (0..<12).map { (64 + Double($0) * 80) * canvas.height / 1080 }
+        let xs = NativeLayoutGeometry.xGuides(canvas)
+        let ys = NativeLayoutGeometry.yGuides(canvas)
         let tolerance = 6 * canvas.width / max(artboard.width, 1)
         let edgeX = gesture.mode == "resize" ? f.maxX : f.minX
         let edgeY = gesture.mode == "resize" ? f.maxY : f.minY

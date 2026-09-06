@@ -134,3 +134,41 @@ test('stale copy edits reject atomically; unchanged edits do not add history', (
   assert.equal(send(s,'native.copy.replace',{slides:[{slideId:'slide',blocks:changed,expectedBlocks:changed}]}).duplicate,true)
   assert.equal(s.checkpoint.revision,revision)
 })
+
+
+test('keyboard movement stays on canvas and normalized gradient nudges accumulate', () => {
+  const s=session(), canvas=s.checkpoint.deck.canvasPreset
+  const frame={x:10,y:12,width:500,height:300}
+  const nudge=(target,dx,dy,extra={})=>send(s,'native.nudge',{slideId:'slide',target,frame,dx,dy,...extra})
+  nudge('text',-1000,-1000)
+  assert.equal(slide(s).native.layout.textFrame.x,0)
+  assert.equal(slide(s).native.layout.textFrame.y,0)
+  nudge('text',10000,10000)
+  assert.equal(slide(s).native.layout.textFrame.x,canvas.width-500)
+  assert.equal(slide(s).native.layout.textFrame.y,canvas.height-300)
+  const revision=s.checkpoint.revision
+  nudge('text',1,1)
+  assert.equal(s.checkpoint.revision,revision)
+  const gradient={type:'linear',start:{x:0,y:0.5},end:{x:0.72,y:0.5},opacity:0.78}
+  for(let i=0;i<5;i++) nudge('gradient',10,0,{gradient})
+  assert(Math.abs(slide(s).native.layout.gradient.start.x-0.1)<1e-10)
+  assert(Math.abs(slide(s).native.layout.gradient.end.x-0.82)<1e-10)
+  nudge('gradient',10000,0,{gradient})
+  assert.equal(slide(s).native.layout.gradient.end.x,1)
+  const saved=plain(slide(s).native.layout)
+  assert.deepEqual(plain(slide(k.open(plain(k.serializeSession(s))))).native.layout,saved)
+  history(s); assert(slide(s).native.layout.gradient.end.x<1)
+})
+
+test('apply arrangement copies custom frames but preserves target crops and is one undo', () => {
+  const s=session(), crop={x:.1,y:.1,width:.8,height:.8}
+  send(s,'native.slide.patch',{slideId:'slide',patch:{layout:{preset:'two-images',frames:{primary:{x:8,y:9,width:600,height:400},'primary:2':{x:700,y:9,width:600,height:400}},crops:{primary:crop}}}})
+  const before=plain(slide(s).native)
+  const custom={primary:{x:96,y:64,width:940,height:660},'primary:2':{x:1200,y:64,width:940,height:660}}
+  send(s,'native.layout.apply',{slideIds:['slide'],layout:{preset:'two-images',frames:custom}})
+  assert.deepEqual(plain(slide(s).native.layout.frames),custom)
+  assert.deepEqual(plain(slide(s).native.layout.crops.primary),crop)
+  history(s);assert.deepEqual(plain(slide(s).native),before)
+  history(s,true)
+  assert.deepEqual(plain(slide(k.open(plain(k.serializeSession(s))))).native.layout.frames,custom)
+})

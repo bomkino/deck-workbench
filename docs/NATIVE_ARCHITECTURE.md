@@ -17,3 +17,9 @@ Keep scope to prototype direction and handoff. No Linux, Electron, browser produ
 ## Slide editing
 
 NativeSlideEditing contains the shared layout picker, always-visible slide actions and copy editor. The controller captures copy-edit slide/deck identity, retains drafts until durable acknowledgement and serializes structural actions after pending notes. Native add/duplicate/rename prepare existing insert/remove/history operations; no additional reader schema or new persisted operation type is required. Duplication remaps content/assignment/option/element IDs and supported bindings while retaining original asset IDs. Delete/move reuse the existing structural kernel commands. Copy replacement carries expected source blocks to detect conflicts and preserves unchanged rich text. Sidebar ordinals are indexed with the document projection.
+
+## Layout drawing and command boundaries
+
+The selected scene is resolved once per document revision/slide identity and only rebuilt when the rendering inputs change. NativeCanvas uses the controller's scene generation rather than encoding and hashing the same input twice. NativeSlideRenderer caches origin-independent Core Text frames by exact stable serialized copy, region size, columns and type settings; immutable frames may be drawn at new positions. NSCache has count/cost eviction targets and is safe for the existing canvas/export callers.
+
+Screen drawing opts into native linear-gradient rendering. PDF callers retain the established raster-alpha overlay; both use the same gradient colors/endpoints and have a pixel comparison in the native journey. NativeLayoutGeometry supplies consistent guide edges and visible text targets. The kernel clamps relative frame nudges and translates gradient endpoints atomically. Batch Apply Arrangement deliberately replaces the destination frame map; normal individual image edits still merge by role.

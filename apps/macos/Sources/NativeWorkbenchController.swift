@@ -102,17 +102,30 @@ final class NativeWorkbenchController: ObservableObject {
   private var catalogGeneration = 0
   private var mediaAccessGeneration = 0
   private var prefetchTask: Task<Void, Never>?
+  private var resolvedRevision: Int?
+  private var resolvedSlideID: String?
+  private var resolvedDeckID: String?
+  private(set) var sceneGeneration = 0
   private var resolvedKey: Int?
   private var resolvedValue: ResolvedPrototype?
   var resolvedScene: ResolvedPrototype? {
     guard let slide = selectedSlide, let canvas = document?.deck.canvasPreset else { return nil }
+    let deckID = document?.deck.deckId
+    if resolvedRevision == document?.revision && resolvedSlideID == slide.id && resolvedDeckID == deckID {
+      return resolvedValue
+    }
+    resolvedRevision = document?.revision; resolvedSlideID = slide.id; resolvedDeckID = deckID
     var hash = Hasher()
-    hash.combine(slide.id); hash.combine(slide.intent)
+    hash.combine(deckID); hash.combine(slide.id); hash.combine(slide.intent)
     hash.combine(try? nativeJSON(slide.settings.layout)); hash.combine(try? nativeJSON(slide.copyBlocks))
     hash.combine(try? nativeJSON(slide.mediaAssignments)); hash.combine(try? nativeJSON(slide.legacyComposition))
     hash.combine(canvas.width); hash.combine(canvas.height)
     let key = hash.finalize()
-    if resolvedKey != key { resolvedKey = key; resolvedValue = NativeSlideRenderer.resolve(slide: slide, canvas: canvas) }
+    if resolvedKey != key {
+      resolvedKey = key
+      resolvedValue = NativeSlideRenderer.resolve(slide: slide, canvas: canvas)
+      sceneGeneration += 1
+    }
     return resolvedValue
   }
   private func prefetchAdjacent() {
@@ -144,7 +157,10 @@ final class NativeWorkbenchController: ObservableObject {
     refreshMediaScope()
     if let slide = selectedSlide {
       if !slide.imageRoles.contains(curateRole) { curateRole = slide.imageRoles.first ?? "primary" }
-      if !["text", "gradient"].contains(selectionTarget) && !slide.imageRoles.contains(selectionTarget) { selectionTarget = "text" }
+      let preset = NativeSlideRenderer.resolvedPreset(slide: slide)
+      if preset == "image-only" && ["text", "gradient"].contains(selectionTarget) { selectionTarget = slide.imageRoles.first ?? "primary" }
+      else if selectionTarget == "gradient" && (preset == "text-only" || slide.imageRoles.count > 1) { selectionTarget = "text" }
+      else if !["text", "gradient"].contains(selectionTarget) && !slide.imageRoles.contains(selectionTarget) { selectionTarget = "text" }
     }
   }
   private func indexAssets() {
@@ -164,7 +180,7 @@ final class NativeWorkbenchController: ObservableObject {
     refreshMediaScope(resetPreview: true)
   }
   private func selectionChanged() {
-    selectionTarget = "text"
+    selectionTarget = selectedSlide.map { NativeSlideRenderer.resolvedPreset(slide: $0) == "image-only" } == true ? "primary" : "text"
     curateRole = selectedSlide?.imageRoles.first ?? "primary"
     compareOpen = false
     compareIDs = []
@@ -407,10 +423,16 @@ final class NativeWorkbenchController: ObservableObject {
   func patchLayout(_ patch: [String: Any], id: String? = nil) {
     patchSlide(["layout": patch], id: id)
   }
-  func chooseLayout(_ preset: String) {
+  func chooseLayout(_ preset: String, id: String? = nil) {
     curateRole = "primary"
-    selectionTarget = "text"
-    patchLayout(["preset": preset, "textFrame": NSNull(), "frames": NSNull()])
+    selectionTarget = preset == "image-only" ? "primary" : "text"
+    // A fresh placement uses the preset's gradient direction. Image crops,
+    // provisional type, copy, notes and candidates remain authored separately.
+    patchLayout(["preset": preset, "textFrame": NSNull(), "frames": NSNull(), "gradient": NSNull()], id: id)
+  }
+  func resetPlacement() {
+    guard let slide = selectedSlide, slide.settings.layout.preset != "legacy" else { return }
+    chooseLayout(slide.settings.layout.preset, id: slide.id)
   }
   func decide(_ action: String, assetID: String? = nil, role: String? = nil) {
     guard let slideID = selectedSlideID,
@@ -435,12 +457,13 @@ final class NativeWorkbenchController: ObservableObject {
   func nudge(dx: Double, dy: Double, frame: PrototypeFrame) {
     guard let slideID = selectedSlideID else { return }
     do {
-      enqueue(
-        type: "native.nudge",
-        payload: [
-          "slideId": slideID, "target": selectionTarget, "frame": try nativeObject(frame), "dx": dx,
-          "dy": dy,
-        ], label: "Nudge prototype")
+      var payload: [String: Any] = [
+        "slideId": slideID, "target": selectionTarget, "frame": try nativeObject(frame), "dx": dx, "dy": dy,
+      ]
+      if selectionTarget == "gradient", let gradient = resolvedScene?.gradient {
+        payload["gradient"] = try nativeObject(gradient)
+      }
+      enqueue(type: "native.nudge", payload: payload, label: "Nudge prototype")
     } catch { failure = error.localizedDescription }
   }
   func undo(redo: Bool = false, documentOnly: Bool = false) {
@@ -473,7 +496,7 @@ final class NativeWorkbenchController: ObservableObject {
     do {
       var patch: [String: Any] = ["preset": layout.preset == "legacy" ? "left" : NativeSlideRenderer.resolvedPreset(slide: slide),
         "columns": layout.columns, "bodySize": layout.bodySize, "fitCopy": layout.fitCopy,
-        "frames": NSNull()]
+        "frames": try nativeObject(layout.frames.filter { slide.imageRoles.contains($0.key) })]
       patch["textFrame"] = try layout.textFrame.map { try nativeObject($0) } ?? NSNull()
       patch["gradient"] = try layout.gradient.map { try nativeObject($0) } ?? NSNull()
       enqueue(type: "native.layout.apply", payload: ["slideIds": slideIDs, "layout": patch], label: "Apply prototype arrangement")

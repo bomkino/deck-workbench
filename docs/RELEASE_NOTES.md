@@ -25,3 +25,13 @@ The package journey covers add, captured-target copy editing, duplicate, rename,
 The file reader schema is unchanged from v0.1.0/v0.1.1. Keep an untouched copy of pre-native decks before their first native edit. Apple Silicon and macOS 26+ remain required; the app is ad-hoc signed, not notarized. Source media is never edited by these commands. Exhaustive accessibility, large studio-library performance and every recovery/permission environment still need hands-on evaluation.
 
 Prior release notes: [v0.1.1](releases/v0.1.1.md).
+
+## Layout finishing and targeted performance work
+
+Apply Arrangement now copies custom image frames, replacing the destination geometry deliberately while retaining each destination's crops, copy and notes. Changing a layout restores its intended gradient direction. Reset Placement restores text/image placement and gradient without clearing crops or writing. Undo restores the complete prior arrangement.
+
+Image-only and blank-copy slides no longer expose invisible text hit targets. Resize handles keep a screen-sized hit area at small zooms. Fitted images explain why crop-panning is unavailable. Snapping includes both column/row edges and the final right/bottom margins. Keyboard movement stays within the canvas; gradient arrows translate both endpoints together without changing its direction. Dragged gradient endpoints cannot collapse into an invalid zero-length gradient.
+
+Canvas and inspector reads reuse their resolved scene within a document revision. An 8 MiB-cost / 48-entry text cache reuses immutable Core Text layouts when image/gradient settings or text position change; size/copy/columns invalidate it. Interactive gradients draw directly into the screen context rather than allocating a multi-megapixel overlay for every pointer movement. PDF export retains the alpha-safe cached overlay, keeping source images and selectable text separate. Cache limits are eviction targets, not a total application-memory guarantee.
+
+The extracted-app journey additionally verifies custom-frame copying, reset/Undo, reused text frames, visible layout targets and screen/export gradient agreement. No studio-wide speed multiplier is claimed.

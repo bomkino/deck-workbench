@@ -17,7 +17,7 @@ struct NativeLayoutPicker: View {
   let slide: DeckSlide
   var body: some View {
     Picker("Layout", selection: Binding(get: { slide.settings.layout.preset },
-      set: { controller.chooseLayout($0) })) {
+      set: { controller.chooseLayout($0, id: slide.id) })) {
       ForEach(NativeLayoutChoice.all) { choice in Text(choice.name).tag(choice.id) }
       if slide.settings.layout.preset == "legacy" { Text("Preserved legacy").tag("legacy") }
     }.disabled(!controller.slideEditingAvailable)

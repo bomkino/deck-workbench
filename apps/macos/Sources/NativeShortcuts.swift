@@ -106,14 +106,16 @@ enum NativeShortcuts {
     let key: [UInt16: String] = [123: "left", 124: "right", 125: "down", 126: "up"]
     let name = key[event.keyCode] ?? (event.charactersIgnoringModifiers ?? "").lowercased()
     if controller.phase == "assemble", !controller.previewOpen, !controller.cleanPreview, let arrow = key[event.keyCode],
-      let slide = controller.selectedSlide, let canvas = controller.document?.deck.canvasPreset
+      controller.selectedSlide != nil
     {
       guard let scene = controller.resolvedScene else { return false }
       if scene.legacy && controller.selectionTarget == "text" { return false }
       let target = controller.selectionTarget
       guard
         let frame = target == "text"
-          ? scene.textRegion : scene.imageLayers.first(where: { $0.role == target })?.frame
+          ? (NativeLayoutGeometry.hasText(scene) ? scene.textRegion : nil)
+          : target == "gradient" ? (scene.gradient != nil ? scene.gradientFrame : nil)
+          : scene.imageLayers.first(where: { $0.role == target })?.frame
       else { return false }
       let step = flags.contains(.shift) ? 10.0 : 1.0
       controller.nudge(

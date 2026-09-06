@@ -2,7 +2,7 @@
 
 A native Mac tool for turning final writing and a pile of references into a clear prototype and designer handoff. It helps communicate intent; it does not replace the designer.
 
-## v0.1.2 — slide editing restored
+## v0.1.2 — slide editing and dependable layouts
 
 [Download the Mac app](https://github.com/bomkino/deck-workbench/releases/latest). Choose the **.app.zip** asset, not GitHub's automatic source archive. Requires **Apple Silicon and macOS 26+**. Ad-hoc signed; not notarized.
 
@@ -33,7 +33,7 @@ New prototypes default to **2576 × 1080**, the studio grid and readable provisi
 
 Shortcuts: **Command-Shift-N** adds a slide, **Command-D** duplicates it, **Command-E** edits copy, **Command-Option-Up/Down** moves it, and **Command-Shift-Delete** asks to delete it. A heading-only import can now gain body/subheadline fields in Edit Copy.
 
-v0.1.2 restores direct slide management and a captured-target copy editor. It retains v0.1.1's curation, layout, export and cache repairs. See the release notes for exact scope and verification evidence.
+v0.1.2 restores direct slide management and a captured-target copy editor. Layout changes are visible in both workspaces; Reset Placement and Apply Arrangement preserve copy/candidates while making repeated studio layouts quick. Custom frames now copy correctly, invisible text cannot intercept image-only editing, and text/gradient redraw work is reduced. It retains v0.1.1's curation, layout, export and cache repairs. See the release notes for exact scope and verification evidence.
 
 ## Existing decks
 

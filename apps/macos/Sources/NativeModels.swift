@@ -255,7 +255,11 @@ struct NativeMediaSource: Codable, Sendable {
   var cacheKey: String { "\(assetId):\(sourceRevisionId):\(fingerprint):\(rootPath):\(rootDevice):\(rootInode):\(accessGeneration ?? 0)" }
 }
 extension String { var nonempty: String? { isEmpty ? nil : self } }
-func nativeJSON<T: Encodable>(_ value: T) throws -> Data { try JSONEncoder().encode(value) }
+func nativeJSON<T: Encodable>(_ value: T) throws -> Data {
+  let encoder = JSONEncoder()
+  encoder.outputFormatting = [.sortedKeys]
+  return try encoder.encode(value)
+}
 func nativeObject<T: Encodable>(_ value: T) throws -> Any {
   try JSONSerialization.jsonObject(with: nativeJSON(value))
 }
