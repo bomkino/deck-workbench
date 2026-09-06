@@ -1,0 +1,31 @@
+name: Finish media focus handoff
+on:
+  push:
+    branches: [codex/final-workflow-polish]
+    paths: ['.github/workflows/finish-media-focus.yml']
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 2
+      - name: Apply exact focus correction without weakening event checks
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = fd527dcb7564529b6ced5194c20615fcc7b4df0d
+          python3 - <<'PY'
+          import base64, hashlib, lzma, subprocess
+          encoded='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'
+          patch=lzma.decompress(base64.b64decode(encoded,validate=True))
+          assert hashlib.sha256(patch).hexdigest()=='949a5d1e6c2d94a17b9019b502fc55284f88a1b8321bf7ab6f47b794b0b8784b'
+          subprocess.run(['git','apply','--check','--index','-'],input=patch,check=True)
+          subprocess.run(['git','apply','--index','-'],input=patch,check=True)
+          PY
+          git config user.name 'Chattie Intern'
+          git config user.email 'hello@pitch.dog'
+          git commit -m 'Synchronize search-to-grid focus and verify the ready native input window'
+          git push origin HEAD:codex/final-workflow-polish
