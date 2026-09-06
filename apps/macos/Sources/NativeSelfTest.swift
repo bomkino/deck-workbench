@@ -372,6 +372,11 @@ enum NativeAcceptance {
       let asset = controller.assetIndex[assetID], let width = asset.width, let height = asset.height else {
       throw WorkbenchFailure(name: "AcceptanceFailure", message: "Crop exercise has no source image")
     }
+    // Fit must remain whole-image; zoom only applies after the user selects Fill / crop.
+    let fitRevision = controller.document!.revision
+    controller.zoomCrop(2, role: "primary", slideID: ids[0]); await controller.flush()
+    try require(layer.fit == "fit" && controller.cropZoom(for: "primary") == nil && controller.document!.revision == fitRevision, "Zoom changed an image in whole-image Fit mode")
+    controller.patchLayout(["imageFits": ["primary": "fill"]]); await controller.flush()
     controller.zoomCrop(2, role: "primary", slideID: ids[0]); await controller.flush()
     try require(abs((controller.cropZoom(for: "primary") ?? 0) - 2) < 0.001, "Crop zoom does not resolve at the requested scale")
     let zoomed = controller.selectedSlide!.settings.layout.crops["primary"]!
