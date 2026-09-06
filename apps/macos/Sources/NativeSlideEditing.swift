@@ -29,18 +29,26 @@ struct NativeSlideEditingBar: View {
   @ObservedObject var controller: NativeWorkbenchController
   var body: some View {
     if let slide = controller.selectedSlide {
-      HStack(spacing: 12) {
-        Text(slide.title).font(.headline).lineLimit(1)
-          .frame(minWidth: 60, maxWidth: .infinity, alignment: .leading)
-        NativeLayoutPicker(controller: controller, slide: slide).frame(width: 200)
-        Button { controller.beginEditCopy() } label: { Label("Edit Copy", systemImage: "pencil") }
-          .disabled(!controller.slideEditingAvailable).help("Edit this slide’s writing (Command-E)")
-          .accessibilityIdentifier("edit-slide-copy")
-        Menu { NativeSlideActions(controller: controller, slideID: slide.id) }
-          label: { Label("Slide", systemImage: "rectangle.stack") }
-          .accessibilityIdentifier("slide-actions")
+      ViewThatFits(in: .horizontal) {
+        HStack(spacing: 12) {
+          Text(slide.title).font(.headline).lineLimit(1).frame(minWidth: 60, maxWidth: .infinity, alignment: .leading)
+          controls(slide)
+        }
+        VStack(alignment: .leading, spacing: 8) {
+          Text(slide.title).font(.headline).lineLimit(1)
+          HStack(spacing: 8) { controls(slide) }
+        }
       }.padding(.horizontal, 14).padding(.vertical, 10)
     }
+  }
+  @ViewBuilder private func controls(_ slide: DeckSlide) -> some View {
+    NativeLayoutPicker(controller: controller, slide: slide).frame(width: 190)
+    Button { controller.beginEditCopy() } label: { Label("Edit Copy", systemImage: "pencil") }
+      .disabled(!controller.slideEditingAvailable).help("Edit this slide’s writing (Command-E)")
+      .accessibilityIdentifier("edit-slide-copy")
+    Menu { NativeSlideActions(controller: controller, slideID: slide.id) }
+      label: { Label("Slide", systemImage: "rectangle.stack") }
+      .accessibilityIdentifier("slide-actions")
   }
 }
 struct NativeSlideActions: View {
@@ -102,13 +110,21 @@ struct NativeCopyEditor: View {
       if let error = controller.copyEditorError { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
       ScrollView {
         VStack(alignment: .leading, spacing: 16) {
-          ForEach(blocks.indices, id: \.self) { index in
+          ForEach(blocks) { block in
             VStack(alignment: .leading, spacing: 6) {
-              Text(blocks[index].role.capitalized).font(.headline)
-              TextEditor(text: Binding(get: { blocks[index].text }, set: { blocks[index].setText($0) }))
-                .font(.system(size: 14 * controller.interfaceScale)).frame(minHeight: blocks[index].role == "body" ? 150 : 80)
+              HStack {
+                Text(block.role.capitalized).font(.headline)
+                Spacer()
+                if block.role != "headline" {
+                  Button("Remove field", role: .destructive) { blocks.removeAll { $0.id == block.id } }
+                    .controlSize(.small).help("Removes this field from the draft. Cancel keeps the saved version; Undo restores a saved edit.")
+                }
+              }
+              TextEditor(text: Binding(get: { blocks.first { $0.id == block.id }?.text ?? "" },
+                set: { value in if let i = blocks.firstIndex(where: { $0.id == block.id }) { blocks[i].setText(value) } }))
+                .font(.system(size: 14 * controller.interfaceScale)).frame(minHeight: block.role == "body" ? 150 : 80)
                 .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.secondary.opacity(0.25)))
-                .accessibilityLabel("\(blocks[index].role) copy")
+                .accessibilityLabel("\(block.role) copy")
             }
           }
           Menu("Add Text Field") {

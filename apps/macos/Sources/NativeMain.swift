@@ -23,7 +23,7 @@ final class NativeAppDelegate: NSObject, NSApplicationDelegate {
   weak var controller: NativeWorkbenchController?
   private var pending = false
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-    guard controller?.document != nil else { return .terminateNow }
+    guard controller?.document != nil || controller?.lifecycleBusy == true else { return .terminateNow }
     guard !pending else { return .terminateLater }
     pending = true
     Task { [weak self] in
@@ -96,7 +96,7 @@ struct NativeWorkbenchCommands: Commands {
         controller.document == nil)
       Button("Export Handoff…") { controller.showExport = true }.keyboardShortcut(
         "e", modifiers: [.command, .shift]
-      ).disabled(controller.document == nil || controller.exportRunning || controller.copyEditorOpen)
+      ).disabled(!controller.canExport)
     }
     CommandGroup(replacing: .undoRedo) {
       Button("Undo") { controller.undo() }.keyboardShortcut("z").disabled(controller.document == nil)
@@ -133,10 +133,10 @@ struct NativeWorkbenchCommands: Commands {
     CommandMenu("Workbench") {
       Button("Curate") { controller.phase = "curate" }.keyboardShortcut("1")
       Button("Assemble") { controller.phase = "assemble" }.keyboardShortcut("2")
-      Button("Search media") { controller.phase = "curate"; controller.searchRequest += 1 }.keyboardShortcut("f")
+      Button("Search media") { controller.searchMedia() }.keyboardShortcut("f")
       Button("Show / Hide context panel") { controller.showContext.toggle() }.keyboardShortcut("i", modifiers: [.command, .option])
       Button("Fit canvas") { controller.fitCanvas() }.keyboardShortcut("0")
-      Button("Clean canvas preview") { controller.phase = "assemble"; controller.cleanPreview.toggle() }.keyboardShortcut("p", modifiers: [.command, .shift])
+      Button("Review deck") { controller.startCleanPreview() }.keyboardShortcut("p", modifiers: [.command, .shift])
       Divider()
       Button("Reveal Focused Media in Finder") { controller.revealFocused() }.keyboardShortcut(
         "r", modifiers: [.command, .shift]

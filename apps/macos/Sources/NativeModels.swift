@@ -201,6 +201,10 @@ struct PrototypeGradient: Codable, Equatable, Sendable {
   var opacity: Double = 0.78
   var colors: PrototypeColors? = PrototypeColors()
 }
+struct NativeCatalogUpdate: Sendable {
+  let catalog: NativeCatalogSnapshot
+  let sources: [String: NativeMediaSource]
+}
 struct NativeCatalogSnapshot: Codable, Sendable {
   let revision: Int
   let roots: [NativeMediaRoot]

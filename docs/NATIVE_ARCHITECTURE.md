@@ -23,3 +23,13 @@ NativeSlideEditing contains the shared layout picker, always-visible slide actio
 The selected scene is resolved once per document revision/slide identity and only rebuilt when the rendering inputs change. NativeCanvas uses the controller's scene generation rather than encoding and hashing the same input twice. NativeSlideRenderer caches origin-independent Core Text frames by exact stable serialized copy, region size, columns and type settings; immutable frames may be drawn at new positions. NSCache has count/cost eviction targets and is safe for the existing canvas/export callers.
 
 Screen drawing opts into native linear-gradient rendering. PDF callers retain the established raster-alpha overlay; both use the same gradient colors/endpoints and have a pixel comparison in the native journey. NativeLayoutGeometry supplies consistent guide edges and visible text targets. The kernel clamps relative frame nudges and translates gradient endpoints atomically. Batch Apply Arrangement deliberately replaces the destination frame map; normal individual image edits still merge by role.
+
+## v0.1.3 lifecycle and projection boundaries
+
+A main-actor document transition reservation covers create/open/close/retry until the session operation completes. File chooser callbacks carry document identity. Imports are bounded FileHandle reads and parsing runs in a detached task; obsolete import generations cannot replace a new document's view. Notes bindings capture slide identity, and optional copy-field views use stable IDs rather than array offsets.
+
+A replacement import includes expected source copy and remains visible until durable acknowledgement. If journal append succeeds but in-memory commit fails, the session reports RecoveryRequired and fences further mutation until replay, rather than misclassifying a saved action as a rejected control. Initial projections are prepared before adopting a newly opened store.
+
+MediaCatalogSession.nativeCatalogUpdate returns nil for unchanged revisions, otherwise one actor-owned catalogue/source projection. The controller coalesces refresh requests and rejects old catalogue/access generations. This removes repeated JSON serialization/decoding and redundant unchanged-catalog indexing, without introducing another persisted store.
+
+Review deck reuses NativeCanvas and never issues mutation commands. NativeLayoutGeometry computes normalized crop zoom from the same image-placement math as the renderer. Export reserves its operation before flushing drafts, preserves its originating deck, ignores obsolete progress callbacks and shows selected-output slide counts.

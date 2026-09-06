@@ -53,6 +53,15 @@ struct ImportedCopyDocument: Sendable {
 }
 
 enum NativeCopyImport {
+  static func read(_ url: URL) throws -> ImportedCopyDocument {
+    let access = url.startAccessingSecurityScopedResource()
+    defer { if access { url.stopAccessingSecurityScopedResource() } }
+    let handle = try FileHandle(forReadingFrom: url)
+    defer { try? handle.close() }
+    let data = try handle.read(upToCount: 1_048_577) ?? Data()
+    try Task.checkCancellation()
+    return try parse(data, filename: url.lastPathComponent)
+  }
   /// A deliberately bounded, local parser. Workbench Markdown v1 is supported;
   /// ordinary Markdown uses ## Slide title with optional ### Headline/Body/Notes.
   static func parse(_ data: Data, filename: String) throws -> ImportedCopyDocument {

@@ -619,6 +619,22 @@ actor MediaCatalogSession {
         return data
     }
 
+    func nativeCatalogUpdate(after revision: Int) throws -> NativeCatalogUpdate? {
+        try requireOpen()
+        guard catalog.revision != revision else { return nil }
+        let snapshot = NativeCatalogSnapshot(revision: catalog.revision,
+            roots: catalog.roots.map { NativeMediaRoot(id: $0.id, label: $0.label) },
+            assets: catalog.assets.map { asset in
+                NativeMediaAsset(id: asset.id, sourceRevisionId: asset.sourceRevisionId,
+                    rootId: asset.rootId, relativePath: asset.relativePath, filename: asset.filename,
+                    folder: asset.folder, title: asset.title, note: asset.note, mediaKind: asset.mediaKind,
+                    orientation: asset.orientation, availability: asset.availability,
+                    previewCapability: asset.previewCapability, width: asset.width, height: asset.height,
+                    byteSize: asset.byteSize, fingerprint: asset.fingerprint, previewReason: asset.previewReason,
+                    modifiedAt: asset.modifiedAt)
+            })
+        return NativeCatalogUpdate(catalog: snapshot, sources: try nativeSources(assetIds: snapshot.assets.map(\.id)))
+    }
     func nativeCatalogData() throws -> Data {
         try requireOpen()
         let encoder = JSONEncoder()
@@ -670,9 +686,9 @@ actor MediaCatalogSession {
         guard nativeScans[rootId] == nil else { throw WorkbenchFailure(name: "ScanBusy", message: "This folder is already being scanned.") }
         let lease = self.lease
         let work = Task.detached(priority: .utility) { [weak self] in
-            try await Self.discover(root, lease: lease) { batch in
-                guard let self else { return }
-                try await self.publishNativeBatch(batch, rootId: rootId)
+            guard let session = self else { throw CancellationError() }
+            return try await Self.discover(root, lease: lease) { batch in
+                try await session.publishNativeBatch(batch, rootId: rootId)
             }
         }
         nativeScans[rootId] = work
@@ -787,7 +803,6 @@ actor MediaCatalogSession {
                     warningCount += 1
                     continue
                 }
-                let ext = candidate.pathExtension.lowercased()
                 let dimensions = kind != "video" ? Self.nativeImageDimensions(URL(fileURLWithPath: canonical)) : nil
                 let validImage = dimensions.map(Self.safeDimensions) == true
                 let safePreview = validImage

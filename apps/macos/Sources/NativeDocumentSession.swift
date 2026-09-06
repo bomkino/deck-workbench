@@ -36,11 +36,12 @@ actor NativeDocumentSession {
       try candidate.open(checkpoint: checkpoint)
       let newMedia = try MediaCatalogSession(
         packageURL: newStore.packageURL, deckId: newStore.manifest.deckId)
+      let projection = try JSONSerialization.data(withJSONObject: candidate.query("native.document"), options: [.sortedKeys])
       kernel = candidate
       store = newStore
       media = newMedia
       fenced = false
-      return try snapshot()
+      return projection
     } catch {
       try? newStore.close()
       throw error
@@ -64,11 +65,12 @@ actor NativeDocumentSession {
       }
       let newMedia = try MediaCatalogSession(
         packageURL: newStore.packageURL, deckId: newStore.manifest.deckId)
+      let projection = try JSONSerialization.data(withJSONObject: candidate.query("native.document"), options: [.sortedKeys])
       kernel = candidate
       store = newStore
       media = newMedia
       fenced = false
-      return try snapshot()
+      return projection
     } catch {
       try? newStore.close()
       throw error
@@ -107,11 +109,18 @@ actor NativeDocumentSession {
     if prepared["duplicate"] as? Bool == true { return writeReceipt() }
     // The backup/reader guard is applied only for the first native mutation.
     if type.hasPrefix("native.") { try store.ensureNativeCompatibilityBackup() }
+    var appended = false
     do {
       _ = try store.appendDurably(prepared: prepared)
+      appended = true
       _ = try kernel.commit(prepared)
     } catch {
-      fenced = store.needsRecovery
+      // Once journaled, a failed in-memory commit must reopen and replay;
+      // continuing from an older kernel would give later commands a false base.
+      fenced = appended || store.needsRecovery
+      if appended {
+        throw WorkbenchFailure(name: "RecoveryRequired", message: "The action reached the saved journal but the working view could not commit it. Reopen to replay it before making more changes.")
+      }
       throw error
     }
     // A refresh failure never retries the committed command.
@@ -124,11 +133,18 @@ actor NativeDocumentSession {
         name: "RecoveryRequired", message: "The intended deck is not writable.")
     }
     let prepared = try (redo ? kernel.prepareRedo() : kernel.prepareUndo())
+    var appended = false
     do {
       _ = try store.appendDurably(prepared: prepared)
+      appended = true
       _ = try kernel.commit(prepared)
     } catch {
-      fenced = store.needsRecovery
+      // Once journaled, a failed in-memory commit must reopen and replay;
+      // continuing from an older kernel would give later commands a false base.
+      fenced = appended || store.needsRecovery
+      if appended {
+        throw WorkbenchFailure(name: "RecoveryRequired", message: "The action reached the saved journal but the working view could not commit it. Reopen to replay it before making more changes.")
+      }
       throw error
     }
     return writeReceipt()
@@ -144,10 +160,13 @@ actor NativeDocumentSession {
     }
   }
 
-  func save() throws {
+  func save(expectedDeckID: String? = nil) throws {
     guard let store, !fenced, !store.needsRecovery else {
       throw WorkbenchFailure(
         name: "RecoveryRequired", message: "Reopen this deck to recover its saved state.")
+    }
+    if let expectedDeckID, store.manifest.deckId != expectedDeckID {
+      throw WorkbenchFailure(name: "DocumentChanged", message: "The requested deck is no longer open.")
     }
     do { try store.saveCheckpoint(kernel.serialize()) } catch {
       fenced = store.needsRecovery

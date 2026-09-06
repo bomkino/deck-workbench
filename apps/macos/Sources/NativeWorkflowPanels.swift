@@ -3,7 +3,7 @@ import SwiftUI
 
 extension View {
   func nativeSheetFrame(width: CGFloat, height: CGFloat) -> some View {
-    let screen = NSScreen.main?.visibleFrame.size ?? CGSize(width: 1280, height: 800)
+    let screen = (NSApp.keyWindow?.screen ?? NSScreen.main)?.visibleFrame.size ?? CGSize(width: 1280, height: 800)
     return frame(width: min(width, max(360, screen.width - 100)), height: min(height, max(340, screen.height - 140)))
   }
 }
@@ -27,7 +27,8 @@ struct NativeContextPanel: View {
             Divider()
           }
           Text("Designer notes").font(.headline)
-          TextEditor(text: Binding(get: { controller.notes }, set: { controller.setNotes($0) }))
+          TextEditor(text: Binding(get: { controller.notes(for: slide.id) }, set: { controller.setNotes($0, slideID: slide.id) }))
+            .id(slide.id) // A text editor's undo history never crosses slide boundaries.
             .font(.system(size: 13 * controller.interfaceScale)).frame(minHeight: 110, maxHeight: 200)
             .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.secondary.opacity(0.25)))
             .accessibilityLabel("Designer notes for \(slide.title)")
@@ -96,7 +97,7 @@ struct NativeChosenSlot: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
       HStack {
-        Text(role == "primary" ? "Primary image" : "Image \(role)").font(.caption).fontWeight(.semibold)
+        Text("Image \((slide.imageRoles.firstIndex(of: role) ?? 0) + 1)").font(.caption).fontWeight(.semibold)
         Spacer()
         if controller.curateRole == role { Image(systemName: "scope").accessibilityLabel("Active destination slot") }
       }
@@ -215,4 +216,24 @@ struct NativeReplacementPanel: View {
         .buttonStyle(.borderedProminent).disabled(!valid)
     }.onAppear { matches = controller.replacementMatches(for: imported) }
   }
+}
+
+struct NativeCropZoomControls: View {
+  @ObservedObject var controller: NativeWorkbenchController
+  let slideID: String
+  let role: String
+  @State private var zoom = 1.0
+  @State private var editing = false
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack { Text("Crop zoom"); Spacer(); Text("\(Int((zoom * 100).rounded()))%").monospacedDigit() }.font(.caption)
+      Slider(value: $zoom, in: 1...4, onEditingChanged: { active in
+        editing = active
+        if !active { controller.zoomCrop(zoom, role: role, slideID: slideID) }
+      }).accessibilityLabel("Crop zoom").help("Zoom the image within its frame. Original media stays unchanged. Drag on the canvas to choose the focal point.")
+      Button("Centre crop") { controller.centerCrop(role: role, slideID: slideID) }.controlSize(.small)
+    }.onAppear { sync() }
+      .onChange(of: controller.document?.revision) { _, _ in if !editing { sync() } }
+  }
+  private func sync() { zoom = min(4, max(1, controller.cropZoom(for: role) ?? 1)) }
 }

@@ -12,4 +12,6 @@ Legacy compositions preserve supported text/image/gradient data; their old typog
 
 Media sizes, scan depth/count, preview decoding and import/command payloads remain bounded. Unsupported previews do not imply that an original cannot be handed off. Partial handoff failures are shown; cancelled exports discard unfinished staging. No source media is intentionally changed.
 
-A first native edit upgrades a pre-native deck's reader schema. v0.0.6 cannot read the upgraded working copy. v0.1.2 keeps the reader schema used by v0.1.0 and v0.1.1. No multi-writer/cloud collaboration, automatic updates or notarization is included.
+A first native edit upgrades a pre-native deck's reader schema. v0.0.6 cannot read the upgraded working copy. v0.1.3 keeps the reader schema used by v0.1.0–v0.1.2. No multi-writer/cloud collaboration, automatic updates or notarization is included.
+
+The v0.1.3 package journey also exercises native review navigation, normalized crop zoom and Undo, slide-bound notes, unchanged-catalog reuse, bounded import, concurrent document-creation exclusion and a stale Save rejection. Native window captures support visual review; they are not an exhaustive accessibility or all-display guarantee. External-volume/cloud-provider cancellation and rare post-journal failure handling still need real-environment evaluation. Crop zoom is limited to 4× and commits when the slider gesture finishes.

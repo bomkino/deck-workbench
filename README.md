@@ -2,7 +2,7 @@
 
 A native Mac tool for turning final writing and a pile of references into a clear prototype and designer handoff. It helps communicate intent; it does not replace the designer.
 
-## v0.1.2 — slide editing and dependable layouts
+## v0.1.3 — workflow polish and dependable layouts
 
 [Download the Mac app](https://github.com/bomkino/deck-workbench/releases/latest). Choose the **.app.zip** asset, not GitHub's automatic source archive. Requires **Apple Silicon and macOS 26+**. Ad-hoc signed; not notarized.
 
@@ -56,3 +56,9 @@ Normal CI builds artifacts; only an explicit version tag publishes a release. No
 [Workflow](docs/MAC_APP.md) · [Limitations](docs/KNOWN_LIMITATIONS.md) · [Architecture](docs/NATIVE_ARCHITECTURE.md) · [Release notes](docs/RELEASE_NOTES.md) · [Documentation index](docs/README.md)
 
 AGPL-3.0. See LICENSE, NOTICE and THIRD_PARTY.md. Historical product/ticket documents are evidence, not current instructions.
+
+## Finishing the working loop
+
+v0.1.3 adds **Review deck** (Command-Shift-P; arrows/Space browse; Escape returns to editing), **Crop zoom** and centering, and removable optional copy fields. Document creation/open/close and replacement import retain their targets and drafts. File imports run off the UI thread with a bounded read. The media list refreshes only when its catalogue changes. Native controls reflow in narrower windows.
+
+The exact release receipt separates exercised behavior from unmeasured studio-scale performance. This release keeps the existing native document schema and the full slide-editing/layout controls from v0.1.2.

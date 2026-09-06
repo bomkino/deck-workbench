@@ -4,9 +4,10 @@ import SwiftUI
 struct NativeWorkbenchRoot: View {
   @ObservedObject var controller: NativeWorkbenchController
   @State private var columns: NavigationSplitViewVisibility = .all
+  @State private var editingColumns: NavigationSplitViewVisibility = .all
   var body: some View {
     NavigationSplitView(columnVisibility: $columns) {
-      NativeSlideSidebar(controller: controller)
+      NativeSlideSidebar(controller: controller).disabled(controller.lifecycleBusy)
     } detail: {
       VStack(spacing: 0) {
         if let failure = controller.failure {
@@ -24,7 +25,7 @@ struct NativeWorkbenchRoot: View {
           }.padding(12).background(Color.orange.opacity(0.14))
           Divider()
         }
-        if controller.document != nil {
+        if controller.document != nil && !controller.cleanPreview {
           NativeSlideEditingBar(controller: controller)
           Divider()
         }
@@ -63,7 +64,7 @@ struct NativeWorkbenchRoot: View {
                 NativeAssembleView(controller: controller)
               }
             }.frame(minWidth: 390)
-            if controller.showContext {
+            if controller.showContext && !controller.cleanPreview {
               NativeContextPanel(controller: controller).frame(minWidth: 230, idealWidth: controller.contextWidth, maxWidth: 440)
                 .background(GeometryReader { geometry in
                   Color.clear.onChange(of: geometry.size.width) { _, width in
@@ -71,7 +72,7 @@ struct NativeWorkbenchRoot: View {
                   }
                 })
             }
-          }
+          }.disabled(controller.lifecycleBusy)
         }
         Divider()
         HStack(spacing: 12) {
@@ -81,6 +82,8 @@ struct NativeWorkbenchRoot: View {
               : !controller.failedCommands.isEmpty ? "\(controller.failedCommands.count) actions need recovery" : controller.status
           ).font(.caption).lineLimit(2)
           Spacer()
+          if controller.importRunning { ProgressView().controlSize(.small); Text("Reading copy…").font(.caption) }
+          if controller.lifecycleBusy { ProgressView().controlSize(.small); Text("Saving and switching…").font(.caption) }
           if controller.scanRunning {
             ProgressView().controlSize(.small)
             Button("Cancel Scan") { controller.cancelScan() }.controlSize(.small)
@@ -125,9 +128,13 @@ struct NativeWorkbenchRoot: View {
               Label("Undo", systemImage: "arrow.uturn.backward")
             }.disabled(controller.document?.history.canUndo != true)
             Button("Export Handoff…") { controller.showExport = true }.disabled(
-              controller.document == nil || controller.exportRunning || controller.copyEditorOpen)
+              !controller.canExport)
           }
         }
+    }
+    .onChange(of: controller.cleanPreview) { _, clean in
+      if clean { editingColumns = columns; columns = .detailOnly }
+      else { columns = editingColumns }
     }
     .font(.system(size: 14 * controller.interfaceScale))
     .background(NativeKeyboardRouter(controller: controller).frame(width: 0, height: 0))
@@ -251,6 +258,8 @@ struct NativeCurateView: View {
         TextField("Search filenames and folders", text: $controller.query).textFieldStyle(
           .roundedBorder).focused($searchFocused)
           .onChange(of: controller.searchRequest) { _, _ in searchFocused = true }
+          .onAppear { if controller.searchRequest > 0 { searchFocused = true } }
+          .onExitCommand { searchFocused = false; if let id = controller.filteredAssets.first?.id { controller.focusAsset(id) } else { controller.focusedAssetID = nil } }
         Picker("Collection", selection: $controller.collection) {
           Text("All media").tag("all")
           Text("Shortlist").tag("shortlist")
@@ -403,23 +412,28 @@ struct NativeAssetImage: View {
 struct NativeCurateActions: View {
   @ObservedObject var controller: NativeWorkbenchController
   var body: some View {
-    HStack(spacing: 10) {
-      if let slide = controller.selectedSlide, slide.imageRoles.count > 1 {
-        Picker("Image role", selection: $controller.curateRole) {
-          ForEach(slide.imageRoles, id: \.self) { Text($0).tag($0) }
-        }.frame(maxWidth: 160)
-      }
-      Button("Choose · M") { controller.decide("use") }.buttonStyle(.borderedProminent)
-        .disabled(controller.selectedSlide?.imageRoles.isEmpty != false)
-      Button("Shortlist · S") { controller.decide("shortlist") }
-      Button("Reject · X") { controller.decide("reject") }
-      Spacer()
-      Button {
-        controller.preview()
-      } label: {
-        Image(systemName: "arrow.up.left.and.arrow.down.right")
-      }.help("Preview (Space)")
-    }.disabled(controller.focusedAssetID == nil)
+    ViewThatFits(in: .horizontal) {
+      HStack(spacing: 10) { rolePicker; actions }
+      VStack(alignment: .leading, spacing: 8) { rolePicker; HStack(spacing: 10) { actions } }
+    }.disabled(controller.focusedAssetID == nil || controller.lifecycleBusy)
+  }
+  @ViewBuilder private var rolePicker: some View {
+    if let slide = controller.selectedSlide, slide.imageRoles.count > 1 {
+      Picker("Image slot", selection: $controller.curateRole) {
+        ForEach(Array(slide.imageRoles.enumerated()), id: \.element) { index, role in
+          Text("Image \(index + 1)").tag(role)
+        }
+      }.frame(width: 135)
+    }
+  }
+  @ViewBuilder private var actions: some View {
+    Button("Choose · M") { controller.decide("use") }.buttonStyle(.borderedProminent)
+      .disabled(controller.selectedSlide?.imageRoles.isEmpty != false)
+    Button("Shortlist · S") { controller.decide("shortlist") }
+    Button("Reject · X") { controller.decide("reject") }
+    Spacer(minLength: 4)
+    Button { controller.preview() } label: { Image(systemName: "arrow.up.left.and.arrow.down.right") }
+      .help("Preview (Space)").accessibilityLabel("Preview focused image")
   }
 }
 struct NativePreviewView: View {
@@ -493,19 +507,34 @@ struct NativeAssembleView: View {
   @ObservedObject var controller: NativeWorkbenchController
   var body: some View {
     VStack(spacing: 0) {
-      HStack {
-        Toggle("Guides", isOn: $controller.showGuides).toggleStyle(.button)
-        Toggle("Clean preview", isOn: $controller.cleanPreview).toggleStyle(.button)
-        Button("Fit") { controller.fitCanvas() }
-        Slider(value: $controller.zoom, in: 0.25...3).frame(width: 110).help(
-          "Canvas zoom; does not change export")
-      }.padding(12)
+      if controller.cleanPreview {
+        HStack(spacing: 12) {
+          Button { controller.moveSlide(-1) } label: { Image(systemName: "chevron.left") }
+            .disabled(!controller.canReorderSlide(controller.selectedSlideID, by: -1)).accessibilityLabel("Previous slide")
+          Text("\(controller.slideOrdinals[controller.selectedSlideID ?? ""] ?? 0) / \(controller.slides.count)")
+            .monospacedDigit().foregroundStyle(.secondary)
+          Button { controller.moveSlide(1) } label: { Image(systemName: "chevron.right") }
+            .disabled(!controller.canReorderSlide(controller.selectedSlideID, by: 1)).accessibilityLabel("Next slide")
+          Text(controller.selectedSlide?.title ?? "").font(.headline).lineLimit(1)
+          Spacer()
+          Button("Back to editing · Esc") { controller.endCleanPreview() }
+        }.padding(12)
+      } else {
+        HStack {
+          Toggle("Guides", isOn: $controller.showGuides).toggleStyle(.button)
+          Button("Review deck") { controller.startCleanPreview() }
+          Spacer(minLength: 4)
+          Button("Fit") { controller.fitCanvas() }
+          Slider(value: $controller.zoom, in: 0.25...3).frame(width: 100).help("Canvas zoom; does not change export")
+        }.padding(12)
+      }
       Divider()
       NativeCanvas(controller: controller)
       Divider()
-      Text(
-        "Drag text to move · Drag image to crop · Command-drag image to move its frame · Space-drag to pan · Escape cancels"
-      ).font(.caption).foregroundStyle(.secondary).padding(10)
+      Text(controller.cleanPreview
+        ? "← → Browse slides · Home / End Jump · Escape Return to editing"
+        : "Drag text to move · Drag image to crop · Command-drag moves its frame · Space-drag pans · Escape cancels")
+        .font(.caption).foregroundStyle(.secondary).padding(10)
     }
   }
 }
@@ -599,6 +628,10 @@ struct NativeAssemblyInspector: View {
           Text("Fill / crop").tag("fill")
           Text("Fit whole image").tag("fit")
         }.pickerStyle(.segmented)
+        if controller.cropZoom(for: controller.selectionTarget) != nil {
+          NativeCropZoomControls(controller: controller, slideID: slide.id, role: controller.selectionTarget)
+            .id(slide.id + ":" + controller.selectionTarget)
+        }
         Button("Reset crop") {
           controller.patchLayout([
             "crops": [controller.selectionTarget: ["x": 0, "y": 0, "width": 1, "height": 1]]
@@ -657,10 +690,16 @@ struct NativeExportSheet: View {
   @State private var acceptChanged = false
   @State private var scope = "all"
   @State private var selectedIDs: Set<String> = []
+  private var exportCount: Int {
+    let ids = scope == "current" ? Set([controller.selectedSlideID ?? ""]) : scope == "selected" ? selectedIDs : Set(controller.slides.map(\.id))
+    return controller.slides.filter { $0.settings.included && ids.contains($0.id) }.count
+  }
   var body: some View {
     VStack(alignment: .leading, spacing: 18) {
       Text("Export designer handoff").font(.title2)
       Text("A new folder. Original source files stay untouched.").foregroundStyle(.secondary)
+      ScrollView {
+      VStack(alignment: .leading, spacing: 14) {
       Toggle("Prototype.pdf · clean visual guide", isOn: $prototype)
       Toggle("Prototype with notes.pdf · complete copy and direction", isOn: $notes)
       Toggle("Copy.md · editable writing", isOn: $copy)
@@ -679,12 +718,16 @@ struct NativeExportSheet: View {
           }
         }.frame(maxHeight: 180)
       }
+      Text(exportCount == 0 ? "No included slides in this selection. Enable Include in handoff, or choose other slides." : "\(exportCount) included slide\(exportCount == 1 ? "" : "s")")
+        .font(.callout).foregroundStyle(exportCount == 0 ? Color.orange : Color.secondary)
       Toggle("Accept externally changed source files", isOn: $acceptChanged)
       Text(
         "Leave this off to detect originals that changed after selection. Missing media and layout warnings are reported, not hidden."
       ).font(.caption).foregroundStyle(.secondary)
+      }.frame(maxWidth: .infinity, alignment: .leading)
+      }
       HStack {
-        Button("Cancel") { controller.showExport = false }
+        Button("Cancel") { controller.showExport = false }.keyboardShortcut(.cancelAction)
         Spacer()
         Button("Choose Destination…") {
           var options = HandoffOptions()
@@ -697,9 +740,10 @@ struct NativeExportSheet: View {
           options.selectedSlideIDs = scope == "current" ? Set([controller.selectedSlideID ?? ""]) : scope == "selected" ? selectedIDs : nil
           controller.export(options)
         }.buttonStyle(.borderedProminent).disabled(
-          (!prototype && !notes && !copy && !approved && !shortlisted) || (scope == "selected" && selectedIDs.isEmpty))
+          (!prototype && !notes && !copy && !approved && !shortlisted) || exportCount == 0 || !controller.canExport)
       }
-    }.padding(24).frame(width: min(570, (NSScreen.main?.visibleFrame.width ?? 1000) - 100))
+    }.padding(24).nativeSheetFrame(width: 610, height: 650)
+      .disabled(controller.exportChoosingDestination)
   }
 }
 struct NativeImportSheet: View {
@@ -709,6 +753,7 @@ struct NativeImportSheet: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 18) {
       Text("Import \(imported.title)").font(.title2)
+      if let error = controller.importError { Text(error).font(.callout).foregroundStyle(.orange).textSelection(.enabled) }
       Text("\(imported.slides.count) slides · \(imported.canvasID) · copy locked by default")
         .foregroundStyle(.secondary)
       if matching {
@@ -732,6 +777,8 @@ struct NativeImportSheet: View {
         Button("Create New Deck…") { controller.createImported() }.buttonStyle(.borderedProminent)
       }
     }.padding(24).nativeSheetFrame(width: 740, height: 650)
+      .disabled(controller.replacementSaving || controller.lifecycleBusy)
+      .interactiveDismissDisabled(controller.replacementSaving || controller.lifecycleBusy)
   }
 }
 struct NativeSettingsView: View {

@@ -66,7 +66,7 @@ enum NativeShortcuts {
       }),
   ]
   static func handle(_ event: NSEvent, controller: NativeWorkbenchController) -> Bool {
-    guard event.type == .keyDown, controller.document != nil else { return false }
+    guard event.type == .keyDown, controller.document != nil, !controller.lifecycleBusy else { return false }
     if controller.showShortcuts || controller.showExport || controller.showSettings
       || controller.copyEditorOpen || controller.imported != nil || controller.showApplyLayout || controller.showExportResult
     {
@@ -78,6 +78,18 @@ enum NativeShortcuts {
     let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
     guard !flags.contains(.command), !flags.contains(.control), !flags.contains(.option) else {
       return false
+    }
+    if controller.cleanPreview && !controller.previewOpen && !controller.compareOpen {
+      switch event.keyCode {
+      case 123, 126, 116: controller.moveSlide(-1)
+      case 124, 125, 121: controller.moveSlide(1)
+      case 49: if !event.isARepeat { controller.moveSlide(flags.contains(.shift) ? -1 : 1) }
+      case 115: if let id = controller.slides.first?.id { controller.selectSlide(id) }
+      case 119: if let id = controller.slides.last?.id { controller.selectSlide(id) }
+      case 53: controller.endCleanPreview()
+      default: return false
+      }
+      return true
     }
     if controller.compareOpen {
       let ids = controller.compareIDs
@@ -186,6 +198,7 @@ struct NativeShortcutSheet: View {
             Text("Space-drag").monospaced()
             Text("Pan canvas; pinch to zoom")
           }
+          GridRow { Text("⇧⌘P").monospaced(); Text("Review the deck: arrows browse, Escape returns to editing") }
           GridRow {
             Text("Escape").monospaced()
             Text("Cancel a canvas drag or close preview")
@@ -265,7 +278,10 @@ final class NativeCloseDelegate: NSObject, NSWindowDelegate {
     self.original = original
   }
   func windowShouldClose(_ sender: NSWindow) -> Bool {
-    if approved { return original?.windowShouldClose?(sender) ?? true }
+    if approved {
+      approved = false // one close, not permanent permission after reopening the window
+      return original?.windowShouldClose?(sender) ?? true
+    }
     guard !pending else { return false }
     pending = true
     Task { [weak self, weak sender] in

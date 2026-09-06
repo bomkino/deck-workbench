@@ -69,3 +69,15 @@ A new layout restores its default text/image placement and gradient direction wh
 Arrow keys nudge the selected visible region or gradient; Shift uses a larger step. Frame movement stays inside the canvas. Guides snap to both sides of each column/row, including the right and bottom margins. Image-only layouts do not offer invisible text controls. With **Fit whole image**, switch to **Fill / crop** before panning the crop; Command-drag still moves the frame.
 
 The screen draws live gradients directly. PDFs retain the alpha-safe overlay export so gradients cannot hide source images. Unchanged text layout is reused while images, gradients or text position change.
+
+## Review, crop and working-window polish
+
+**Review deck** in Assemble (or Command-Shift-P) hides the editing panels. Left/Right or Up/Down move through slides; Space advances, Shift-Space returns, Home/End jump to the beginning/end, and Escape restores the editing workspace. Reviewing never changes slide content. Excluded slides remain visible for review; their inclusion in export stays an independent choice.
+
+For an image in **Fill / crop**, the inspector offers **Crop zoom** (100–400%) and **Centre crop**. Zoom retains the current focal point where the image boundaries allow. Dragging still pans the crop. Each committed adjustment is undoable, does not change other image roles, and never changes the source file. Reset Crop returns to the full source.
+
+The copy editor can remove optional body/subheadline/caption/credit fields. Removal affects only its draft until Save Copy; Cancel changes nothing. Notes editing and copy fields retain stable slide/field identities across view updates.
+
+Search closes preview/comparison and returns to the media collection. Escape leaves the search field. Returning from a candidate preview restores a visible media focus. Comparison resets for a different slide rather than silently reusing unrelated candidates.
+
+Import parses locally off the UI thread with the existing 1 MiB limit. Replacement stays open until saving is acknowledged and retains errors/drafts when rejected. Document transitions are serialized; a late chooser or Save cannot redirect work into a newly opened deck. Export is unavailable while a conflicting edit/transition/destination chooser is active, but creative layout warnings remain nonblocking. The export chooser shows the actual included slide count.

@@ -1,37 +1,27 @@
-# v0.1.2 — slide editing restored
+# v0.1.3 — native workflow polish
 
-This release restores direct editing without changing Workbench's prototype-and-handoff purpose.
+A focused finish to the existing native app: safer transitions, a usable deck-review mode, crop zoom, and less repeated media-list work. The slide management and layout features from v0.1.2 remain in place.
 
-## Slide controls
+## Working flow and visuals
 
-Layout and Edit Copy remain visible above both Curate and Assemble, even with the context panel hidden. The sidebar has Add Slide and a context menu. The new Slide menu exposes Add, Duplicate, Rename, Move Earlier/Later, Delete, Edit Copy and all layouts.
+Review deck uses the full working area and hides editing panels. Arrow keys, Space/Shift-Space and Home/End navigate without modifying the deck; Escape returns to editing. The current slide number and title remain visible. Crop zoom (100–400%) and Centre crop retain image framing as separate undoable adjustments. Optional copy fields can be removed in the draft without changing saved copy until confirmation. Layout/curation controls reflow when horizontal space is tight; export options scroll above fixed action buttons and show the actual included slide count.
 
-Add inserts after the selected slide and opens its copy editor. Duplicate retains writing, notes, shortlisted/chosen media and supported composition settings while giving all new document objects distinct identities. Rename changes the sidebar/handoff name, not the headline. Move can cross section boundaries. Delete confirms first, leaves original media untouched and restores the whole slide with Undo. The deck retains at least one slide.
+Search exits preview/comparison. Candidate preview returns to a visible focus; comparison does not leak candidates into a different slide. Image-only selection no longer resets to an invisible text target. Slide notes retain their bound destination when the selected slide changes.
 
-## Copy editing
+## Saving and document lifecycle
 
-Edit Copy is no longer buried. Heading-only imports offer body/subheadline fields; additional body, caption and credit fields can be added. The editor captures the slide it opened, so selection changes cannot redirect a save. Copy and optional slide-name edits save together as one Undo step. Cancelling changes nothing. Failed saves leave the draft open. Closing or importing while a draft is open requires saving or cancelling first.
+Create/open/close/retry are serialized across suspension points. Late chooser callbacks and Save requests retain document identity. Replacement-copy imports keep the preview and error until acknowledged, with expected-copy conflict checks. Export reserves its operation before flushing, prevents duplicate destination requests and ignores obsolete progress callbacks.
 
-Unchanged fields preserve the original rich-text data; no-op saves do not add journal/history entries. A conflicting copy revision is rejected without overwriting newer writing. Existing media, notes and layouts stay associated with the slide.
+A failure after durable journal append fences the session for recovery/replay instead of permitting new commands from stale in-memory state. New document sessions adopt their file store only after successfully projecting the initial view. Closing and reopening the same native window no longer reuses permanent close approval.
 
-## Small performance and safety changes
+## Performance
 
-Sidebar ordinals use an indexed lookup rather than rescanning the deck for every row. Duplication works from the queued, durable slide after pending notes have flushed. Structural actions serialize with the existing command queue; no second file format, history engine or renderer is introduced.
+File imports use bounded reads and parse off the main actor. Media refresh requests are coalesced. An unchanged catalogue returns no new projection; changed catalogues and source maps arrive together without a main-thread JSON decode. Late scan/refresh callbacks cannot repopulate a switched document. Existing bounded image caches, text-layout reuse and direct live-gradient drawing are retained. No universal speed multiplier is claimed.
 
-## Verification and compatibility
+## Verification and installation
 
-The package journey covers add, captured-target copy editing, duplicate, rename, move, delete/Undo/Redo and edited text in the ordinary handoff, in addition to the existing curation/export/reopen checks. Read the receipt associated with this exact release; build completion alone is not proof of every interactive path.
+The published artifact must have the same-SHA native package receipt for core slide/copy/media editing and handoff, plus review navigation, crop zoom/Undo, slide-bound notes, unchanged-catalog reuse, bounded import and serialized document creation. The repository retains meaningful document-kernel checks rather than source-pattern tests.
 
-The file reader schema is unchanged from v0.1.0/v0.1.1. Keep an untouched copy of pre-native decks before their first native edit. Apple Silicon and macOS 26+ remain required; the app is ad-hoc signed, not notarized. Source media is never edited by these commands. Exhaustive accessibility, large studio-library performance and every recovery/permission environment still need hands-on evaluation.
+Requires Apple Silicon and macOS 26+. Quit Workbench, unzip the `.app.zip`, replace Deck Workbench.app in Applications and open it. Ad-hoc signed, not notarized. Existing v0.1.0–v0.1.2 native decks retain their reader schema. Keep an untouched copy of pre-native decks before editing.
 
-Prior release notes: [v0.1.1](releases/v0.1.1.md).
-
-## Layout finishing and targeted performance work
-
-Apply Arrangement now copies custom image frames, replacing the destination geometry deliberately while retaining each destination's crops, copy and notes. Changing a layout restores its intended gradient direction. Reset Placement restores text/image placement and gradient without clearing crops or writing. Undo restores the complete prior arrangement.
-
-Image-only and blank-copy slides no longer expose invisible text hit targets. Resize handles keep a screen-sized hit area at small zooms. Fitted images explain why crop-panning is unavailable. Snapping includes both column/row edges and the final right/bottom margins. Keyboard movement stays within the canvas; gradient arrows translate both endpoints together without changing its direction. Dragged gradient endpoints cannot collapse into an invalid zero-length gradient.
-
-Canvas and inspector reads reuse their resolved scene within a document revision. An 8 MiB-cost / 48-entry text cache reuses immutable Core Text layouts when image/gradient settings or text position change; size/copy/columns invalidate it. Interactive gradients draw directly into the screen context rather than allocating a multi-megapixel overlay for every pointer movement. PDF export retains the alpha-safe cached overlay, keeping source images and selectable text separate. Cache limits are eviction targets, not a total application-memory guarantee.
-
-The extracted-app journey additionally verifies custom-frame copying, reset/Undo, reused text frames, visible layout targets and screen/export gradient agreement. No studio-wide speed multiplier is claimed.
+Large studio libraries, exhaustive VoiceOver coverage, unusual source formats, removable/cloud-managed volumes and every recovery environment remain outside the synthetic journey. See docs/KNOWN_LIMITATIONS.md. Original media is never intentionally modified.

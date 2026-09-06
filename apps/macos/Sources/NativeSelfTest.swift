@@ -197,6 +197,7 @@ enum NativeAcceptance {
     controller.failure = nil
     try await exerciseLayoutFinishing(controller)
     try await exerciseSlideEditing(controller)
+    try await exerciseFinalPolish(controller, media: media, root: root, window: window)
     controller.setNotes("A final pending note — flushed before handoff.")
     await controller.flush()
     try await controller.session.save()
@@ -296,6 +297,17 @@ enum NativeAcceptance {
       "Changing UI state altered exported pixels")
     let preview = try renderedPagePNG(pdf.page(at: 0)!)
     try preview.write(to: output.appendingPathComponent("prototype-page-1.png"))
+    // These are the real working views, not separate UI mockups.
+    controller.failure = nil
+    controller.phase = "assemble"; controller.showContext = true
+    controller.selectSlide(controller.slides[0].id); controller.fitCanvas()
+    await Task.yield()
+    try await captureWindow(window, to: output.appendingPathComponent("ui-assemble.png"))
+    controller.startCleanPreview()
+    try await captureWindow(window, to: output.appendingPathComponent("ui-review.png"))
+    controller.endCleanPreview(); controller.phase = "curate"
+    window.setContentSize(NSSize(width: 1060, height: 740))
+    try await captureWindow(window, to: output.appendingPathComponent("ui-curate-compact.png"))
     // A crash-left lock is resolved only by making a saved-state copy.
     try await controller.session.close()
     let lock = deckURL.appendingPathComponent(".deck-workbench-writer.lock")
@@ -320,6 +332,8 @@ enum NativeAcceptance {
       "layoutFrameCopy": true, "layoutResetUndo": true, "textLayoutReused": true,
       "gradientScreenExportParity": true, "visibleLayoutTargets": true,
       "layoutPicker": true, "perImageEdits": true, "notesUndo": true, "validationDoesNotFence": true,
+      "reviewNavigation": true, "cropZoomUndo": true, "notesTargetIdentity": true,
+      "catalogRevisionReuse": true, "boundedImport": true, "lifecycleSerialization": true,
       "copyOnlyIndependent": true, "literalCopy": true, "safeFilenames": true, "thumbnailCache": true,
       "nativeBurstAndSaveSeconds": inputAndSaveSeconds,
       "manualAccessibility": "not performed", "targetMachinePerformance": "not measured",
@@ -331,6 +345,109 @@ enum NativeAcceptance {
       "Native acceptance: 20-slide handoff, copy, media, keyboard decisions, undo, reopen, saved-copy recovery, UI-independent PDF."
     )
     window.orderOut(nil)
+  }
+  private static func captureWindow(_ window: NSWindow, to url: URL) async throws {
+    // Let SwiftUI layout and asynchronous thumbnails settle once for capture.
+    try await Task.sleep(for: .milliseconds(350))
+    guard let view = window.contentView else { throw WorkbenchFailure(name: "AcceptanceFailure", message: "No native window content") }
+    view.layoutSubtreeIfNeeded(); view.displayIfNeeded()
+    guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
+      throw WorkbenchFailure(name: "AcceptanceFailure", message: "Native window capture failed")
+    }
+    view.cacheDisplay(in: view.bounds, to: bitmap)
+    guard let data = bitmap.representation(using: .png, properties: [:]) else {
+      throw WorkbenchFailure(name: "AcceptanceFailure", message: "Native window image could not be written")
+    }
+    try data.write(to: url)
+  }
+  private static func exerciseFinalPolish(_ controller: NativeWorkbenchController,
+    media: MediaCatalogSession, root: URL, window: NSWindow) async throws {
+    let ids = controller.slides.map(\.id)
+    controller.selectSlide(ids[0]); controller.phase = "assemble"
+    let before = controller.document!.revision
+    controller.chooseLayout("image-only"); await controller.flush()
+    controller.selectSlide(ids[1]); controller.selectSlide(ids[0])
+    try require(controller.selectionTarget == "primary", "Image-only selection still targets invisible text")
+    guard let layer = controller.resolvedScene?.imageLayers.first, let assetID = layer.assetID,
+      let asset = controller.assetIndex[assetID], let width = asset.width, let height = asset.height else {
+      throw WorkbenchFailure(name: "AcceptanceFailure", message: "Crop exercise has no source image")
+    }
+    controller.zoomCrop(2, role: "primary", slideID: ids[0]); await controller.flush()
+    try require(abs((controller.cropZoom(for: "primary") ?? 0) - 2) < 0.001, "Crop zoom does not resolve at the requested scale")
+    let zoomed = controller.selectedSlide!.settings.layout.crops["primary"]!
+    try require(zoomed.x >= 0 && zoomed.y >= 0 && zoomed.x + zoomed.width <= 1.000001 && zoomed.y + zoomed.height <= 1.000001, "Crop zoom escaped the image")
+    let framed = NativeLayoutGeometry.zoomedCrop(layer, width: Double(width), height: Double(height), zoom: 4)
+    try require(framed.width > 0 && framed.height > 0, "Crop zoom made an empty frame")
+    controller.centerCrop(role: "primary", slideID: ids[0]); await controller.flush()
+    let changes = controller.document!.revision - before
+    for _ in 0..<changes { controller.undo(documentOnly: true); await controller.flush() }
+    try require(controller.selectedSlide?.settings.layout.preset != "image-only", "Crop/layout Undo did not restore the starting slide")
+
+    // A late TextEditor binding update retains its captured slide destination.
+    let firstNotes = controller.slideIndex[ids[0]]!.settings.notes
+    let secondNotes = controller.slideIndex[ids[1]]!.settings.notes
+    controller.selectSlide(ids[1])
+    controller.setNotes("Captured slide note", slideID: ids[0]); await controller.flush()
+    try require(controller.slideIndex[ids[0]]?.settings.notes == "Captured slide note" && controller.slideIndex[ids[1]]?.settings.notes == secondNotes, "A note crossed slide identities")
+    controller.undo(documentOnly: true); await controller.flush()
+    try require(controller.slideIndex[ids[0]]?.settings.notes == firstNotes, "Captured note Undo failed")
+
+    // Dispatch through AppKit, not a duplicated keyboard implementation.
+    controller.selectSlide(ids[0]); controller.startCleanPreview()
+    let reviewRevision = controller.document!.revision
+    let baseline = NativeShortcuts.handledEventCount
+    let arrow = String(UnicodeScalar(NSRightArrowFunctionKey)!)
+    let next = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
+      timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+      context: nil, characters: arrow, charactersIgnoringModifiers: arrow, isARepeat: false, keyCode: 124)!
+    NSApp.postEvent(next, atStart: false)
+    let deadline = Date().addingTimeInterval(3)
+    while NativeShortcuts.handledEventCount == baseline && Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
+    try require(controller.selectedSlideID == ids[1] && controller.document!.revision == reviewRevision, "Review arrows edited the deck or failed to navigate")
+    let escape = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
+      timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+      context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53)!
+    NSApp.postEvent(escape, atStart: false)
+    let escapeDeadline = Date().addingTimeInterval(3)
+    while controller.cleanPreview && Date() < escapeDeadline { try await Task.sleep(for: .milliseconds(10)) }
+    try require(!controller.cleanPreview, "Escape did not leave deck review")
+    controller.previewOpen = true; controller.compareOpen = true; controller.searchMedia()
+    try require(controller.phase == "curate" && !controller.previewOpen && !controller.compareOpen, "Search stayed hidden behind preview")
+    controller.selectSlide(ids[0])
+
+    let update = try await media.nativeCatalogUpdate(after: -1)
+    try require(update?.catalog.assets.count == controller.assets.count, "Atomic catalog projection lost assets")
+    let unchanged = try await media.nativeCatalogUpdate(after: update!.catalog.revision)
+    try require(unchanged == nil, "Unchanged catalog rebuilt its projection")
+    try require(Set(update!.sources.keys).isSubset(of: Set(update!.catalog.assets.map(\.id))), "Catalog and source snapshots disagree")
+
+    let oversized = root.appendingPathComponent("too-large.md")
+    try Data(repeating: 65, count: 1_048_577).write(to: oversized)
+    do { _ = try NativeCopyImport.read(oversized); throw WorkbenchFailure(name: "AcceptanceFailure", message: "Oversized copy was accepted") }
+    catch let failure as WorkbenchFailure { try require(failure.name == "ImportFormat", "Import size failure was not explicit") }
+    let valid = root.appendingPathComponent("small.md")
+    try Data("# Small deck\n## One slide\n### Body\nKept exactly.\n".utf8).write(to: valid)
+    let parsed = try NativeCopyImport.read(valid)
+    try require(parsed.slides.count == 1, "Bounded import lost valid copy")
+
+    // Two simultaneous requests may not create/adopt two documents. This uses
+    // the actual disk store and actor, not a synthetic queue replacement.
+    let other = try NativeWorkbenchController()
+    let a = root.appendingPathComponent("Lifecycle-A.pitchdeck", isDirectory: true)
+    let b = root.appendingPathComponent("Lifecycle-B.pitchdeck", isDirectory: true)
+    async let first: Void = other.createImported(parsed, at: a)
+    async let second: Void = other.createImported(parsed, at: b)
+    _ = await (first, second)
+    let exists = [a, b].filter { FileManager.default.fileExists(atPath: $0.path) }
+    try require(exists.count == 1 && other.document != nil && !other.lifecycleBusy, "Concurrent creation escaped the document transition lock")
+    let deckID = other.document!.deck.deckId
+    do { try await other.session.save(expectedDeckID: "different-deck"); throw WorkbenchFailure(name: "AcceptanceFailure", message: "Stale Save was accepted") }
+    catch let failure as WorkbenchFailure { try require(failure.name == "DocumentChanged", "Stale Save was not rejected before writing") }
+    let closed = await other.closeForSwitch()
+    try require(closed && other.document == nil, "Guarded close failed")
+    await other.open(exists[0])
+    try require(other.document?.deck.deckId == deckID && !other.lifecycleBusy, "Closed document did not reopen")
+    _ = await other.closeForSwitch()
   }
   private static func exerciseLayoutFinishing(_ controller: NativeWorkbenchController) async throws {
     let ids = controller.slides.map(\.id)
