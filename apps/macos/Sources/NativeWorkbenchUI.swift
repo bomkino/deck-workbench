@@ -257,8 +257,11 @@ struct NativeCurateView: View {
       HStack(spacing: 10) {
         TextField("Search media", text: $controller.query).accessibilityLabel("Search filenames and folders").textFieldStyle(
           .roundedBorder).focused($searchFocused)
-          .onChange(of: controller.searchRequest) { _, _ in searchFocused = true }
-          .onAppear { if controller.searchRequest > 0 { searchFocused = true } }
+          .onChange(of: controller.searchRequest) { _, _ in
+            if controller.consumeSearchFocusRequest() { searchFocused = true }
+          }
+          .onAppear { if controller.consumeSearchFocusRequest() { searchFocused = true } }
+          .onChange(of: controller.mediaFocusRequest) { _, _ in searchFocused = false }
           .onExitCommand { searchFocused = false; if let id = controller.filteredAssets.first?.id { controller.focusAsset(id) } else { controller.focusedAssetID = nil } }
         Picker("Collection", selection: $controller.collection) {
           Text("All media").tag("all")

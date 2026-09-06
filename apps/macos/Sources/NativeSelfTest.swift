@@ -81,10 +81,21 @@ enum NativeAcceptance {
     window.contentView = NSHostingView(rootView: NativeWorkbenchRoot(controller: controller))
     window.makeKeyAndOrderFront(nil)
     NSApp.activate(ignoringOtherApps: true)
-    await Task.yield()
+    // Wait for the actual native input view, not a guessed startup delay.
+    let readyDeadline = Date().addingTimeInterval(5)
+    while (!window.isKeyWindow || !hasInputMonitor(window.contentView, window: window)) && Date() < readyDeadline {
+      try await Task.sleep(for: .milliseconds(20))
+    }
+    try require(window.isKeyWindow && hasInputMonitor(window.contentView, window: window), "Native input view did not become ready")
     // Post a burst into AppKit's real event loop. Each Right event changes the
     // focused asset before the following S is dispatched by the installed monitor.
     controller.focusAsset(controller.filteredAssets[0].id)
+    await Task.yield()
+    let focusDeadline = Date().addingTimeInterval(3)
+    while (window.firstResponder as? NSTextView)?.isEditable == true && Date() < focusDeadline {
+      try await Task.sleep(for: .milliseconds(20))
+    }
+    try require((window.firstResponder as? NSTextView)?.isEditable != true, "Media focus remained in the search editor")
     let eventBaseline = NativeShortcuts.handledEventCount
     let inputStarted = ProcessInfo.processInfo.systemUptime
     for index in 0..<40 {
@@ -120,7 +131,7 @@ enum NativeAcceptance {
     }
     try require(
       NativeShortcuts.handledEventCount - eventBaseline >= 79,
-      "AppKit did not dispatch all curation/navigation events")
+      "AppKit dispatched \(NativeShortcuts.handledEventCount - eventBaseline)/79 curation events; responder=\(String(describing: window.firstResponder)); query=\(controller.query)")
     await controller.flush()
     try require(
       controller.failedCommands.isEmpty,
@@ -348,6 +359,11 @@ enum NativeAcceptance {
     )
     window.orderOut(nil)
   }
+  private static func hasInputMonitor(_ view: NSView?, window: NSWindow) -> Bool {
+    guard let view else { return false }
+    if view is NativeKeyMonitorView && view.window === window { return true }
+    return view.subviews.contains { hasInputMonitor($0, window: window) }
+  }
   private static func captureWindow(_ window: NSWindow, to url: URL) async throws {
     // Let SwiftUI layout and asynchronous thumbnails settle once for capture.
     try await Task.sleep(for: .milliseconds(350))
@@ -438,6 +454,18 @@ enum NativeAcceptance {
     try require(!controller.cleanPreview, "Escape did not leave deck review")
     controller.previewOpen = true; controller.compareOpen = true; controller.searchMedia()
     try require(controller.phase == "curate" && !controller.previewOpen && !controller.compareOpen, "Search stayed hidden behind preview")
+    let searchDeadline = Date().addingTimeInterval(3)
+    while (window.firstResponder as? NSTextView)?.isEditable != true && Date() < searchDeadline {
+      try await Task.sleep(for: .milliseconds(20))
+    }
+    try require((window.firstResponder as? NSTextView)?.isEditable == true, "Command-F did not focus search")
+    controller.focusAsset(controller.filteredAssets[0].id)
+    await Task.yield()
+    let gridDeadline = Date().addingTimeInterval(3)
+    while (window.firstResponder as? NSTextView)?.isEditable == true && Date() < gridDeadline {
+      try await Task.sleep(for: .milliseconds(20))
+    }
+    try require((window.firstResponder as? NSTextView)?.isEditable != true, "Selecting media did not leave search")
     controller.selectSlide(ids[0])
 
     let update = try await media.nativeCatalogUpdate(after: -1)

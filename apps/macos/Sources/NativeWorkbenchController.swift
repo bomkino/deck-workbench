@@ -52,6 +52,8 @@ final class NativeWorkbenchController: ObservableObject {
   @Published var compareOpen = false
   @Published var comparedAssetID: String?
   @Published var searchRequest = 0
+  @Published var mediaFocusRequest = 0
+  private var pendingSearchFocus = false
   @Published var compareIDs: [String] = []
   @Published var gridColumns = 3
   @Published var curateRole = "primary"
@@ -277,7 +279,12 @@ final class NativeWorkbenchController: ObservableObject {
   func searchMedia() {
     guard document != nil, !lifecycleBusy, !copyEditorOpen else { return }
     previewOpen = false; compareOpen = false; cleanPreview = false
+    pendingSearchFocus = true
     phase = "curate"; searchRequest += 1
+  }
+  func consumeSearchFocusRequest() -> Bool {
+    defer { pendingSearchFocus = false }
+    return pendingSearchFocus
   }
   func endCleanPreview() { cleanPreview = false }
   func startCleanPreview() {
@@ -342,7 +349,9 @@ final class NativeWorkbenchController: ObservableObject {
     selectSlide(slides[min(slides.count - 1, max(0, current + delta))].id)
   }
   func focusAsset(_ id: String) {
+    pendingSearchFocus = false
     focusedAssetID = id
+    mediaFocusRequest += 1
     NSApp.keyWindow?.makeFirstResponder(nil)
   }
   func focusNext(_ delta: Int) {
@@ -888,6 +897,7 @@ final class NativeWorkbenchController: ObservableObject {
       compareOpen = false; comparedAssetID = nil; compareIDs = []
       focusedAssetID = nil; cleanPreview = false; exportResult = nil; showExportResult = false
       showExport = false; showApplyLayout = false; imported = nil; importError = nil
+      pendingSearchFocus = false
       query = ""; collection = "all"; selectedRootID = nil
       failure = nil
       assets = []
