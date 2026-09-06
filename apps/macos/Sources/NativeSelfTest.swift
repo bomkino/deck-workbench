@@ -29,6 +29,7 @@ final class NativeSelfTestDelegate: NSObject, NSApplicationDelegate {
 
 @MainActor
 enum NativeAcceptance {
+  private static var captureMethods: [String: String] = [:]
   static func require(_ condition: Bool, _ message: String) throws {
     if !condition { throw WorkbenchFailure(name: "AcceptanceFailure", message: message) }
   }
@@ -337,6 +338,7 @@ enum NativeAcceptance {
       "copyOnlyIndependent": true, "literalCopy": true, "safeFilenames": true, "thumbnailCache": true,
       "nativeBurstAndSaveSeconds": inputAndSaveSeconds,
       "manualAccessibility": "not performed", "targetMachinePerformance": "not measured",
+      "windowCaptures": captureMethods,
       "issues": exported.issues,
     ]
     try JSONSerialization.data(withJSONObject: receipt, options: [.prettyPrinted, .sortedKeys])
@@ -351,6 +353,23 @@ enum NativeAcceptance {
     try await Task.sleep(for: .milliseconds(350))
     guard let view = window.contentView else { throw WorkbenchFailure(name: "AcceptanceFailure", message: "No native window content") }
     view.layoutSubtreeIfNeeded(); view.displayIfNeeded()
+    // Capture the compositor when available; NSView caching omits some native
+    // List/vibrancy layers. Never label a partial fallback as a full screenshot.
+    let number = window.windowNumber
+    let captured = await Task.detached(priority: .utility) {
+      let process = Process()
+      process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+      process.arguments = ["-x", "-o", "-l", String(number), url.path]
+      process.standardOutput = FileHandle.nullDevice
+      process.standardError = FileHandle.nullDevice
+      do { try process.run(); process.waitUntilExit(); return process.terminationStatus == 0 }
+      catch { return false }
+    }.value
+    if captured, CGImageSourceCreateWithURL(url as CFURL, nil) != nil {
+      captureMethods[url.lastPathComponent] = "WindowServer"
+      return
+    }
+    captureMethods[url.lastPathComponent] = "partial NSView fallback"
     guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
       throw WorkbenchFailure(name: "AcceptanceFailure", message: "Native window capture failed")
     }
@@ -358,7 +377,8 @@ enum NativeAcceptance {
     guard let data = bitmap.representation(using: .png, properties: [:]) else {
       throw WorkbenchFailure(name: "AcceptanceFailure", message: "Native window image could not be written")
     }
-    try data.write(to: url)
+    let partial = url.deletingLastPathComponent().appendingPathComponent(url.deletingPathExtension().lastPathComponent + "-partial.png")
+    try data.write(to: partial)
   }
   private static func exerciseFinalPolish(_ controller: NativeWorkbenchController,
     media: MediaCatalogSession, root: URL, window: NSWindow) async throws {

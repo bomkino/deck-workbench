@@ -255,7 +255,7 @@ struct NativeCurateView: View {
   var body: some View {
     VStack(spacing: 0) {
       HStack(spacing: 10) {
-        TextField("Search filenames and folders", text: $controller.query).textFieldStyle(
+        TextField("Search media", text: $controller.query).accessibilityLabel("Search filenames and folders").textFieldStyle(
           .roundedBorder).focused($searchFocused)
           .onChange(of: controller.searchRequest) { _, _ in searchFocused = true }
           .onAppear { if controller.searchRequest > 0 { searchFocused = true } }
@@ -265,7 +265,8 @@ struct NativeCurateView: View {
           Text("Shortlist").tag("shortlist")
           Text("Chosen").tag("chosen")
           Text("Rejected").tag("rejected")
-        }.frame(width: 135)
+        }.labelsHidden().frame(width: 130).accessibilityLabel("Media collection")
+          .help("Show all media, shortlisted, chosen or rejected images")
         Menu {
           Button("Add Media Folder…") { controller.addMediaFolder() }
           ForEach(controller.roots) { root in
@@ -281,18 +282,12 @@ struct NativeCurateView: View {
           Label("Folders", systemImage: "folder.badge.plus")
         }
       }.padding(12)
-      HStack {
-        Text("\(controller.filteredAssets.count) media files").font(.caption).foregroundStyle(.secondary)
-        Picker("Sort", selection: $controller.sortOrder) {
-          Text("Filename").tag("filename")
-          Text("Folder").tag("folder")
-          Text("Recently modified").tag("modified")
-        }.frame(maxWidth: 165).controlSize(.small)
-        Spacer()
-        if !controller.compareIDs.isEmpty {
-          Button("Compare \(controller.compareIDs.count)") { controller.compareOpen = true }
+      ViewThatFits(in: .horizontal) {
+        HStack(spacing: 8) { mediaCount; sortPicker; Spacer(minLength: 4); compareButton; thumbnailSize }
+        VStack(alignment: .leading, spacing: 8) {
+          HStack { mediaCount; Spacer(); compareButton }
+          HStack { sortPicker; Spacer(); thumbnailSize }
         }
-        Slider(value: $controller.gridSize, in: 100...240).frame(width: 110).help("Thumbnail size")
       }.padding(.horizontal, 14).padding(.bottom, 8)
       if controller.selectedRootID != nil || !controller.query.isEmpty || controller.collection != "all" {
         HStack {
@@ -327,6 +322,25 @@ struct NativeCurateView: View {
       Divider()
       NativeCurateActions(controller: controller).padding(12)
     }
+  }
+  private var mediaCount: some View {
+    Text("\(controller.filteredAssets.count) media files").font(.caption).foregroundStyle(.secondary).fixedSize()
+  }
+  private var sortPicker: some View {
+    Picker("Sort media", selection: $controller.sortOrder) {
+      Text("Filename").tag("filename")
+      Text("Folder").tag("folder")
+      Text("Newest first").tag("modified")
+    }.labelsHidden().frame(width: 130).controlSize(.small)
+      .help("Sort by filename, folder or modification date")
+  }
+  @ViewBuilder private var compareButton: some View {
+    if !controller.compareIDs.isEmpty {
+      Button("Compare \(controller.compareIDs.count)") { controller.compareOpen = true }.fixedSize()
+    }
+  }
+  private var thumbnailSize: some View {
+    Slider(value: $controller.gridSize, in: 100...240).frame(width: 100).help("Thumbnail size").accessibilityLabel("Thumbnail size")
   }
 }
 struct NativeAssetTile: View {
@@ -579,7 +593,7 @@ struct NativeAssemblyInspector: View {
         Button("Reset placement") { controller.resetPlacement() }.controlSize(.small)
           .help("Restore this layout’s text region, image frames and gradient. Keep copy, crops, notes and candidates.")
       }
-      Button("Apply arrangement to other slides…") { controller.showApplyLayout = true }.controlSize(.small)
+      Button("Apply arrangement…") { controller.showApplyLayout = true }.help("Apply this layout to selected slides without changing their copy or image crops").controlSize(.small)
       Picker("Adjust", selection: $controller.selectionTarget) {
         if NativeSlideRenderer.resolvedPreset(slide: slide) != "image-only" { Text("Text region").tag("text") }
         ForEach(slide.imageRoles, id: \.self) { Text("Image · \($0)").tag($0) }
