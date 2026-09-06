@@ -1,27 +1,27 @@
-# v0.1.1 — native workflow and handoff repair
+# v0.1.2 — slide editing restored
 
-This release fixes ordinary operations that could reject edits, overwrite another image's adjustments or resurrect undone notes. It retains the Mac-native prototype/handoff direction rather than rebuilding the application again.
+This release restores direct editing without changing Workbench's prototype-and-handoff purpose.
 
-## Correctness
+## Slide controls
 
-Layout picker resets are valid. Frame/crop/fill changes affect only the intended image. Batch arrangement application is reversible and idempotent. Visible slots follow the explicit layout; displaced images remain shortlisted. Cross-slot assignment moves/swaps correctly. Definitively rejected commands no longer hold subsequent valid actions. Acknowledged note drafts clear by generation; notes Undo survives save and reopen.
+Layout and Edit Copy remain visible above both Curate and Assemble, even with the context panel hidden. The sidebar has Add Slide and a context menu. The new Slide menu exposes Add, Duplicate, Rename, Move Earlier/Later, Delete, Edit Copy and all layouts.
 
-## Working flow
+Add inserts after the selected slide and opens its copy editor. Duplicate retains writing, notes, shortlisted/chosen media and supported composition settings while giving all new document objects distinct identities. Rename changes the sidebar/handoff name, not the headline. Move can cross section boundaries. Delete confirms first, leaves original media untouched and restores the whole slide with Undo. The deck retains at least one slide.
 
-Chosen-image slots, remove-but-keep-shortlisted, ordered keyboard comparison, natural/folder/date sorting, visible filters and filter-aware focus. Preview uses the working area instead of an oversized fixed sheet. Paste imports through the same parser. Replacement-copy preview explicitly matches slides and preserves their media/layout/notes. Apply Arrangement targets selected slides in one Undo step. Clean Preview, recentering Fit, better gesture cancellation, saved-value inspector synchronization and optional auto-advance. Pending command files can be restored to the matching deck with validation and confirmation.
+## Copy editing
 
-## Handoff
+Edit Copy is no longer buried. Heading-only imports offer body/subheadline fields; additional body, caption and credit fields can be added. The editor captures the slide it opened, so selection changes cannot redirect a save. Copy and optional slide-name edits save together as one Undo step. Cancelling changes nothing. Failed saves leave the draft open. Closing or importing while a draft is open requires saving or cancelling first.
 
-PDF gradients now retain transparency instead of hiding their source images. Only the gradient overlay is rasterized and cached; copy remains selectable. Canonical Mac media paths no longer reject legitimate directory aliases. The package journey inspects actual visible image pixels, not just embedded image objects.
+Unchanged fields preserve the original rich-text data; no-op saves do not add journal/history entries. A conflicting copy revision is rejected without overwriting newer writing. Existing media, notes and layouts stay associated with the slide.
 
-Copy-only export no longer reads originals. Output resource selection and reports follow the actual requested/delivered components. Completed components can survive an independent failure; cancellation removes staging. Literal copy is protected in editable Markdown. Normal filename extensions survive truncation; spreadsheet-active CSV values are neutralized. Media index includes relative paths, roles, hashes, source notes and unavailable-file status. Generated handoffs are excluded by their own marker, not by excluding their parent media directory.
+## Small performance and safety changes
 
-## Performance
+Sidebar ordinals use an indexed lookup rather than rescanning the deck for every row. Duplication works from the queued, durable slide after pending notes have flushed. Structural actions serialize with the existing command queue; no second file format, history engine or renderer is introduced.
 
-Indexed slide/asset lookup, cached sorted/filtered collections, shared bounded thumbnails, cancelled-work cleanup, reconnect-aware cache identity, one image construction per request and reuse of text layout during translation. No general speed multiplier is claimed. The release artifact includes a synthetic native journey receipt and timing/caching observations.
+## Verification and compatibility
 
-## Install / limits
+The package journey covers add, captured-target copy editing, duplicate, rename, move, delete/Undo/Redo and edited text in the ordinary handoff, in addition to the existing curation/export/reopen checks. Read the receipt associated with this exact release; build completion alone is not proof of every interactive path.
 
-Apple Silicon, macOS 26+. Quit the old app, unzip the `.app.zip`, drag Deck Workbench.app into Applications and launch it. It is ad-hoc signed, not notarized. Keep a duplicate of pre-native decks: the first native edit upgrades their reader schema. v0.1.1 retains v0.1.0's schema. Preserve original files and older releases as fallbacks.
+The file reader schema is unchanged from v0.1.0/v0.1.1. Keep an untouched copy of pre-native decks before their first native edit. Apple Silicon and macOS 26+ remain required; the app is ad-hoc signed, not notarized. Source media is never edited by these commands. Exhaustive accessibility, large studio-library performance and every recovery/permission environment still need hands-on evaluation.
 
-The package journey checks core operations and synthetic handoff outputs. Studio-scale performance, exhaustive accessibility, every source format and every recovery/permission environment are not established by it. See docs/KNOWN_LIMITATIONS.md. The entire historical master plan is not claimed complete.
+Prior release notes: [v0.1.1](releases/v0.1.1.md).

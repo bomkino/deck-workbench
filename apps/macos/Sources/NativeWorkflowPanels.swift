@@ -37,9 +37,9 @@ struct NativeContextPanel: View {
           DisclosureGroup(isExpanded: $copyExpanded) {
             VStack(alignment: .leading, spacing: 14) {
               HStack {
-                Label("Locked copy", systemImage: "lock.fill").font(.caption)
+                Label("Copy", systemImage: "text.alignleft").font(.caption)
                 Spacer()
-                Button("Correct…") { controller.copyEditorOpen = true }.controlSize(.small)
+                Button("Edit Copy…") { controller.beginEditCopy(slide.id) }.controlSize(.small)
               }
               ForEach(slide.copyBlocks) { block in
                 VStack(alignment: .leading, spacing: 5) {
@@ -58,7 +58,7 @@ struct NativeContextPanel: View {
                 }
               }
             }.padding(.top, 10)
-          } label: { Text("Approved copy").font(.headline) }
+          } label: { Text("Slide copy").font(.headline) }
           Toggle("Include in handoff", isOn: Binding(get: { slide.settings.included }, set: { controller.patchSlide(["included": $0]) }))
           if !slide.settings.shortlist.isEmpty {
             Divider()

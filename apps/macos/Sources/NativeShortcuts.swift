@@ -155,6 +155,11 @@ struct NativeShortcutSheet: View {
             }
           }
           Divider()
+          GridRow { Text("⇧⌘N").monospaced(); Text("Add a slide after the selected slide") }
+          GridRow { Text("⌘D").monospaced(); Text("Duplicate slide, copy, layout, choices and notes") }
+          GridRow { Text("⌘E").monospaced(); Text("Edit slide copy") }
+          GridRow { Text("⌥⌘↑ / ⌥⌘↓").monospaced(); Text("Move slide earlier / later") }
+          GridRow { Text("⇧⌘Delete").monospaced(); Text("Delete slide with confirmation; original files stay untouched") }
           GridRow {
             Text("⌘Z / ⇧⌘Z").monospaced()
             Text("Undo / redo a saved decision or gesture")

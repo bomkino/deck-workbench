@@ -195,6 +195,7 @@ enum NativeAcceptance {
     await controller.flush()
     try require(controller.failedCommands.isEmpty && controller.notes == "Valid action after rejected layout", "A validation rejection blocked later valid actions")
     controller.failure = nil
+    try await exerciseSlideEditing(controller)
     controller.setNotes("A final pending note — flushed before handoff.")
     await controller.flush()
     try await controller.session.save()
@@ -314,6 +315,7 @@ enum NativeAcceptance {
       "notesPages": notes.pageCount, "originalCopies": exported.originalCopies,
       "copyComplete": true, "previewScope": true, "shortlistIndependent": true, "reopen": true,
       "savedCopyRecovery": true, "uiIndependentPDF": true, "imageVisibleInPDF": true, "nativeKeyEvents": true,
+      "slideManagement": true, "copyEditorTarget": true, "editedCopyHandoff": true,
       "layoutPicker": true, "perImageEdits": true, "notesUndo": true, "validationDoesNotFence": true,
       "copyOnlyIndependent": true, "literalCopy": true, "safeFilenames": true, "thumbnailCache": true,
       "nativeBurstAndSaveSeconds": inputAndSaveSeconds,
@@ -326,6 +328,65 @@ enum NativeAcceptance {
       "Native acceptance: 20-slide handoff, copy, media, keyboard decisions, undo, reopen, saved-copy recovery, UI-independent PDF."
     )
     window.orderOut(nil)
+  }
+  private static func exerciseSlideEditing(_ controller: NativeWorkbenchController) async throws {
+    let originalIDs = controller.slides.map(\.id)
+    let originalID = originalIDs[0]
+    controller.selectSlide(originalID)
+    let original = controller.selectedSlide!
+    controller.addSlide()
+    await controller.flush()
+    guard let added = controller.selectedSlide, added.id != originalID else {
+      throw WorkbenchFailure(name: "AcceptanceFailure", message: "Add Slide did not select its new slide")
+    }
+    try require(controller.slides.count == originalIDs.count + 1 && controller.copyEditorOpen, "Add Slide did not open its editor")
+    try require(added.copyBlocks.map(\.role) == ["headline", "subheadline", "body"], "New slide lacks normal copy fields")
+    var writing = added.copyBlocks
+    writing[0].setText("A newly authored slide")
+    writing[2].setText("New body — with paragraph spacing.\n\nSecond paragraph.")
+    // Simulate selection moving during an open edit: saving must still target
+    // the captured slide, not whichever slide is currently highlighted.
+    controller.selectSlide(originalID)
+    controller.editCopy(writing, title: "New slide edited")
+    await controller.flush()
+    try require(!controller.copyEditorOpen && controller.slideIndex[added.id]?.title == "New slide edited", "Copy editor did not acknowledge its saved title")
+    try require(controller.slideIndex[added.id]?.copyBlocks.last?.text == writing[2].text, "Copy edit targeted the wrong slide")
+    try require(controller.slideIndex[originalID]?.copyBlocks.map(\.text) == original.copyBlocks.map(\.text), "Editing another slide changed original copy")
+    controller.selectSlide(originalID)
+    controller.duplicateSlide()
+    await controller.flush()
+    guard let duplicated = controller.selectedSlide, duplicated.id != originalID else {
+      throw WorkbenchFailure(name: "AcceptanceFailure", message: "Duplicate Slide did not select its new copy")
+    }
+    try require(duplicated.chosenIDs == original.chosenIDs && duplicated.settings.shortlist == original.settings.shortlist && duplicated.settings.notes == original.settings.notes, "Duplicate lost choices, candidates or notes")
+    try require(duplicated.contentBlocks[0].id != original.contentBlocks[0].id, "Duplicate reused content identity")
+    controller.reorderSlide(-1)
+    await controller.flush()
+    try require(controller.slides.first?.id == duplicated.id, "Move Earlier failed")
+    controller.reorderSlide(1)
+    await controller.flush()
+    try require(controller.slides[1].id == duplicated.id, "Move Later failed")
+    controller.renameSlide(duplicated.id, to: "Renamed duplicate")
+    await controller.flush()
+    controller.deleteSlideConfirmed(duplicated.id)
+    await controller.flush()
+    try require(controller.slideIndex[duplicated.id] == nil, "Delete Slide did not remove the slide")
+    controller.undo(documentOnly: true)
+    await controller.flush()
+    try require(controller.slideIndex[duplicated.id]?.title == "Renamed duplicate" && controller.slideIndex[duplicated.id]?.chosenIDs == original.chosenIDs, "Undo Delete did not restore the complete slide")
+    controller.undo(redo: true, documentOnly: true)
+    await controller.flush()
+    controller.deleteSlideConfirmed(added.id)
+    await controller.flush()
+    try require(controller.slides.map(\.id) == originalIDs && controller.failedCommands.isEmpty, "Slide management changed unrelated slide order or blocked saving")
+    // The normal handoff below must also contain writing authored in the editor.
+    controller.selectSlide(originalID)
+    controller.beginEditCopy()
+    var finalCopy = controller.selectedSlide!.copyBlocks
+    finalCopy.append(DeckCopyBlock(id: UUID().uuidString.lowercased(), semanticKey: "edited.credit", role: "credit", value: RichCopy("EDITED-COPY-MUST-REACH-HANDOFF")))
+    controller.editCopy(finalCopy)
+    await controller.flush()
+    try require(controller.selectedSlide?.copyBlocks.last?.text == "EDITED-COPY-MUST-REACH-HANDOFF" && !controller.copyEditorOpen, "Edited copy was not committed")
   }
   private static func syntheticImage(index: Int, url: URL) throws {
     let width = index % 3 == 0 ? 900 : 1600

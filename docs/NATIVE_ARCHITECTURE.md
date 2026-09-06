@@ -1,4 +1,4 @@
-# Active native architecture — v0.1.1
+# Active native architecture — v0.1.2
 
 NativeWorkbenchUI, NativeWorkflowPanels, NativeCanvas and NativeShortcuts are the Mac surfaces. NativeWorkbenchController owns transient selection, drafts, filters, indexed projections and a serial captured-intention queue. NativeDocumentSession owns the document kernel and durable store actor. JavaScriptCore hosts the TypeScript-derived internal kernel without a browser. PitchDeckDocumentStore retains checkpoints, journal/replay, schema compatibility and safe recovery.
 
@@ -13,3 +13,7 @@ MediaCatalogSession performs progressive background scans and stores original id
 Build: scripts/build-native-macos.sh. Verification: npm test and scripts/verify-native-package.sh. Normal CI builds artifacts. Explicit `v*` tags publish only the matching successful main-branch artifact; no publish-on-every-push, self-mutating source workflow or permanent acceptance waiver.
 
 Keep scope to prototype direction and handoff. No Linux, Electron, browser product, cloud service, telemetry or bundled AI. See KNOWN_LIMITATIONS.md for honest remaining boundaries.
+
+## Slide editing
+
+NativeSlideEditing contains the shared layout picker, always-visible slide actions and copy editor. The controller captures copy-edit slide/deck identity, retains drafts until durable acknowledgement and serializes structural actions after pending notes. Native add/duplicate/rename prepare existing insert/remove/history operations; no additional reader schema or new persisted operation type is required. Duplication remaps content/assignment/option/element IDs and supported bindings while retaining original asset IDs. Delete/move reuse the existing structural kernel commands. Copy replacement carries expected source blocks to detect conflicts and preserves unchanged rich text. Sidebar ordinals are indexed with the document projection.

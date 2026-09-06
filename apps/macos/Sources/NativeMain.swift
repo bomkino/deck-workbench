@@ -96,7 +96,7 @@ struct NativeWorkbenchCommands: Commands {
         controller.document == nil)
       Button("Export Handoff…") { controller.showExport = true }.keyboardShortcut(
         "e", modifiers: [.command, .shift]
-      ).disabled(controller.document == nil || controller.exportRunning)
+      ).disabled(controller.document == nil || controller.exportRunning || controller.copyEditorOpen)
     }
     CommandGroup(replacing: .undoRedo) {
       Button("Undo") { controller.undo() }.keyboardShortcut("z").disabled(controller.document == nil)
@@ -106,6 +106,29 @@ struct NativeWorkbenchCommands: Commands {
     }
     CommandGroup(replacing: .appSettings) {
       Button("Settings…") { controller.showSettings = true }.keyboardShortcut(",")
+    }
+    CommandMenu("Slide") {
+      Button("Add Slide") { controller.addSlide() }.keyboardShortcut("n", modifiers: [.command, .shift])
+        .disabled(!controller.slideEditingAvailable)
+      Button("Duplicate Slide") { controller.duplicateSlide() }.keyboardShortcut("d")
+        .disabled(!controller.slideEditingAvailable)
+      Button("Rename Slide…") { controller.renameSlide() }.disabled(!controller.slideEditingAvailable)
+      Button("Edit Copy…") { controller.beginEditCopy() }.keyboardShortcut("e")
+        .disabled(!controller.slideEditingAvailable)
+      Divider()
+      Menu("Layout") {
+        ForEach(NativeLayoutChoice.all) { choice in
+          Button(choice.name) { controller.chooseLayout(choice.id) }
+        }
+      }.disabled(!controller.slideEditingAvailable)
+      Button("Move Earlier") { controller.reorderSlide(-1) }.keyboardShortcut(.upArrow, modifiers: [.command, .option])
+        .disabled(!controller.slideEditingAvailable || !controller.canReorderSlide(controller.selectedSlideID, by: -1))
+      Button("Move Later") { controller.reorderSlide(1) }.keyboardShortcut(.downArrow, modifiers: [.command, .option])
+        .disabled(!controller.slideEditingAvailable || !controller.canReorderSlide(controller.selectedSlideID, by: 1))
+      Divider()
+      Button("Delete Slide…", role: .destructive) { controller.removeSlide() }
+        .keyboardShortcut(.delete, modifiers: [.command, .shift])
+        .disabled(!controller.slideEditingAvailable || controller.slides.count <= 1)
     }
     CommandMenu("Workbench") {
       Button("Curate") { controller.phase = "curate" }.keyboardShortcut("1")

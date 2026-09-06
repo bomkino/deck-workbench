@@ -24,6 +24,10 @@ struct NativeWorkbenchRoot: View {
           }.padding(12).background(Color.orange.opacity(0.14))
           Divider()
         }
+        if controller.document != nil {
+          NativeSlideEditingBar(controller: controller)
+          Divider()
+        }
         if controller.document == nil {
           VStack(alignment: .leading, spacing: 20) {
             Text("Copy. Images. Intent.").font(.custom("pd-head-500", size: 36))
@@ -121,7 +125,7 @@ struct NativeWorkbenchRoot: View {
               Label("Undo", systemImage: "arrow.uturn.backward")
             }.disabled(controller.document?.history.canUndo != true)
             Button("Export Handoff…") { controller.showExport = true }.disabled(
-              controller.document == nil || controller.exportRunning)
+              controller.document == nil || controller.exportRunning || controller.copyEditorOpen)
           }
         }
     }
@@ -132,8 +136,8 @@ struct NativeWorkbenchRoot: View {
     .sheet(isPresented: $controller.showExport) { NativeExportSheet(controller: controller) }
     .sheet(isPresented: $controller.showSettings) { NativeSettingsView(controller: controller) }
     .sheet(isPresented: $controller.copyEditorOpen) {
-      if let slide = controller.selectedSlide {
-        NativeCopyEditor(controller: controller, blocks: slide.copyBlocks)
+      if let slide = controller.copyEditorTarget {
+        NativeCopyEditor(controller: controller, slide: slide)
       }
     }
     .sheet(isPresented: $controller.showApplyLayout) { NativeApplyLayoutSheet(controller: controller) }
@@ -149,9 +153,8 @@ struct NativeWorkbenchRoot: View {
     .frame(minWidth: 900, minHeight: 600)
   }
   private func ordinal(_ slide: DeckSlide) -> String {
-    guard let index = controller.document?.deck.slides.firstIndex(where: { $0.id == slide.id })
-    else { return "" }
-    return String(format: "%02d", index + 1)
+    guard let ordinal = controller.slideOrdinals[slide.id] else { return "" }
+    return String(format: "%02d", ordinal)
   }
 }
 
@@ -167,16 +170,27 @@ struct NativeSlideSidebar: View {
         Section(section.title) {
           ForEach(section.slides) { slide in
             NativeSlideRow(slide: slide, ordinal: ordinal(slide)).tag(slide.id)
+              .contextMenu { NativeSlideActions(controller: controller, slideID: slide.id) }
+              .onTapGesture(count: 2) { controller.beginEditCopy(slide.id) }
           }
         }
       }
     }.navigationTitle("Slides")
-      .navigationSplitViewColumnWidth(min: 170, ideal: 220, max: 360)
+      .safeAreaInset(edge: .bottom, spacing: 0) {
+        HStack {
+          Button { controller.addSlide() } label: { Label("Add Slide", systemImage: "plus") }
+            .disabled(!controller.slideEditingAvailable)
+          Spacer()
+          Menu { NativeSlideActions(controller: controller, slideID: controller.selectedSlideID) }
+            label: { Image(systemName: "ellipsis.circle") }
+            .menuStyle(.borderlessButton).frame(width: 24).accessibilityLabel("Slide actions")
+        }.padding(12).background(.bar)
+      }
+      .navigationSplitViewColumnWidth(min: 190, ideal: 230, max: 360)
   }
   private func ordinal(_ slide: DeckSlide) -> String {
-    guard let index = controller.document?.deck.slides.firstIndex(where: { $0.id == slide.id })
-    else { return "" }
-    return String(format: "%02d", index + 1)
+    guard let ordinal = controller.slideOrdinals[slide.id] else { return "" }
+    return String(format: "%02d", ordinal)
   }
 }
 struct NativeSlideRow: View {
@@ -507,24 +521,7 @@ struct NativeAssemblyInspector: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
       Text("Prototype layout").font(.headline)
-      Picker(
-        "Layout",
-        selection: Binding(
-          get: { slide.settings.layout.preset }, set: { controller.chooseLayout($0) })
-      ) {
-        Text("Default · text left").tag("auto")
-        Text("Text left").tag("left")
-        Text("Text right").tag("right")
-        Text("Text lower").tag("lower")
-        Text("Wide text").tag("wide")
-        Text("Text only").tag("text-only")
-        Text("Image only").tag("image-only")
-        Text("Two images").tag("two-images")
-        Text("Three images").tag("three-images")
-        if slide.settings.layout.preset == "legacy" {
-          Text("Preserved legacy layout").tag("legacy")
-        }
-      }
+      NativeLayoutPicker(controller: controller, slide: slide)
       if slide.settings.layout.preset == "legacy" {
         Text("Preserved layout. Text fitting and region controls require conversion; unsupported legacy shapes are not rendered.").font(.caption).foregroundStyle(.secondary)
         Button("Convert to native prototype layout") { controller.chooseLayout("left") }
@@ -733,33 +730,6 @@ struct NativeImportSheet: View {
         Button("Create New Deck…") { controller.createImported() }.buttonStyle(.borderedProminent)
       }
     }.padding(24).nativeSheetFrame(width: 740, height: 650)
-  }
-}
-struct NativeCopyEditor: View {
-  @ObservedObject var controller: NativeWorkbenchController
-  @State var blocks: [DeckCopyBlock]
-  var body: some View {
-    VStack(alignment: .leading, spacing: 16) {
-      Text("Correct approved copy").font(.title2)
-      Text(
-        "Saving replaces this slide’s writing and locks it again. The whole correction is one undo action."
-      ).foregroundStyle(.secondary)
-      ScrollView {
-        VStack(alignment: .leading) {
-          ForEach(blocks.indices, id: \.self) { index in
-            Text(blocks[index].role.capitalized).font(.headline)
-            TextEditor(
-              text: Binding(get: { blocks[index].text }, set: { blocks[index].setText($0) })
-            ).frame(minHeight: 110).border(Color.secondary.opacity(0.2))
-          }
-        }
-      }
-      HStack {
-        Button("Cancel") { controller.copyEditorOpen = false }
-        Spacer()
-        Button("Save and Lock Copy") { controller.editCopy(blocks) }.buttonStyle(.borderedProminent)
-      }
-    }.padding(24).nativeSheetFrame(width: 650, height: 680)
   }
 }
 struct NativeSettingsView: View {

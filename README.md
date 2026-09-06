@@ -2,7 +2,7 @@
 
 A native Mac tool for turning final writing and a pile of references into a clear prototype and designer handoff. It helps communicate intent; it does not replace the designer.
 
-## v0.1.1 — workflow repair
+## v0.1.2 — slide editing restored
 
 [Download the Mac app](https://github.com/bomkino/deck-workbench/releases/latest). Choose the **.app.zip** asset, not GitHub's automatic source archive. Requires **Apple Silicon and macOS 26+**. Ad-hoc signed; not notarized.
 
@@ -29,11 +29,15 @@ New prototypes default to **2576 × 1080**, the studio grid and readable provisi
 
 **Help → Keyboard Shortcuts** or **Command-/** opens the reference. Curate: arrows browse, Space opens/closes preview, S shortlists, Shift-S removes shortlist membership, M chooses, X rejects, [ and ] switch slides. Commands pause while editing text. Command-F focuses search. Command-Shift-E exports.
 
-v0.1.1 repairs layout switching, independent image adjustments, notes/Undo and rejected-command handling. It adds chosen-slot controls, ordered comparison, sorting, replacement-copy preview, paste import, bulk arrangement application, independent export components and restore-pending actions. Caches/indexes avoid redundant filtering, image reconstruction and text layout. See the release notes for exact scope and verification evidence.
+**Change a slide:** use **Layout** or **Edit Copy** above the work area. **Add a slide:** use **Add Slide** at the bottom of the sidebar. Right-click a slide or open the **Slide** menu to duplicate, rename, move or delete it. Delete confirms first and Undo restores the full slide; original media stays untouched.
+
+Shortcuts: **Command-Shift-N** adds a slide, **Command-D** duplicates it, **Command-E** edits copy, **Command-Option-Up/Down** moves it, and **Command-Shift-Delete** asks to delete it. A heading-only import can now gain body/subheadline fields in Edit Copy.
+
+v0.1.2 restores direct slide management and a captured-target copy editor. It retains v0.1.1's curation, layout, export and cache repairs. See the release notes for exact scope and verification evidence.
 
 ## Existing decks
 
-A first native edit upgrades the working package's reader schema. **v0.0.6 cannot reopen the upgraded copy.** v0.1.0 native decks keep the same reader schema in v0.1.1. An inherited legacy layout is preserved until you explicitly convert it; conversion is undoable, but not a promise of pixel-perfect legacy fidelity. Original media is copied, never edited.
+A first native edit upgrades the working package's reader schema. **v0.0.6 cannot reopen the upgraded copy.** v0.1.0 and v0.1.1 native decks keep the same reader schema in v0.1.2. An inherited legacy layout is preserved until you explicitly convert it; conversion is undoable, but not a promise of pixel-perfect legacy fidelity. Original media is copied, never edited.
 
 ## Build and maintain
 

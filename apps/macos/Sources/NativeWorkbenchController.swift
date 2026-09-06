@@ -40,6 +40,12 @@ final class NativeWorkbenchController: ObservableObject {
   @Published var showExport = false
   @Published var showCopy = false
   @Published var copyEditorOpen = false
+  @Published private(set) var copyEditorTarget: DeckSlide?
+  @Published private(set) var copyEditorDeckID: String?
+  @Published private(set) var copyEditorSaving = false
+  @Published var copyEditorError: String?
+  @Published private(set) var slideActionBusy = false
+  private(set) var slideOrdinals: [String: Int] = [:]
   @Published var showSettings = false
   @Published var showApplyLayout = false
   @Published var showExportResult = false
@@ -134,6 +140,7 @@ final class NativeWorkbenchController: ObservableObject {
   private func indexDocument() {
     slides = document?.deck.slides ?? []
     slideIndex = Dictionary(uniqueKeysWithValues: slides.map { ($0.id, $0) })
+    slideOrdinals = Dictionary(uniqueKeysWithValues: slides.enumerated().map { ($0.element.id, $0.offset + 1) })
     refreshMediaScope()
     if let slide = selectedSlide {
       if !slide.imageRoles.contains(curateRole) { curateRole = slide.imageRoles.first ?? "primary" }
@@ -309,13 +316,15 @@ final class NativeWorkbenchController: ObservableObject {
           label: label))
     } catch { failure = error.localizedDescription }
   }
-  private func submit(_ command: NativePendingCommand) {
+  private func submit(_ command: NativePendingCommand, completion: ((Bool) -> Void)? = nil) {
     pendingCount += 1
     let prior = writeTail
     writeTail = Task { [weak self] in
       await prior?.value
-      guard let self else { return }
+      guard let self else { completion?(false); return }
+      var saved = false
       defer {
+        completion?(saved)
         self.pendingCount = max(0, self.pendingCount - 1)
         if self.pendingCount == 0 && self.failedCommands.isEmpty && self.failure == nil {
           self.status = "All changes saved"
@@ -331,6 +340,7 @@ final class NativeWorkbenchController: ObservableObject {
           commandID: command.commandID, label: command.label, source: "keyboard")
         self.accept(receipt)
         self.acknowledgeNote(command)
+        saved = true
       } catch {
         let rejected = WorkbenchFailure.unexpected(error)
         if ["InvalidCommand", "DocumentChanged", "NoDocument"].contains(rejected.name) {
@@ -511,18 +521,143 @@ final class NativeWorkbenchController: ObservableObject {
       self.imported = nil
     } catch { failure = error.localizedDescription }
   }
-  func editCopy(_ blocks: [DeckCopyBlock]) {
-    guard let id = selectedSlideID else { return }
+  var slideEditingAvailable: Bool {
+    document != nil && selectedSlide != nil && !lifecycleBusy && !slideActionBusy
+      && failedCommands.isEmpty && !copyEditorOpen && !showApplyLayout && imported == nil
+      && !showExport && !showSettings && !showShortcuts
+  }
+  func beginEditCopy(_ id: String? = nil) {
+    guard slideEditingAvailable, let slide = (id ?? selectedSlideID).flatMap({ slideIndex[$0] }) else { return }
+    copyEditorTarget = slide
+    copyEditorDeckID = document?.deck.deckId
+    copyEditorError = nil
+    copyEditorOpen = true
+  }
+  func cancelEditCopy() {
+    guard !copyEditorSaving else { return }
+    copyEditorOpen = false
+    copyEditorTarget = nil
+    copyEditorDeckID = nil
+    copyEditorError = nil
+  }
+  func editCopy(_ blocks: [DeckCopyBlock], title: String? = nil) {
+    guard !copyEditorSaving, let target = copyEditorTarget, let deckID = copyEditorDeckID,
+      deckID == document?.deck.deckId, !lifecycleBusy else { return }
     do {
-      enqueue(
-        type: "native.copy.replace",
-        payload: ["slides": [["slideId": id, "blocks": try nativeObject(blocks)]]],
-        label: "Update approved copy")
-      copyEditorOpen = false
+      var update: [String: Any] = ["slideId": target.id, "blocks": try nativeObject(blocks),
+        "expectedBlocks": try nativeObject(target.copyBlocks)]
+      if let title, title != target.title { update["title"] = title }
+      let payload = try JSONSerialization.data(withJSONObject: ["slides": [update]], options: .sortedKeys)
+      copyEditorSaving = true
+      copyEditorError = nil
+      submit(NativePendingCommand(type: "native.copy.replace", payload: payload, deckID: deckID,
+        commandID: UUID().uuidString.lowercased(), label: "Edit Copy")) { [weak self] saved in
+        guard let self else { return }
+        self.copyEditorSaving = false
+        if saved { self.cancelEditCopy() }
+        else { self.copyEditorError = self.failure ?? "Copy was not saved. Your draft is still here." }
+      }
+    } catch { copyEditorError = error.localizedDescription }
+  }
+
+  private func queueSlideEdit(type: String, payload: [String: Any], label: String,
+    selectedAfter: String? = nil, openCopy: Bool = false) {
+    guard slideEditingAvailable, let deckID = document?.deck.deckId else { return }
+    let selectedBefore = selectedSlideID
+    do {
+      let data = try JSONSerialization.data(withJSONObject: payload, options: .sortedKeys)
+      // Save pending notes before duplication/deletion; the kernel then copies the
+      // latest durable slide, not a stale UI snapshot.
+      for task in noteTasks.values { task.cancel() }
+      noteTasks = [:]
+      for id in Array(notesDrafts.keys) { commitNote(id) }
+      slideActionBusy = true
+      submit(NativePendingCommand(type: type, payload: data, deckID: deckID,
+        commandID: UUID().uuidString.lowercased(), label: label)) { [weak self] saved in
+        guard let self else { return }
+        self.slideActionBusy = false
+        guard saved, self.document?.deck.deckId == deckID else { return }
+        if let selectedAfter, self.slideIndex[selectedAfter] != nil,
+          self.selectedSlideID == selectedBefore || self.slideIndex[selectedBefore ?? ""] == nil {
+          self.selectSlide(selectedAfter)
+          if openCopy { self.beginEditCopy(selectedAfter) }
+        }
+      }
     } catch { failure = error.localizedDescription }
+  }
+  func addSlide(after requestedID: String? = nil, openCopy: Bool = true) {
+    guard let deck = document?.deck else { return }
+    let anchor = requestedID ?? selectedSlideID
+    guard let section = deck.sections.first(where: { $0.slides.contains(where: { $0.id == anchor }) }) ?? deck.sections.first else { return }
+    let id = UUID().uuidString.lowercased()
+    var ordinal = slides.count + 1
+    while slides.contains(where: { $0.title == "Slide \(ordinal)" }) { ordinal += 1 }
+    queueSlideEdit(type: "native.slide.add", payload: ["slideId": id, "sectionId": section.id,
+      "afterSlideId": anchor.map { $0 as Any } ?? NSNull(), "title": "Slide \(ordinal)"],
+      label: "Add Slide", selectedAfter: id, openCopy: openCopy)
+  }
+  func duplicateSlide(_ requestedID: String? = nil) {
+    guard let id = requestedID ?? selectedSlideID, let source = slideIndex[id],
+      let section = document?.deck.sections.first(where: { $0.slides.contains(where: { $0.id == id }) }) else { return }
+    let duplicateID = UUID().uuidString.lowercased()
+    var stem = String(source.title.prefix(450))
+    while stem.utf16.count > 450 { stem.removeLast() }
+    var title = "\(stem) — Copy", n = 2
+    while slides.contains(where: { $0.title == title }) { title = "\(stem) — Copy \(n)"; n += 1 }
+    queueSlideEdit(type: "native.slide.duplicate", payload: ["slideId": duplicateID,
+      "sourceSlideId": id, "sectionId": section.id, "afterSlideId": id, "title": title],
+      label: "Duplicate Slide", selectedAfter: duplicateID)
+  }
+  func renameSlide(_ requestedID: String? = nil) {
+    guard slideEditingAvailable, let id = requestedID ?? selectedSlideID, let slide = slideIndex[id] else { return }
+    let alert = NSAlert()
+    alert.messageText = "Rename slide"
+    alert.informativeText = "This is the slide name in the sidebar and handoff folders, not the on-slide headline."
+    let field = NSTextField(string: slide.title)
+    field.frame = NSRect(x: 0, y: 0, width: 320, height: 24)
+    alert.accessoryView = field
+    alert.addButton(withTitle: "Rename"); alert.addButton(withTitle: "Cancel")
+    alert.window.initialFirstResponder = field
+    guard alert.runModal() == .alertFirstButtonReturn else { return }
+    let title = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !title.isEmpty && title.utf16.count <= 500 else { failure = "Use a slide name from 1 to 500 characters."; return }
+    renameSlide(id, to: title)
+  }
+  func renameSlide(_ id: String, to title: String) {
+    queueSlideEdit(type: "native.slide.rename", payload: ["slideId": id, "title": title], label: "Rename Slide")
+  }
+  func canReorderSlide(_ id: String?, by delta: Int) -> Bool {
+    guard let id, let ordinal = slideOrdinals[id] else { return false }
+    return slides.indices.contains(ordinal - 1 + delta)
+  }
+  func reorderSlide(_ delta: Int, id requestedID: String? = nil) {
+    guard let id = requestedID ?? selectedSlideID, let ordinal = slideOrdinals[id],
+      canReorderSlide(id, by: delta), abs(delta) == 1 else { return }
+    let neighborID = slides[ordinal - 1 + delta].id
+    guard let section = document?.deck.sections.first(where: { $0.slides.contains(where: { $0.id == neighborID }) }),
+      let index = section.slides.firstIndex(where: { $0.id == neighborID }) else { return }
+    let after: Any = delta > 0 ? neighborID : (index > 0 ? section.slides[index - 1].id as Any : NSNull())
+    queueSlideEdit(type: "slide.move", payload: ["slideId": id, "targetSectionId": section.id, "afterSlideId": after], label: "Move Slide", selectedAfter: id)
+  }
+  func removeSlide(_ requestedID: String? = nil) {
+    guard slideEditingAvailable, let id = requestedID ?? selectedSlideID, let slide = slideIndex[id] else { return }
+    guard slides.count > 1 else { failure = "Keep at least one slide. You can edit the last slide or add a replacement first."; return }
+    let alert = NSAlert()
+    alert.messageText = "Delete ‘\(slide.title)’?"
+    alert.informativeText = "Removes this slide, its copy, notes and image choices from the deck. Original media files stay untouched. Undo restores the whole slide."
+    alert.addButton(withTitle: "Cancel"); alert.addButton(withTitle: "Delete Slide")
+    alert.buttons.last?.hasDestructiveAction = true
+    guard alert.runModal() == .alertSecondButtonReturn else { return }
+    deleteSlideConfirmed(id)
+  }
+  func deleteSlideConfirmed(_ id: String) {
+    guard let ordinal = slideOrdinals[id], slides.count > 1 else { return }
+    let neighbor = slides[ordinal < slides.count ? ordinal : ordinal - 2].id
+    queueSlideEdit(type: "slide.remove", payload: ["slideId": id], label: "Delete Slide", selectedAfter: neighbor)
   }
 
   func pasteCopy() {
+    guard !copyEditorOpen else { copyEditorError = "Save or cancel this copy edit before importing more writing."; return }
     guard let text = NSPasteboard.general.string(forType: .string), !text.isEmpty else {
       failure = "Copy the final writing to the clipboard first."
       return
@@ -531,6 +666,7 @@ final class NativeWorkbenchController: ObservableObject {
     catch { failure = error.localizedDescription }
   }
   func importFile() {
+    guard !copyEditorOpen else { copyEditorError = "Save or cancel this copy edit before importing more writing."; return }
     let panel = NSOpenPanel()
     panel.allowedContentTypes = [.plainText, UTType(filenameExtension: "md") ?? .plainText]
     panel.allowsMultipleSelection = false
@@ -591,6 +727,11 @@ final class NativeWorkbenchController: ObservableObject {
     }
   }
   @discardableResult func closeForSwitch() async -> Bool {
+    if copyEditorSaving { await flush() }
+    guard !copyEditorOpen else {
+      copyEditorError = "Save or cancel this copy edit before closing or switching decks."
+      return false
+    }
     await flush()
     guard failedCommands.isEmpty && notesDrafts.isEmpty else {
       failure =
@@ -627,6 +768,7 @@ final class NativeWorkbenchController: ObservableObject {
     }
   }
   func save() {
+    guard !copyEditorOpen else { copyEditorError = "Use Save Copy below to save this edit, or Cancel to keep the saved version."; return }
     Task {
       await flush()
       guard failedCommands.isEmpty else { return }
@@ -697,7 +839,7 @@ final class NativeWorkbenchController: ObservableObject {
         let data = try handle.read(upToCount: 8 * 1024 * 1024 + 1) ?? Data()
         guard data.count <= 8 * 1024 * 1024 else { throw WorkbenchFailure(name: "InvalidRecovery", message: "The recovery file is too large.") }
         let commands = try JSONDecoder().decode([NativePendingCommand].self, from: data)
-        let allowed: Set<String> = ["native.slide.patch", "native.curate.set", "native.copy.replace", "native.nudge", "native.layout.apply", "slide.move"]
+        let allowed: Set<String> = ["native.slide.patch", "native.curate.set", "native.copy.replace", "native.nudge", "native.layout.apply", "slide.move", "slide.remove", "native.slide.add", "native.slide.duplicate", "native.slide.rename"]
         guard !commands.isEmpty, commands.count <= 1000,
           Set(commands.map(\.commandID)).count == commands.count,
           commands.allSatisfy({ $0.deckID == deckID && allowed.contains($0.type) && !$0.commandID.isEmpty && $0.commandID.utf8.count <= 256 && $0.payload.count <= 1_048_576 }) else {

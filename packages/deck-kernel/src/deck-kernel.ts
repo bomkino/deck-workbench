@@ -177,6 +177,7 @@ type DesignOption = {
 }
 
 type Slide = {
+  internalTitle?: string
   id: string
   intent: string
   contentBlocks: ContentBlock[]
@@ -436,7 +437,7 @@ type CurateSlotManifestSetPayload = {
 type CommandEnvelope = {
   commandId: string
   expectedRevision: number
-  type: 'native.layout.apply' | 'native.slide.patch' | 'native.curate.set' | 'native.copy.replace' | 'native.nudge' | 'deck.rename' | 'canvas.preset.set' | 'content.add' | 'content.update' | 'content.remove' | 'section.add' | 'section.rename' | 'section.move' | 'section.remove' | 'slide.add' | 'slide.move' | 'slide.intent.set' | 'slide.remove' | 'asset.reference.add' | 'asset.assign' | 'curate.projectJudgment.set' | 'curate.slideDecision.set' | 'curate.findMore.set' | 'curate.reconcile' | 'designOption.applyPattern' | 'designOption.createFromPlan' | 'designOption.rebuildFromPlan' | 'designOption.activate' | 'element.frame.update' | 'element.crop.update' | 'element.gradient.update' | 'element.textSize.update' | 'element.imageFit.update'
+  type: 'native.slide.add' | 'native.slide.duplicate' | 'native.slide.rename' | 'native.layout.apply' | 'native.slide.patch' | 'native.curate.set' | 'native.copy.replace' | 'native.nudge' | 'deck.rename' | 'canvas.preset.set' | 'content.add' | 'content.update' | 'content.remove' | 'section.add' | 'section.rename' | 'section.move' | 'section.remove' | 'slide.add' | 'slide.move' | 'slide.intent.set' | 'slide.remove' | 'asset.reference.add' | 'asset.assign' | 'curate.projectJudgment.set' | 'curate.slideDecision.set' | 'curate.findMore.set' | 'curate.reconcile' | 'designOption.applyPattern' | 'designOption.createFromPlan' | 'designOption.rebuildFromPlan' | 'designOption.activate' | 'element.frame.update' | 'element.crop.update' | 'element.gradient.update' | 'element.textSize.update' | 'element.imageFit.update'
   payload: JsonObject
   source: {
     kind: 'ui' | 'keyboard' | 'cli' | 'mcp' | 'migration'

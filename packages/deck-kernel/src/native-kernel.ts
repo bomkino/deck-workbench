@@ -87,7 +87,76 @@ function nativeMutation(deck: DeckSnapshot, slide: Slide, next: NativeSlideState
   return { forward: { type: 'native.slide.set', payload: { slideId: slide.id, value: next } }, inverse: { type: 'native.slide.set', payload: { slideId: slide.id, value: slide.native ? clone(slide.native) : null } }, label,
     noop: JSON.stringify(nativeState(deck, slide)) === JSON.stringify(next) }
 }
+// Slide management uses the existing insert/remove/move history, not a second store.
+function nativeCopySignature(blocks: ContentBlock[]): string {
+  return JSON.stringify(blocks.map((b) => [b.id, b.semanticKey, b.role, richTextToPlainText(b.value)]))
+}
+function nativeSlideInsertion(deck: DeckSnapshot, command: CommandEnvelope): NativeMutation {
+  const id = assertIdentity(command.payload.slideId, 'slideId', 160)
+  if (findSlide(deck, id)) throw new Error('Slide identity already exists')
+  if (deck.sections.reduce((n, section) => n + section.slides.length, 0) >= 1000) throw new Error('This deck has reached the 1000-slide limit')
+  const sectionId = assertIdentity(command.payload.sectionId, 'sectionId', 256)
+  const section = deck.sections.find((section) => section.id === sectionId)
+  if (!section) throw new Error('The destination section no longer exists')
+  const afterSlideId = command.payload.afterSlideId === null ? null : assertIdentity(command.payload.afterSlideId, 'afterSlideId', 256)
+  if (afterSlideId !== null && !section.slides.some((slide) => slide.id === afterSlideId)) throw new Error('The insertion point no longer exists')
+  const title = assertString(command.payload.title, 'Slide name', 500)
+  let slide: Slide
+  if (command.type === 'native.slide.duplicate') {
+    const source = findSlide(deck, assertIdentity(command.payload.sourceSlideId, 'sourceSlideId', 256))
+    if (!source) throw new Error('The source slide no longer exists')
+    slide = clone(source)
+    slide.id = id
+    slide.internalTitle = title
+    slide.native = nativeState(deck, source)
+    const blockIds = new Map<string, string>()
+    slide.contentBlocks.forEach((block, index) => {
+      const old = block.id; block.id = `${id}:block:${index + 1}`; blockIds.set(old, block.id)
+    })
+    for (const [index, assignment] of (slide.mediaAssignments ?? []).entries()) assignment.id = `${id}:assignment:${index + 1}`
+    for (const [index, option] of (slide.designOptions ?? []).entries()) {
+      const old = option.id; option.id = `${id}:option:${index + 1}`
+      if (slide.activeDesignOptionId === old) slide.activeDesignOptionId = option.id
+      option.composition.id = `${option.id}:composition`
+      option.composition.elements.forEach((element, i) => {
+        element.id = `${option.id}:element:${i + 1}`
+        if (element.contentBlockId && blockIds.has(element.contentBlockId)) element.contentBlockId = blockIds.get(element.contentBlockId)!
+      })
+      if (option.planSnapshot) for (const role of ['headline', 'subheadline', 'body'] as const) {
+        const old = option.planSnapshot.contentBlockIds[role]
+        if (old && blockIds.has(old)) option.planSnapshot.contentBlockIds[role] = blockIds.get(old)!
+      }
+    }
+    // Legacy text overrides use block IDs; image roles remain stable.
+    const frames: Record<string, ElementFrame> = {}
+    for (const [key, value] of Object.entries(slide.native.layout.frames)) frames[blockIds.get(key) ?? key] = value
+    slide.native.layout.frames = frames
+  } else {
+    slide = { id, internalTitle: title, intent: 'full-bleed-overlay', contentBlocks:
+      ['headline', 'subheadline', 'body'].map((role) => ({ id: `${id}:${role}`, semanticKey: `slide.${role}`, role, value: importedRichText('') })) }
+    slide.native = nativeState(deck, slide)
+  }
+  return { forward: { type: 'slide.insert', payload: { sectionId, slide, afterSlideId } },
+    inverse: { type: 'slide.remove', payload: { slideId: id } }, label: command.type === 'native.slide.duplicate' ? 'Duplicate Slide' : 'Add Slide' }
+}
+function nativeSlideRename(deck: DeckSnapshot, command: CommandEnvelope): NativeMutation {
+  const id = assertIdentity(command.payload.slideId, 'slideId', 256)
+  const location = findSlideLocation(deck, id)
+  if (!location) throw new Error('The slide no longer exists')
+  const section = deck.sections[location.sectionIndex], old = section.slides[location.slideIndex]
+  const title = assertString(command.payload.title, 'Slide name', 500)
+  const slide = { ...clone(old), internalTitle: title }
+  const afterSlideId = section.slides[location.slideIndex - 1]?.id ?? null
+  const replacement = (value: Slide): HistoryOperation => operationList([
+    { type: 'slide.remove', payload: { slideId: id } },
+    { type: 'slide.insert', payload: { sectionId: section.id, slide: value, afterSlideId } },
+  ])
+  return { forward: replacement(slide), inverse: replacement(clone(old)), label: 'Rename Slide', noop: old.internalTitle === title }
+}
+
 function prepareNativeCommand(deck: DeckSnapshot, command: CommandEnvelope): NativeMutation {
+  if (command.type === 'native.slide.add' || command.type === 'native.slide.duplicate') return nativeSlideInsertion(deck, command)
+  if (command.type === 'native.slide.rename') return nativeSlideRename(deck, command)
   if (command.type === 'native.layout.apply') {
     const ids = command.payload.slideIds
     if (!Array.isArray(ids) || !ids.length || ids.length > 1000 || new Set(ids).size !== ids.length) throw new Error('Select unique slides for the layout')
@@ -111,7 +180,17 @@ function prepareNativeCommand(deck: DeckSnapshot, command: CommandEnvelope): Nat
       if (!slide || seen.has(id) || !Array.isArray(update.blocks)) throw new Error('Unknown or duplicated copy destination')
       seen.add(id)
       const metadata = (b: ContentBlock) => b.role.startsWith('workbench-') || b.semanticKey.startsWith('workbench.')
-      const oldBlocks = slide.contentBlocks.filter((b) => !metadata(b)), blocks = update.blocks as ContentBlock[]
+      const oldBlocks = slide.contentBlocks.filter((b) => !metadata(b))
+      if (update.expectedBlocks !== undefined) {
+        if (!Array.isArray(update.expectedBlocks) || nativeCopySignature(update.expectedBlocks as ContentBlock[]) !== nativeCopySignature(oldBlocks)) {
+          throw new Error('This slide’s copy changed while the editor was open. Your draft is still available; reopen the editor before replacing the newer copy.')
+        }
+      }
+      const blocks = clone(update.blocks as ContentBlock[])
+      if (update.title !== undefined) {
+        const rename = nativeSlideRename(deck, { ...command, type: 'native.slide.rename', payload: { slideId: id, title: update.title } })
+        if (!rename.noop) appendOperationPair(forward, inverse, rename.forward, rename.inverse)
+      }
       const ids = new Set<string>(), keys = new Set<string>()
       for (const b of blocks) {
         assertIdentity(b.id, 'Content ID', 256); assertString(b.role, 'role'); assertString(b.semanticKey, 'semanticKey')
@@ -119,6 +198,11 @@ function prepareNativeCommand(deck: DeckSnapshot, command: CommandEnvelope): Nat
         if (blockIdentityExists(deck, b.id) && !oldBlocks.some((o) => o.id === b.id)) throw new Error('Content ID belongs to another Slide')
         ids.add(b.id); keys.add(b.semanticKey)
       }
+      for (let i = 0; i < blocks.length; i++) {
+        const original = oldBlocks.find((b) => b.id === blocks[i].id)
+        if (original && nativeCopySignature([original]) === nativeCopySignature([blocks[i]])) blocks[i] = clone(original)
+      }
+      if (nativeCopySignature(oldBlocks) === nativeCopySignature(blocks)) continue
       for (const b of oldBlocks.slice().reverse()) {
         const index = slide.contentBlocks.findIndex((o) => o.id === b.id)
         appendOperationPair(forward, inverse, { type: 'content.remove', payload: { slideId: id, blockId: b.id } }, { type: 'content.insert', payload: { slideId: id, block: clone(b), afterBlockId: slide.contentBlocks[index - 1]?.id ?? null } })
@@ -130,7 +214,11 @@ function prepareNativeCommand(deck: DeckSnapshot, command: CommandEnvelope): Nat
       const state = nativeState(deck, slide); state.copyLocked = true
       const m = nativeMutation(deck, slide, state, 'Replace final copy'); appendOperationPair(forward, inverse, m.forward, m.inverse)
     }
-    return { forward: operationList(forward), inverse: operationList(inverse), label: 'Replace final copy' }
+    if (!forward.length) {
+      const slide = findSlide(deck, (updates[0] as JsonObject).slideId as string)!
+      return { ...nativeMutation(deck, slide, nativeState(deck, slide), 'Edit Copy'), noop: true }
+    }
+    return { forward: operationList(forward), inverse: operationList(inverse), label: command.source.label ?? 'Replace final copy' }
   }
   const id = assertIdentity(command.payload.slideId, 'slideId', 256), slide = findSlide(deck, id)
   if (!slide) throw new Error('Slide does not exist')

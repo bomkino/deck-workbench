@@ -1,4 +1,4 @@
-# Mac workflow — v0.1.1
+# Mac workflow — v0.1.2
 
 ## Intake and copy
 
@@ -7,6 +7,18 @@ File → Import Final Copy reads bounded Markdown/text locally. File → Paste F
 Replacement is a separate preview: match incoming slides to existing slides, inspect both texts, then apply. Only uniquely identical titles are proposed automatically. Ambiguous titles need explicit mapping, not guesses by page number. Unmapped existing slides remain unchanged. Replacement preserves the matched slides' IDs, media, notes and layout; it is one undoable operation. It does not insert/reorder/delete slides.
 
 On-slide writing is protected by default. Edit opens a deliberate copy editor. Designer notes are separate and autosave after a brief pause. Document Undo flushes pending notes first; Undo while typing uses the native text editor's history. Acknowledged drafts cannot overwrite an undone note.
+
+## Edit slides
+
+Layout and Edit Copy are always available in the selected-slide bar above Curate/Assemble; the context inspector does not have to be open. Right-click a sidebar slide or use the Slide menu for the same actions.
+
+- **Add Slide** / Command-Shift-N inserts after the current slide, in its section, and opens the editor. New slides default to full bleed with text.
+- **Duplicate Slide** / Command-D preserves the source slide's copy, chosen media, shortlist, notes and supported layout. Document identities are new; original media is shared, not modified.
+- **Rename** changes the sidebar and export-folder name, not the on-slide headline. Edit Copy also offers this name field.
+- **Move Earlier/Later** / Command-Option-Up/Down retains slide identity and can cross section boundaries.
+- **Delete Slide** / Command-Shift-Delete asks for confirmation. Undo restores the full slide and order. Source files remain untouched. The final slide cannot be deleted; edit it or add another first.
+
+**Edit Copy** / Command-E opens the selected slide's fields. Missing headline/subheadline/body fields are offered automatically; Add Text Field supports extra body/caption/credit text. Empty optional fields consume no prototype space. Save Copy commits the edit and any name change together; Cancel changes nothing. The save always targets the slide opened for editing, not a later selection. A failed save keeps the draft available. Save or cancel before closing/switching decks or exporting.
 
 ## Curate
 
