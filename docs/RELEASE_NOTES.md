@@ -13,15 +13,17 @@ Starter layouts, editable contents and moodboards, and a production handoff to P
 
 Export adds **Production/workbench.md**, **workbench-production.json** and optional numbered **PSD/Slide 01.psd** files. Writing preserves copy states and records how original fields map into Headline/Subheadline/Body. The manifest binds slide identity/order, copy, warnings and PSD paths/hashes. Copy.md, PDFs and original-media outputs remain available.
 
-Each RGB/8-bit sRGB PSD has **00.Background** and **01.Character**, sharing one embedded artwork source with the chosen image frames, fit, crop masks and guides. Both roles initially contain the complete artwork. The artist creates the cut-out in Photoshop before the separate artwork-only PNG role export. Prototype text, background colours and gradients are not rendered into these PSDs; writing and final composition continue in the destination app. PSD creation requires neither Photoshop nor a browser/Node runtime, but native Photoshop editing and InDesign placement need their own proof.
+Each RGB/8-bit sRGB PSD has **00.Background** and **01.Character**, sharing one embedded artwork source with the chosen image frames, fit, crop masks and guides. Both roles initially contain the complete artwork. The artist creates the cut-out in Photoshop before the separate artwork-only PNG role export. Prototype text, background colours and gradients are not rendered into these PSDs; writing and final composition continue in the destination app. PSD creation requires neither Photoshop, InDesign nor a browser/Node runtime. Native Photoshop checks covered shared-source edits, save/reopen, JPEG orientation and transparent role export. InDesign text import, initial PSD placement and later link refresh remain separate local-script steps.
 
 PSD generation is serial and limited to 1920 × 1080 or 2576 × 1080, 12 placements, 128 MiB combined source bytes and a 768 MiB estimated per-slide working budget. Still-image conversions and source problems are reported. Production writing/manifest/PSDs form one component; failure does not erase separately completed handoff components. See [Known boundaries](KNOWN_LIMITATIONS.md).
+
+Copy replacement leaves generated Contents automatic while updating mapped ordinary and moodboard writing. Existing artwork, notes, field identities and layout survive the replacement and Undo.
 
 ## Compatibility and verification
 
 New packages use schema 3. Opening an older package does not itself upgrade it. Before saving starter features or explicit copy states, Workbench verifies internal pre-upgrade recovery data, then raises the reader guard. Older apps reject the upgraded copy; Undo does not downgrade it. Keep an untouched duplicate for old-app use.
 
-Focused checks cover the new state, grid/type, production-copy, schema/recovery and PSD structure contracts. Only an actual same-SHA receipt establishes which checks passed for a package. Native Adobe behaviour, large-library performance and accessibility are separate from encoder validation. Published packages, installation and a finished design remain separate outcomes.
+Focused checks cover the new state, grid/type, production-copy, schema/recovery and PSD structure contracts. Only an actual same-SHA receipt establishes which checks passed for a package. Native Photoshop inspection complements encoder validation. Large-library performance, exhaustive accessibility and the separate InDesign helper are outside the packaged app check. Published packages, installation and a finished design remain separate outcomes.
 
 # v0.1.3 — native workflow polish (historical)
 
