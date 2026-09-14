@@ -34,6 +34,9 @@ final class PrototypeCanvasView: NSView {
   private var previewFrame: CGRect?
   private var previewCrop: PrototypeCrop?
   private var previewGradient: PrototypeGradient?
+  private var gestureStartInView = CGPoint.zero
+  private var dragStarted = false
+  private var lastCropPoint: CGPoint?
   override var acceptsFirstResponder: Bool { true }
   override init(frame: NSRect) {
     super.init(frame: frame)
@@ -143,13 +146,12 @@ final class PrototypeCanvasView: NSView {
     if controller.showGuides {
       context.setStrokeColor(NSColor.secondaryLabelColor.withAlphaComponent(0.22).cgColor)
       context.setLineWidth(0.5)
-      let sx = scene.canvas.width / 2576
-      let sy = scene.canvas.height / 1080
-      for x in NativeLayoutGeometry.xGuides(scene.canvas) {
-        line(from: CGPoint(x: x, y: 64 * sy), to: CGPoint(x: x, y: 1016 * sy), context: context)
+      let grid = NativeSlideGrid(canvas: scene.canvas)
+      for x in grid.verticalGuides {
+        line(from: CGPoint(x: x, y: grid.usable.minY), to: CGPoint(x: x, y: grid.usable.maxY), context: context)
       }
-      for y in NativeLayoutGeometry.yGuides(scene.canvas) {
-        line(from: CGPoint(x: 96 * sx, y: y), to: CGPoint(x: 2480 * sx, y: y), context: context)
+      for y in grid.horizontalGuides {
+        line(from: CGPoint(x: grid.usable.minX, y: y), to: CGPoint(x: grid.usable.maxX, y: y), context: context)
       }
     }
     context.setStrokeColor(NSColor.controlAccentColor.cgColor)
@@ -206,12 +208,14 @@ final class PrototypeCanvasView: NSView {
   }
   override func mouseDown(with event: NSEvent) {
     window?.makeFirstResponder(self)
+    cancelGesture()
     guard let controller, let scene, let slide, let deckID = controller.document?.deck.deckId else {
       return
     }
     guard !controller.cleanPreview else { return }
     let point = canvasPoint(event)
     let view = convert(event.locationInWindow, from: nil)
+    gestureStartInView = view
     if spaceHeld || event.buttonNumber == 2 {
       gesture = (
         slide.id, deckID, "view", "pan", view, CGRect(origin: pan, size: .zero), .full,
@@ -226,12 +230,22 @@ final class PrototypeCanvasView: NSView {
       let end = CGPoint(x: f.minX + gradient.end.x * f.width, y: f.minY + gradient.end.y * f.height)
       let vs = viewPoint(start)
       let ve = viewPoint(end)
-      let mode =
-        hypot(view.x - vs.x, view.y - vs.y) < 16
-        ? "gradient-start"
-        : hypot(view.x - ve.x, view.y - ve.y) < 16 ? "gradient-end" : "gradient-both"
-      gesture = (slide.id, deckID, "gradient", mode, point, f, .full, gradient)
-      return
+      let midpoint = CGPoint(x: (vs.x + ve.x) / 2, y: (vs.y + ve.y) / 2)
+      let lineX = ve.x - vs.x, lineY = ve.y - vs.y
+      let lengthSquared = lineX * lineX + lineY * lineY
+      let fraction = lengthSquared > 0
+        ? min(1, max(0, ((view.x - vs.x) * lineX + (view.y - vs.y) * lineY) / lengthSquared)) : 0
+      let lineDistance = hypot(view.x - (vs.x + fraction * lineX), view.y - (vs.y + fraction * lineY))
+      let mode: String?
+      if hypot(view.x - vs.x, view.y - vs.y) < 16 { mode = "gradient-start" }
+      else if hypot(view.x - ve.x, view.y - ve.y) < 16 { mode = "gradient-end" }
+      else if hypot(view.x - midpoint.x, view.y - midpoint.y) < 16 || lineDistance < 6 {
+        mode = "gradient-both"
+      } else { mode = nil }
+      if let mode {
+        gesture = (slide.id, deckID, "gradient", mode, point, f, .full, gradient)
+        return
+      }
     }
     let hasText = NativeLayoutGeometry.hasText(scene)
     let selectedFrame = controller.selectionTarget == "text"
@@ -287,8 +301,13 @@ final class PrototypeCanvasView: NSView {
   }
   override func mouseDragged(with event: NSEvent) {
     guard let gesture, let canvas else { return }
+    let current = convert(event.locationInWindow, from: nil)
+    if !dragStarted {
+      // A click can contain small pointer movements; do not snap or save those as edits.
+      guard hypot(current.x - gestureStartInView.x, current.y - gestureStartInView.y) >= 3 else { return }
+      dragStarted = true
+    }
     if gesture.mode == "pan" {
-      let current = convert(event.locationInWindow, from: nil)
       pan = CGPoint(
         x: gesture.frame.origin.x + current.x - gesture.start.x,
         y: gesture.frame.origin.y + current.y - gesture.start.y)
@@ -299,9 +318,12 @@ final class PrototypeCanvasView: NSView {
     let dx = p.x - gesture.start.x
     let dy = p.y - gesture.start.y
     if gesture.mode == "crop" {
-      var crop = gesture.crop
-      crop.x = min(1 - crop.width, max(0, crop.x - dx / gesture.frame.width * crop.width))
-      crop.y = min(1 - crop.height, max(0, crop.y - dy / gesture.frame.height * crop.height))
+      // Consume each delta at the edge, so reversing does not have to undo the overshoot.
+      let previous = lastCropPoint ?? gesture.start
+      var crop = previewCrop ?? gesture.crop
+      crop.x = min(1 - crop.width, max(0, crop.x - (p.x - previous.x) / gesture.frame.width * crop.width))
+      crop.y = min(1 - crop.height, max(0, crop.y - (p.y - previous.y) / gesture.frame.height * crop.height))
+      lastCropPoint = p
       previewCrop = crop
     } else if gesture.mode.hasPrefix("gradient") {
       var g = gesture.gradient
@@ -379,6 +401,8 @@ final class PrototypeCanvasView: NSView {
   }
   private func cancelGesture() {
     gesture = nil
+    dragStarted = false
+    lastCropPoint = nil
     previewFrame = nil
     previewCrop = nil
     previewGradient = nil

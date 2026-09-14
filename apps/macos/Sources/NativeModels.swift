@@ -69,7 +69,7 @@ struct DeckSlide: Codable, Sendable, Identifiable {
       var seen = Set<String>()
       return (roles.isEmpty ? (mediaAssignments ?? []).map(\.role) : roles).filter { seen.insert($0).inserted }
     }
-    let count = preset == "three-images" ? 3 : preset == "two-images" ? 2 : 1
+    let count = preset == "moodboard" ? (settings.layout.imageCount ?? 6) : preset == "three-images" ? 3 : preset == "two-images" ? 2 : 1
     return (0..<count).map { $0 == 0 ? "primary" : "primary:\($0 + 1)" }
   }
 
@@ -79,9 +79,15 @@ struct DeckCopyBlock: Codable, Sendable, Identifiable {
   var semanticKey: String
   var role: String
   var value: RichCopy
+  var state: String? = nil
   var text: String { value.content.map { $0.content.map(\.text).joined() }.joined(separator: "\n") }
-  var isMetadata: Bool { role.hasPrefix("workbench-") || semanticKey.hasPrefix("workbench.") }
-  mutating func setText(_ text: String) { value = RichCopy(text) }
+  var isMetadata: Bool { role == "workbench-plan" || semanticKey == "workbench.plan.v1" }
+  mutating func setText(_ text: String) {
+    let hadText = !self.text.isEmpty
+    value = RichCopy(text)
+    if !text.isEmpty { state = "present" }
+    else if hadText || state == "present" { state = "intentionally-blank" }
+  }
 }
 struct RichCopy: Codable, Sendable {
   var type: String = "doc"
@@ -158,6 +164,11 @@ struct PrototypeLayout: Codable, Sendable {
   var crops: [String: PrototypeCrop] = [:]
   var imageFits: [String: String] = [:]
   var gradient: PrototypeGradient?
+  var imageCount: Int?
+  var contents: Bool?
+  var starterType: NativeStarterType?
+  var palette: NativeStarterPalette?
+  var appearance: String?
   static let initial = PrototypeLayout()
 }
 struct PrototypeFrame: Codable, Equatable, Sendable {

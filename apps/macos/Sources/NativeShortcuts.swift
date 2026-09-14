@@ -68,7 +68,7 @@ enum NativeShortcuts {
   static func handle(_ event: NSEvent, controller: NativeWorkbenchController) -> Bool {
     guard event.type == .keyDown, controller.document != nil, !controller.lifecycleBusy else { return false }
     if controller.showShortcuts || controller.showExport || controller.showSettings
-      || controller.copyEditorOpen || controller.imported != nil || controller.showApplyLayout || controller.showExportResult
+      || controller.copyEditorOpen || controller.imported != nil || controller.showApplyLayout || controller.showStarterStyle || controller.showMoodboard || controller.showExportResult
     {
       return false
     }

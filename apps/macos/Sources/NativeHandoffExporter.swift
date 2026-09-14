@@ -12,6 +12,8 @@ struct HandoffOptions: Codable, Sendable {
   var copy = true
   var approved = true
   var shortlisted = true
+  var productionCopy = false
+  var psd = false
   var acceptChangedSources = false
   var selectedSlideIDs: Set<String>?
 }
@@ -30,12 +32,12 @@ struct HandoffResult: Sendable {
 
 enum NativeHandoffExporter {
   static func exportSlides(snapshot: DeckDocumentSnapshot, options: HandoffOptions) -> [DeckSlide] {
-    snapshot.deck.includedSlides.filter { options.selectedSlideIDs == nil || options.selectedSlideIDs!.contains($0.id) }
+    NativeContents.resolve(slides: snapshot.deck.includedSlides.filter { options.selectedSlideIDs == nil || options.selectedSlideIDs!.contains($0.id) })
   }
   static func requiredAssetIDs(snapshot: DeckDocumentSnapshot, options: HandoffOptions) -> Set<String> {
     var ids = Set<String>()
     for slide in exportSlides(snapshot: snapshot, options: options) {
-      if options.prototypePDF || options.notesPDF || options.approved { ids.formUnion(slide.chosenIDs) }
+      if options.prototypePDF || options.notesPDF || options.approved || options.psd { ids.formUnion(slide.chosenIDs) }
       if options.shortlisted { ids.formUnion(slide.settings.shortlist) }
     }
     return ids
@@ -46,7 +48,7 @@ enum NativeHandoffExporter {
   ) throws -> HandoffResult {
     let slides = exportSlides(snapshot: snapshot, options: options)
     guard !slides.isEmpty else { throw WorkbenchFailure(name: "ExportEmpty", message: "Choose at least one included slide to export.") }
-    guard options.prototypePDF || options.notesPDF || options.copy || options.approved || options.shortlisted else {
+    guard options.prototypePDF || options.notesPDF || options.copy || options.approved || options.shortlisted || options.productionCopy || options.psd else {
       throw WorkbenchFailure(name: "ExportEmpty", message: "Choose at least one handoff component.")
     }
     let manager = FileManager.default
@@ -67,7 +69,7 @@ enum NativeHandoffExporter {
     var failed: [String] = []
     let wanted = requiredAssetIDs(snapshot: snapshot, options: options)
     let total = max(1, wanted.count + (options.copy ? 1 : 0) + (options.approved ? slides.count : 0)
-      + (options.shortlisted ? slides.count : 0) + (options.prototypePDF ? slides.count : 0) + (options.notesPDF ? slides.count : 0))
+      + (options.shortlisted ? slides.count : 0) + (options.prototypePDF ? slides.count : 0) + (options.notesPDF ? slides.count : 0) + ((options.productionCopy || options.psd) ? 1 : 0) + (options.psd ? slides.count : 0))
     var completed = 0
     func advance(_ message: String, by units: Int = 1) {
       completed += units
@@ -87,9 +89,9 @@ enum NativeHandoffExporter {
     }
     if options.copy {
       try component("Copy.md") {
-        var copy = "# \(heading(snapshot.deck.title))\n\n"
+        var copy = "# \(heading(snapshot.deck.title))\n\nCanvas: \(snapshot.deck.canvasPreset.id)\n\n"
         for (index, slide) in slides.enumerated() {
-          copy += "## \(String(format: "%03d", index + 1)) — \(heading(slide.title))\n\n"
+          copy += "## \(String(format: "%02d", index + 1)) — \(heading(slide.title))\n\n"
           for block in slide.copyBlocks { copy += "### \(heading(block.role))\n\n" + literalBlock(block.text) + "\n" }
           if !slide.settings.notes.isEmpty { copy += "### Designer notes\n\n" + literalBlock(slide.settings.notes) + "\n" }
         }
@@ -150,6 +152,33 @@ enum NativeHandoffExporter {
         if let problem = unavailable[id] { issues.append("Slide \(index + 1) — \(slide.title): \(sources[id]?.filename ?? labels[id] ?? id): \(problem)") }
       }
     }
+    if options.productionCopy || options.psd {
+      try component("Production") {
+        var production = try NativeWorkbenchMarkdown.project(snapshot: snapshot, slides: slides)
+        let directory = staging.appendingPathComponent("Production", isDirectory: true)
+        try manager.createDirectory(at: directory, withIntermediateDirectories: false)
+        if options.psd {
+          if preparationFailed { throw WorkbenchFailure(name: "MediaPreparationFailed", message: "Original preparation failed; production artwork was not created.") }
+          let psdDirectory = directory.appendingPathComponent("PSD", isDirectory: true)
+          try manager.createDirectory(at: psdDirectory, withIntermediateDirectories: false)
+          for (index, slide) in slides.enumerated() {
+            try Task.checkCancellation()
+            try autoreleasepool {
+              let path = "PSD/Slide \(String(format: "%02d", index + 1)).psd"
+              let output = directory.appendingPathComponent(path)
+              let warnings = try NativePSDExporter.write(slide: slide, canvas: snapshot.deck.canvasPreset, staged: staged, to: output)
+              production.manifest.warnings += warnings.map { "Slide \(index + 1): \($0)" }
+              production.manifest.slides[index].psd = WorkbenchProductionPSD(path: path, sha256: try checksum(output), width: Int(snapshot.deck.canvasPreset.width), height: Int(snapshot.deck.canvasPreset.height))
+            }
+            advance("Preparing Photoshop slide \(index + 1) of \(slides.count)")
+          }
+        }
+        try Data(production.markdown.utf8).write(to: directory.appendingPathComponent("workbench.md"), options: .atomic)
+        try nativeJSON(production.manifest).write(to: directory.appendingPathComponent("workbench-production.json"), options: .atomic)
+        issues += production.warnings
+        advance("Writing production copy and manifest")
+      }
+    }
     var rows = [["page", "slide_id", "title", "collection", "role", "asset_id", "file", "sha256", "status", "original_filename", "source_note"]]
     var copies = 0
     for (collection, enabled) in [("Approved Media", options.approved), ("Shortlisted Media", options.shortlisted)] where enabled {
@@ -160,7 +189,7 @@ enum NativeHandoffExporter {
         try manager.createDirectory(at: target, withIntermediateDirectories: false)
         for (index, slide) in slides.enumerated() {
           try Task.checkCancellation()
-          let folder = "\(String(format: "%03d", index + 1)) — \(safeName(slide.title, maximumBytes: 120))"
+          let folder = "\(String(format: "%02d", index + 1)) — \(safeName(slide.title, maximumBytes: 120))"
           let directory = target.appendingPathComponent(folder, isDirectory: true)
           try manager.createDirectory(at: directory, withIntermediateDirectories: false)
           let ids = collection == "Approved Media" ? Array(slide.chosenIDs).sorted() : slide.settings.shortlist
@@ -288,6 +317,9 @@ enum NativeHandoffExporter {
     for (index, slide) in slides.enumerated() {
       try Task.checkCancellation()
       let scene = NativeSlideRenderer.resolve(slide: slide, canvas: canvas)
+      if let type = slide.settings.layout.starterType, !type.unavailableFonts.isEmpty {
+        issues.append("Slide \(index + 1) — \(slide.title): missing fonts (\(type.unavailableFonts.joined(separator: ", "))); System was used for this prototype.")
+      }
       if scene.overflowCharacters > 0 {
         issues.append(
           "Slide \(index+1) — \(slide.title): \(scene.overflowCharacters) characters do not fit the selected prototype layout. The saved deck retains the full copy; see the delivered-companion list in the export report."

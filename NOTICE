@@ -9,5 +9,9 @@ Redistributed third-party materials include FontBlind v13 font binaries
 declarations/notices are retained under `legal/` and summarized in
 `THIRD_PARTY.md`.
 
+The offline PSD encoder includes ag-psd 31.0.2 (MIT), pako 2.1.0
+(MIT AND Zlib), and base64-js 1.5.1 (MIT). Their notices ship under
+`legal/psd-encoder/`. esbuild 0.28.2 (MIT) is a build tool only.
+
 No promotional credit, logo placement, backlink or praise to pitch.dog is
 requested beyond legally required notices.

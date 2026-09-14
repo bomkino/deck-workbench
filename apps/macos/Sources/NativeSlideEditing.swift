@@ -9,7 +9,7 @@ struct NativeLayoutChoice: Identifiable {
     .init(id: "right", name: "Text right"), .init(id: "lower", name: "Text lower"),
     .init(id: "wide", name: "Wide text"), .init(id: "text-only", name: "Text only"),
     .init(id: "image-only", name: "Image only"), .init(id: "two-images", name: "Two images"),
-    .init(id: "three-images", name: "Three images"),
+    .init(id: "three-images", name: "Three images"), .init(id: "moodboard", name: "Moodboard · up to 12"),
   ]
 }
 struct NativeLayoutPicker: View {
@@ -57,10 +57,13 @@ struct NativeSlideActions: View {
   var body: some View {
     Group {
       Button("Add Slide After This") { controller.addSlide(after: slideID) }
+      Button("Add Contents / Index") { controller.addSpecialSlide("contents", after: slideID) }
+      Button("Add Moodboard…") { if let slideID { controller.selectSlide(slideID) }; controller.showMoodboard = true }
       Button("Duplicate Slide") { controller.duplicateSlide(slideID) }
       Button("Rename Slide…") { controller.renameSlide(slideID) }
       Button("Edit Copy…") { controller.beginEditCopy(slideID) }
       Divider()
+      Button("Move to Position…") { controller.moveSlideToPosition(slideID) }
       Button("Move Earlier") { controller.reorderSlide(-1, id: slideID) }
         .disabled(!controller.canReorderSlide(slideID, by: -1))
       Button("Move Later") { controller.reorderSlide(1, id: slideID) }

@@ -38,6 +38,7 @@ jobs:
             artifacts/*.app.zip
             artifacts/*.sha256
             artifacts/evidence/native-acceptance.json
+            artifacts/evidence/psd/PSD proof.json
             artifacts/evidence/*.png
             artifacts/evidence/handoffs/**/*.pdf
             artifacts/evidence/handoffs/**/*.md

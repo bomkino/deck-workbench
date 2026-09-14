@@ -4,7 +4,13 @@ import SwiftUI
 @main
 struct NativeMain {
   @MainActor static func main() {
-    if let index = CommandLine.arguments.firstIndex(of: "--native-self-test"),
+    if let index = CommandLine.arguments.firstIndex(of: "--native-parity-probe"), CommandLine.arguments.indices.contains(index + 1) {
+      let app = NSApplication.shared
+      let delegate = NativeParityProbeDelegate(output: URL(fileURLWithPath: CommandLine.arguments[index + 1], isDirectory: true))
+      app.delegate = delegate
+      app.setActivationPolicy(.accessory)
+      withExtendedLifetime(delegate) { app.run() }
+    } else if let index = CommandLine.arguments.firstIndex(of: "--native-self-test"),
       CommandLine.arguments.indices.contains(index + 1)
     {
       let app = NSApplication.shared
@@ -110,6 +116,9 @@ struct NativeWorkbenchCommands: Commands {
     CommandMenu("Slide") {
       Button("Add Slide") { controller.addSlide() }.keyboardShortcut("n", modifiers: [.command, .shift])
         .disabled(!controller.slideEditingAvailable)
+      Button("Add Contents / Index") { controller.addSpecialSlide("contents") }.disabled(!controller.slideEditingAvailable)
+      Button("Add Moodboard…") { controller.showMoodboard = true }.disabled(!controller.slideEditingAvailable)
+      Button("Move to Position…") { controller.moveSlideToPosition() }.disabled(!controller.slideEditingAvailable)
       Button("Duplicate Slide") { controller.duplicateSlide() }.keyboardShortcut("d")
         .disabled(!controller.slideEditingAvailable)
       Button("Rename Slide…") { controller.renameSlide() }.disabled(!controller.slideEditingAvailable)

@@ -187,9 +187,13 @@ struct NativeReplacementPanel: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
       Text("Map incoming copy to existing slides. Unmatched slides are left untouched; no match is guessed from page order. Notes, layouts and media stay with their existing slide.").font(.callout)
+      if controller.slides.contains(where: { $0.settings.layout.contents == true }) {
+        Text("Contents stays automatic and is left out of replacement. Rename or move slides to update its entries.")
+          .font(.callout).foregroundStyle(.secondary)
+      }
       ScrollView {
         VStack(alignment: .leading, spacing: 14) {
-          ForEach(controller.slides) { old in
+          ForEach(controller.replacementSlides) { old in
             VStack(alignment: .leading, spacing: 6) {
               Text(old.title).font(.headline)
               Picker("Incoming copy", selection: Binding(get: { matches[old.id] ?? "" }, set: { matches[old.id] = $0.isEmpty ? nil : $0 })) {

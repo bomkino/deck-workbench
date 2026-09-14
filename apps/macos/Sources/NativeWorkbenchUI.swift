@@ -147,6 +147,8 @@ struct NativeWorkbenchRoot: View {
         NativeCopyEditor(controller: controller, slide: slide)
       }
     }
+    .sheet(isPresented: $controller.showMoodboard) { NativeMoodboardSheet(controller: controller) }
+    .sheet(isPresented: $controller.showStarterStyle) { NativeStarterStyleSheet(controller: controller) }
     .sheet(isPresented: $controller.showApplyLayout) { NativeApplyLayoutSheet(controller: controller) }
     .sheet(isPresented: $controller.showExportResult) { NativeHandoffResultSheet(controller: controller) }
     .sheet(
@@ -566,6 +568,13 @@ struct NativeAssemblyInspector: View {
     VStack(alignment: .leading, spacing: 12) {
       Text("Prototype layout").font(.headline)
       NativeLayoutPicker(controller: controller, slide: slide)
+      if NativeSlideRenderer.resolvedPreset(slide: slide) == "moodboard" {
+        Picker("Image slots", selection: Binding(get: { slide.settings.layout.imageCount ?? 6 }, set: { controller.patchLayout(["imageCount": $0, "frames": NSNull()]) })) {
+          ForEach(1...12, id: \.self) { Text(String($0)).tag($0) }
+        }
+        Text("Drag an image to crop it; Command-drag moves its frame. Reducing slots keeps displaced images shortlisted.").font(.caption).foregroundStyle(.secondary)
+      }
+      if slide.settings.layout.contents == true { Text("Contents updates from included slide names and order. Selected exports recalculate its page references.").font(.caption).foregroundStyle(.secondary) }
       if slide.settings.layout.preset == "legacy" {
         Text("Preserved layout. Text fitting and region controls require conversion; unsupported legacy shapes are not rendered.").font(.caption).foregroundStyle(.secondary)
         Button("Convert to native prototype layout") { controller.chooseLayout("left") }
@@ -580,6 +589,7 @@ struct NativeAssemblyInspector: View {
         "Fit copy within readable limits",
         isOn: Binding(
           get: { slide.settings.layout.fitCopy }, set: { controller.patchLayout(["fitCopy": $0]) }))
+      if slide.settings.layout.starterType == nil {
       HStack {
         Text("Provisional size")
         Spacer()
@@ -591,6 +601,16 @@ struct NativeAssemblyInspector: View {
           editingSize = editing
           if !editing { controller.patchLayout(["bodySize": bodySize]) }
         })
+      }
+      Button("Type & colours…") { controller.showStarterStyle = true }
+        .help("Choose fonts, step through Head / Sub / Body sizes, and edit the four-accent palette")
+      Picker("Slide appearance", selection: Binding(get: { slide.settings.layout.appearance ?? "dark" }, set: { controller.patchLayout(["appearance": $0]) })) {
+        Text("Dark").tag("dark"); Text("Light").tag("light")
+      }.pickerStyle(.segmented)
+      if let type = slide.settings.layout.starterType {
+        Text("Head \(Int(NativeTypeSize.preset(role: "headline", step: type.head.step).size.rounded())) · Sub \(Int(NativeTypeSize.preset(role: "subheadline", step: type.sub.step).size.rounded())) · Body \(Int(NativeTypeSize.preset(role: "body", step: type.body.step).size.rounded()))").font(.caption).foregroundStyle(.secondary)
+        if !type.unavailableFonts.isEmpty { Text("Missing fonts: " + type.unavailableFonts.joined(separator: ", ") + ". System font is shown temporarily.").font(.caption).foregroundStyle(.orange) }
+      }
       }.disabled(slide.settings.layout.preset == "legacy" || NativeSlideRenderer.resolvedPreset(slide: slide) == "image-only")
       if slide.settings.layout.preset != "legacy" {
         Button("Reset placement") { controller.resetPlacement() }.controlSize(.small)
@@ -704,6 +724,8 @@ struct NativeExportSheet: View {
   @AppStorage("native.export.copy") private var copy = true
   @AppStorage("native.export.approved") private var approved = true
   @AppStorage("native.export.shortlisted") private var shortlisted = true
+  @AppStorage("native.export.productionCopy") private var productionCopy = true
+  @AppStorage("native.export.psd") private var psd = true
   @State private var acceptChanged = false
   @State private var scope = "all"
   @State private var selectedIDs: Set<String> = []
@@ -719,7 +741,10 @@ struct NativeExportSheet: View {
       VStack(alignment: .leading, spacing: 14) {
       Toggle("Prototype.pdf · clean visual guide", isOn: $prototype)
       Toggle("Prototype with notes.pdf · complete copy and direction", isOn: $notes)
-      Toggle("Copy.md · editable writing", isOn: $copy)
+      Toggle("Copy.md · complete writing", isOn: $copy)
+      Toggle("Production / workbench.md · InDesign & Figma writing", isOn: $productionCopy).disabled(psd)
+      Toggle("Production / PSD · numbered Photoshop slides", isOn: $psd)
+      if psd { Text("One slide at a time. Editable shared artwork keeps its frame and crop. Photoshop is only needed when you edit it.").font(.caption).foregroundStyle(.secondary) }
       Toggle("Approved Media · original files per slide", isOn: $approved)
       Toggle("Shortlisted Media · candidates per slide", isOn: $shortlisted)
       Divider()
@@ -753,11 +778,13 @@ struct NativeExportSheet: View {
           options.copy = copy
           options.approved = approved
           options.shortlisted = shortlisted
+          options.productionCopy = productionCopy || psd
+          options.psd = psd
           options.acceptChangedSources = acceptChanged
           options.selectedSlideIDs = scope == "current" ? Set([controller.selectedSlideID ?? ""]) : scope == "selected" ? selectedIDs : nil
           controller.export(options)
         }.buttonStyle(.borderedProminent).disabled(
-          (!prototype && !notes && !copy && !approved && !shortlisted) || exportCount == 0 || !controller.canExport)
+          (!prototype && !notes && !copy && !approved && !shortlisted && !productionCopy && !psd) || exportCount == 0 || !controller.canExport)
       }
     }.padding(24).nativeSheetFrame(width: 610, height: 650)
       .disabled(controller.exportChoosingDestination)
@@ -776,6 +803,17 @@ struct NativeImportSheet: View {
       if matching {
         NativeReplacementPanel(controller: controller, imported: imported)
       } else {
+      Picker("New deck canvas", selection: Binding(
+        get: { controller.imported?.canvasID ?? imported.canvasID },
+        set: { controller.imported?.canvasID = $0 }
+      )) {
+        Text("Cinemascope · 2576 × 1080").tag("cinemascope-2576x1080")
+        Text("Widescreen · 1920 × 1080").tag("widescreen-1920x1080")
+        Text("Square · 2160 × 2160").tag("square-2160x2160")
+        Text("Standard · 1920 × 1440").tag("standard-1920x1440")
+        Text("A4 portrait").tag("a4-portrait")
+        Text("Letter portrait").tag("letter-portrait")
+      }.help("Choose the size before creating a deck. Copy replacement retains the open deck’s canvas.")
       List(imported.slides) { slide in
         VStack(alignment: .leading, spacing: 5) {
           Text(slide.title).font(.headline)

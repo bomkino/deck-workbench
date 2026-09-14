@@ -69,6 +69,8 @@ final class NativeWorkbenchController: ObservableObject {
   private(set) var slideOrdinals: [String: Int] = [:]
   @Published var showSettings = false
   @Published var showApplyLayout = false
+  @Published var showStarterStyle = false
+  @Published var showMoodboard = false
   @Published var showExportResult = false
   @Published var cleanPreview = false {
     didSet {
@@ -185,7 +187,7 @@ final class NativeWorkbenchController: ObservableObject {
   var selectedSlide: DeckSlide? { selectedSlideID.flatMap { slideIndex[$0] } }
   var focusedAsset: NativeMediaAsset? { focusedAssetID.flatMap { assetIndex[$0] } }
   private func indexDocument() {
-    slides = document?.deck.slides ?? []
+    slides = NativeContents.resolve(slides: document?.deck.slides ?? [])
     slideIndex = Dictionary(uniqueKeysWithValues: slides.map { ($0.id, $0) })
     slideOrdinals = Dictionary(uniqueKeysWithValues: slides.enumerated().map { ($0.element.id, $0.offset + 1) })
     refreshMediaScope()
@@ -274,7 +276,7 @@ final class NativeWorkbenchController: ObservableObject {
   var canExport: Bool {
     document != nil && !lifecycleBusy && !copyEditorOpen && !exportRunning
       && !exportChoosingDestination && !replacementSaving && imported == nil
-      && !showApplyLayout && !showExportResult && !showSettings && !showShortcuts
+      && !showApplyLayout && !showStarterStyle && !showMoodboard && !showExportResult && !showSettings && !showShortcuts
   }
   func searchMedia() {
     guard document != nil, !lifecycleBusy, !copyEditorOpen else { return }
@@ -579,52 +581,32 @@ final class NativeWorkbenchController: ObservableObject {
       var patch: [String: Any] = ["preset": layout.preset == "legacy" ? "left" : NativeSlideRenderer.resolvedPreset(slide: slide),
         "columns": layout.columns, "bodySize": layout.bodySize, "fitCopy": layout.fitCopy,
         "frames": try nativeObject(layout.frames.filter { slide.imageRoles.contains($0.key) })]
+      if NativeSlideRenderer.resolvedPreset(slide: slide) == "moodboard" { patch["imageCount"] = layout.imageCount ?? 6 }
       patch["textFrame"] = try layout.textFrame.map { try nativeObject($0) } ?? NSNull()
       patch["gradient"] = try layout.gradient.map { try nativeObject($0) } ?? NSNull()
       enqueue(type: "native.layout.apply", payload: ["slideIds": slideIDs, "layout": patch], label: "Apply prototype arrangement")
       showApplyLayout = false
     } catch { failure = error.localizedDescription }
   }
+  func applyStarterStyle(_ patch: [String: Any], allSlides: Bool) {
+    let ids = allSlides ? slides.map(\.id) : [selectedSlideID].compactMap { $0 }
+    guard !ids.isEmpty else { return }
+    enqueue(type: "native.layout.apply", payload: ["slideIds": ids, "layout": patch], label: "Change deck style")
+    showStarterStyle = false
+  }
+  var replacementSlides: [DeckSlide] {
+    document.map { NativeCopyReplacement.destinations(in: $0.deck) } ?? []
+  }
   func replacementMatches(for incoming: ImportedCopyDocument) -> [String: String] {
-    let old = slides
-    var matches: [String: String] = [:]
-    for slide in old where old.filter({ $0.title == slide.title }).count == 1 {
-      let candidates = incoming.slides.filter { $0.title == slide.title }
-      if candidates.count == 1 { matches[slide.id] = candidates[0].id }
-    }
-    return matches
+    document.map { NativeCopyReplacement.matches(incoming, in: $0.deck) } ?? [:]
   }
   func replaceCopy(with imported: ImportedCopyDocument, matches: [String: String]? = nil) {
-    guard !replacementSaving, !lifecycleBusy, let deckID = document?.deck.deckId else { return }
-    let mapping = matches ?? replacementMatches(for: imported)
-    let old = slides.filter { mapping[$0.id] != nil }
-    let incoming = imported.slides
-    guard !old.isEmpty, Set(mapping.values).count == mapping.count,
-      mapping.allSatisfy({ pair in slideIndex[pair.key] != nil && incoming.contains(where: { $0.id == pair.value }) }) else {
-      failure = "Map each incoming slide to one existing slide. Nothing was changed."
-      return
-    }
+    guard !replacementSaving, !lifecycleBusy, let deck = document?.deck else { return }
     do {
-      let replacements: [[String: Any]] = try old.map { slide in
-        let new = incoming.first { $0.id == mapping[slide.id] }!
-        var roleCounts: [String: Int] = [:]
-        let blocks = new.blocks.map { block -> DeckCopyBlock in
-          let index = roleCounts[block.role, default: 0]
-          roleCounts[block.role] = index + 1
-          let existing = slide.copyBlocks.filter { $0.role == block.role }
-          if index < existing.count {
-            return DeckCopyBlock(
-              id: existing[index].id, semanticKey: existing[index].semanticKey, role: block.role,
-              value: block.value)
-          }
-          return block
-        }
-        return ["slideId": slide.id, "blocks": try nativeObject(blocks),
-          "expectedBlocks": try nativeObject(slide.copyBlocks)]
-      }
-      let payload = try JSONSerialization.data(withJSONObject: ["slides": replacements], options: .sortedKeys)
+      let payload = try NativeCopyReplacement.payload(imported, in: deck,
+        matches: matches ?? NativeCopyReplacement.matches(imported, in: deck))
       replacementSaving = true; importError = nil
-      submit(NativePendingCommand(type: "native.copy.replace", payload: payload, deckID: deckID,
+      submit(NativePendingCommand(type: "native.copy.replace", payload: payload, deckID: deck.deckId,
         commandID: UUID().uuidString.lowercased(), label: "Replace approved copy")) { [weak self] saved in
         guard let self else { return }
         self.replacementSaving = false
@@ -635,11 +617,15 @@ final class NativeWorkbenchController: ObservableObject {
   }
   var slideEditingAvailable: Bool {
     document != nil && selectedSlide != nil && !lifecycleBusy && !slideActionBusy && !cleanPreview
-      && failedCommands.isEmpty && !copyEditorOpen && !showApplyLayout && imported == nil
+      && failedCommands.isEmpty && !copyEditorOpen && !showApplyLayout && !showStarterStyle && !showMoodboard && imported == nil
       && !showExport && !showSettings && !showShortcuts
   }
   func beginEditCopy(_ id: String? = nil) {
     guard slideEditingAvailable, let slide = (id ?? selectedSlideID).flatMap({ slideIndex[$0] }) else { return }
+    if slide.settings.layout.contents == true {
+      failure = "Contents entries follow your included slides automatically. Rename or move those slides to update the index. Use Type & colours to style it."
+      return
+    }
     copyEditorTarget = slide
     copyEditorDeckID = document?.deck.deckId
     copyEditorError = nil
@@ -707,6 +693,41 @@ final class NativeWorkbenchController: ObservableObject {
     queueSlideEdit(type: "native.slide.add", payload: ["slideId": id, "sectionId": section.id,
       "afterSlideId": anchor.map { $0 as Any } ?? NSNull(), "title": "Slide \(ordinal)"],
       label: "Add Slide", selectedAfter: id, openCopy: openCopy)
+  }
+  func addSpecialSlide(_ kind: String, assetIDs: [String] = [], after requestedID: String? = nil) {
+    guard let deck = document?.deck else { return }
+    let anchor = requestedID ?? selectedSlideID
+    guard let section = deck.sections.first(where: { $0.slides.contains(where: { $0.id == anchor }) }) ?? deck.sections.first else { return }
+    let id = UUID().uuidString.lowercased()
+    do {
+      let images: [[String: Any]] = try assetIDs.map { id in
+        guard let asset = assetIndex[id] else { throw WorkbenchFailure(name: "MissingMedia", message: "A chosen image is no longer available. Choose it again.") }
+        return ["asset": try nativeObject(asset.reference), "fingerprint": asset.fingerprint]
+      }
+      showMoodboard = false
+      queueSlideEdit(type: "native.slide.add", payload: ["slideId": id, "sectionId": section.id,
+        "afterSlideId": anchor.map { $0 as Any } ?? NSNull(), "title": kind == "contents" ? "Contents" : "Moodboard", "kind": kind, "assets": images],
+        label: kind == "contents" ? "Add Contents" : "Add Moodboard", selectedAfter: id)
+    } catch { failure = error.localizedDescription }
+  }
+  func moveSlideToPosition(_ requestedID: String? = nil) {
+    guard slideEditingAvailable, let id = requestedID ?? selectedSlideID, let ordinal = slideOrdinals[id] else { return }
+    let alert = NSAlert()
+    alert.messageText = "Move slide to position"
+    alert.informativeText = "Choose 1–\(slides.count). Contents and the next handoff follow this order."
+    let field = NSTextField(string: String(ordinal)); field.frame = NSRect(x: 0, y: 0, width: 160, height: 24)
+    alert.accessoryView = field; alert.addButton(withTitle: "Move"); alert.addButton(withTitle: "Cancel")
+    alert.window.initialFirstResponder = field
+    guard alert.runModal() == .alertFirstButtonReturn else { return }
+    guard let destination = Int(field.stringValue), (1...slides.count).contains(destination) else { failure = "Enter a slide position from 1 to \(slides.count)."; return }
+    moveSlide(id, to: destination)
+  }
+  func moveSlide(_ id: String, to position: Int) {
+    guard let deck = document?.deck, let current = slideOrdinals[id], (1...slides.count).contains(position), current != position else { return }
+    let others = slides.filter { $0.id != id }
+    let anchor = position == 1 ? nil : others[position - 2].id
+    guard let section = anchor.flatMap({ anchor in deck.sections.first { $0.slides.contains { $0.id == anchor } } }) ?? deck.sections.first else { return }
+    queueSlideEdit(type: "slide.move", payload: ["slideId": id, "targetSectionId": section.id, "afterSlideId": anchor.map { $0 as Any } ?? NSNull()], label: "Move Slide", selectedAfter: id)
   }
   func duplicateSlide(_ requestedID: String? = nil) {
     guard let id = requestedID ?? selectedSlideID, let source = slideIndex[id],
@@ -896,7 +917,7 @@ final class NativeWorkbenchController: ObservableObject {
       previewOpen = false; previewIDs = []; previewUsesCandidates = false
       compareOpen = false; comparedAssetID = nil; compareIDs = []
       focusedAssetID = nil; cleanPreview = false; exportResult = nil; showExportResult = false
-      showExport = false; showApplyLayout = false; imported = nil; importError = nil
+      showExport = false; showApplyLayout = false; showStarterStyle = false; showMoodboard = false; imported = nil; importError = nil
       pendingSearchFocus = false
       query = ""; collection = "all"; selectedRootID = nil
       failure = nil
