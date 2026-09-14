@@ -83,6 +83,82 @@ enum NativeProductionCopyChecks {
       try require(field.state == "intentionally-blank", "Deliberately cleared copy was not recorded as blank")
     }
     try contents()
+    guard let kernelURL = Bundle.main.url(forResource: "deck-kernel", withExtension: "js", subdirectory: "Kernel") else {
+      throw WorkbenchFailure(name: "AcceptanceFailure", message: "Replacement checks need the packaged kernel.")
+    }
+    try replacement(kernelURL: kernelURL)
+  }
+
+  static func replacement(kernelURL: URL) throws {
+    let kernel = try DeckKernelHost(kernelURL: kernelURL)
+    try kernel.open(checkpoint: kernel.createInitialCheckpoint(seed: [
+      "deckId": "replacement-deck", "sectionId": "part", "slideId": "normal",
+      "blockId": "head", "title": "Replacement", "initialHeadline": "Original writing"]))
+    func snapshot() throws -> DeckDocumentSnapshot {
+      try JSONDecoder().decode(DeckDocumentSnapshot.self,
+        from: JSONSerialization.data(withJSONObject: kernel.query("native.document")))
+    }
+    func send(_ type: String, _ payload: [String: Any]) throws {
+      let command: [String: Any] = ["commandId": UUID().uuidString.lowercased(),
+        "expectedRevision": try snapshot().revision, "type": type, "payload": payload,
+        "source": ["kind": "ui"], "issuedAt": "2026-09-14T20:00:00Z"]
+      _ = try kernel.commit(kernel.prepare(command: command))
+    }
+    try send("native.slide.rename", ["slideId": "normal", "title": "Normal"])
+    let assets: [[String: Any]] = (1...2).map { index in
+      ["asset": ["id": "image-\(index)", "label": "Image \(index).png", "mediaKind": "image", "availability": "available"], "fingerprint": "source-\(index)"]
+    }
+    try send("native.slide.add", ["slideId": "board", "sectionId": "part", "afterSlideId": "normal",
+      "title": "Moodboard", "kind": "moodboard", "assets": assets])
+    try send("native.slide.patch", ["slideId": "board", "patch": ["notes": "Keep this direction",
+      "layout": ["appearance": "light", "crops": ["primary": ["x": 0.1, "y": 0.2, "width": 0.6, "height": 0.5]],
+        "frames": ["primary": ["x": 96, "y": 256, "width": 800, "height": 600]]]]])
+    try send("native.slide.add", ["slideId": "toc", "sectionId": "part", "afterSlideId": "normal",
+      "title": "Contents", "kind": "contents"])
+    let before = try snapshot()
+    let projected = NativeContents.resolve(slides: before.deck.slides)
+    let production = try NativeWorkbenchMarkdown.project(snapshot: before, slides: projected)
+    var imported = try NativeCopyImport.parse(Data(production.markdown.utf8), filename: "workbench.md")
+    let revised = "Revised — ₹1,000.\n\nKeep this paragraph.\n"
+    for part in imported.parts.indices {
+      for slide in imported.parts[part].slides.indices where imported.parts[part].slides[slide].title != "Contents" {
+        for block in imported.parts[part].slides[slide].blocks.indices {
+          let role = imported.parts[part].slides[slide].blocks[block].role
+          if role == "headline" || role == "body" { imported.parts[part].slides[slide].blocks[block].setText(revised) }
+        }
+      }
+    }
+    let matches = NativeCopyReplacement.matches(imported, in: before.deck)
+    try require(Set(matches.keys) == Set(["normal", "board"]), "Generated Contents was automatically matched for replacement")
+    try require(NativeCopyReplacement.destinations(in: before.deck).map(\.id) == ["normal", "board"], "Contents remained a selectable replacement destination")
+    var stale = matches
+    stale["toc"] = imported.slides.first { $0.title == "Contents" }!.id
+    var refused = false
+    do { _ = try NativeCopyReplacement.payload(imported, in: before.deck, matches: stale) }
+    catch let error as WorkbenchFailure { refused = error.name == "CopyReplacement" && error.message.contains("Contents updates automatically") }
+    try require(refused, "A stale Contents destination could overwrite its generated copy")
+    let payload = try NativeCopyReplacement.payload(imported, in: before.deck, matches: matches)
+    try send("native.copy.replace", JSONSerialization.jsonObject(with: payload) as! [String: Any])
+    let after = try snapshot()
+    for old in before.deck.slides {
+      let changed = after.deck.slides.first { $0.id == old.id }!
+      if old.id == "toc" {
+        try require(nativeJSON(changed) == nativeJSON(old), "Replacement wrote the derived Contents body into source copy")
+      } else {
+        try require(changed.copyBlocks.first { $0.role == "headline" }?.text == revised
+          && changed.copyBlocks.first { $0.role == "body" }?.text == revised, "Normal or moodboard writing was not replaced exactly")
+        try require(Set(old.copyBlocks.map(\.id)).isSubset(of: Set(changed.copyBlocks.map(\.id))), "Replacement changed existing field identities")
+        var preserved = changed
+        preserved.contentBlocks = old.contentBlocks
+        try require(nativeJSON(preserved) == nativeJSON(old), "Replacement changed moodboard images, crops, frames, shortlist, notes or appearance")
+      }
+    }
+    _ = try kernel.commit(kernel.prepareUndo())
+    try require(nativeJSON(snapshot().deck) == nativeJSON(before.deck), "One Undo did not restore the complete copy replacement")
+    _ = try kernel.commit(kernel.prepareRedo())
+    let saved = try kernel.serialize()
+    try kernel.open(checkpoint: saved)
+    try require(nativeJSON(snapshot().deck) == nativeJSON(after.deck), "Reopen lost the replacement or preserved slide data")
   }
 
   private static func contents() throws {

@@ -594,46 +594,19 @@ final class NativeWorkbenchController: ObservableObject {
     enqueue(type: "native.layout.apply", payload: ["slideIds": ids, "layout": patch], label: "Change deck style")
     showStarterStyle = false
   }
+  var replacementSlides: [DeckSlide] {
+    document.map { NativeCopyReplacement.destinations(in: $0.deck) } ?? []
+  }
   func replacementMatches(for incoming: ImportedCopyDocument) -> [String: String] {
-    let old = slides
-    var matches: [String: String] = [:]
-    for slide in old where old.filter({ $0.title == slide.title }).count == 1 {
-      let candidates = incoming.slides.filter { $0.title == slide.title }
-      if candidates.count == 1 { matches[slide.id] = candidates[0].id }
-    }
-    return matches
+    document.map { NativeCopyReplacement.matches(incoming, in: $0.deck) } ?? [:]
   }
   func replaceCopy(with imported: ImportedCopyDocument, matches: [String: String]? = nil) {
-    guard !replacementSaving, !lifecycleBusy, let deckID = document?.deck.deckId else { return }
-    let mapping = matches ?? replacementMatches(for: imported)
-    let old = slides.filter { mapping[$0.id] != nil }
-    let incoming = imported.slides
-    guard !old.isEmpty, Set(mapping.values).count == mapping.count,
-      mapping.allSatisfy({ pair in slideIndex[pair.key] != nil && incoming.contains(where: { $0.id == pair.value }) }) else {
-      failure = "Map each incoming slide to one existing slide. Nothing was changed."
-      return
-    }
+    guard !replacementSaving, !lifecycleBusy, let deck = document?.deck else { return }
     do {
-      let replacements: [[String: Any]] = try old.map { slide in
-        let new = incoming.first { $0.id == mapping[slide.id] }!
-        var roleCounts: [String: Int] = [:]
-        let blocks = new.blocks.map { block -> DeckCopyBlock in
-          let index = roleCounts[block.role, default: 0]
-          roleCounts[block.role] = index + 1
-          let existing = slide.copyBlocks.filter { $0.role == block.role }
-          if index < existing.count {
-            return DeckCopyBlock(
-              id: existing[index].id, semanticKey: existing[index].semanticKey, role: block.role,
-              value: block.value, state: block.state)
-          }
-          return block
-        }
-        return ["slideId": slide.id, "blocks": try nativeObject(blocks),
-          "expectedBlocks": try nativeObject(slide.copyBlocks)]
-      }
-      let payload = try JSONSerialization.data(withJSONObject: ["slides": replacements], options: .sortedKeys)
+      let payload = try NativeCopyReplacement.payload(imported, in: deck,
+        matches: matches ?? NativeCopyReplacement.matches(imported, in: deck))
       replacementSaving = true; importError = nil
-      submit(NativePendingCommand(type: "native.copy.replace", payload: payload, deckID: deckID,
+      submit(NativePendingCommand(type: "native.copy.replace", payload: payload, deckID: deck.deckId,
         commandID: UUID().uuidString.lowercased(), label: "Replace approved copy")) { [weak self] saved in
         guard let self else { return }
         self.replacementSaving = false

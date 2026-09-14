@@ -55,6 +55,53 @@ struct ImportedCopyDocument: Sendable {
   }
 }
 
+/// Replacement uses stored copy; generated contents is a view/export projection.
+enum NativeCopyReplacement {
+  static func destinations(in deck: DeckDocument) -> [DeckSlide] {
+    deck.slides.filter { $0.settings.layout.contents != true }
+  }
+  static func matches(_ incoming: ImportedCopyDocument, in deck: DeckDocument) -> [String: String] {
+    let old = destinations(in: deck)
+    var matches: [String: String] = [:]
+    for slide in old where old.filter({ $0.title == slide.title }).count == 1 {
+      let candidates = incoming.slides.filter { $0.title == slide.title }
+      if candidates.count == 1 { matches[slide.id] = candidates[0].id }
+    }
+    return matches
+  }
+  static func payload(_ incoming: ImportedCopyDocument, in deck: DeckDocument,
+    matches: [String: String]) throws -> Data
+  {
+    if deck.slides.contains(where: { $0.settings.layout.contents == true && matches[$0.id] != nil }) {
+      throw WorkbenchFailure(name: "CopyReplacement", message: "Contents updates automatically and cannot be replaced. Map the incoming writing to other slides.")
+    }
+    let available = destinations(in: deck)
+    let old = available.filter { matches[$0.id] != nil }
+    guard !old.isEmpty, Set(matches.values).count == matches.count,
+      matches.allSatisfy({ pair in available.contains { $0.id == pair.key }
+        && incoming.slides.contains { $0.id == pair.value } }) else {
+      throw WorkbenchFailure(name: "CopyReplacement", message: "Map each incoming slide to one existing slide. Nothing was changed.")
+    }
+    let replacements: [[String: Any]] = try old.map { slide in
+      let new = incoming.slides.first { $0.id == matches[slide.id] }!
+      var roleCounts: [String: Int] = [:]
+      let blocks = new.blocks.map { block -> DeckCopyBlock in
+        let index = roleCounts[block.role, default: 0]
+        roleCounts[block.role] = index + 1
+        let existing = slide.copyBlocks.filter { $0.role == block.role }
+        if index < existing.count {
+          return DeckCopyBlock(id: existing[index].id, semanticKey: existing[index].semanticKey,
+            role: block.role, value: block.value, state: block.state)
+        }
+        return block
+      }
+      return ["slideId": slide.id, "blocks": try nativeObject(blocks),
+        "expectedBlocks": try nativeObject(slide.copyBlocks)]
+    }
+    return try JSONSerialization.data(withJSONObject: ["slides": replacements], options: .sortedKeys)
+  }
+}
+
 enum NativeCopyImport {
   static func read(_ url: URL) throws -> ImportedCopyDocument {
     let access = url.startAccessingSecurityScopedResource()
