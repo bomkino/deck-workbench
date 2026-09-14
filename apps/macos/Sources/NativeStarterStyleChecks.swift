@@ -1,10 +1,22 @@
 import AppKit
+import CoreText
 import Foundation
 
 enum NativeStarterStyleChecks {
   static func run() throws {
     func require(_ value: Bool, _ message: String) throws {
       if !value { throw WorkbenchFailure(name: "StarterStyleProof", message: message) }
+    }
+    for role in NativeUIRole.allCases {
+      let font = role.nativeFont()
+      try require(abs(role.nativeFont(scale: 1.25).pointSize - font.pointSize * 1.25) < 0.01,
+        "Interface size did not scale a UI role")
+      if let name = role.fontName {
+        try require(font.fontName == name, "Bundled UI font silently fell back: \(name)")
+        let fontURL = CTFontCopyAttribute(font, kCTFontURLAttribute) as? URL
+        try require(fontURL?.deletingLastPathComponent().standardizedFileURL == Bundle.main.resourceURL?.appendingPathComponent("Fonts").standardizedFileURL,
+          "UI font resolved outside the app bundle: \(name)")
+      }
     }
     var sizes: [Double] = []
     for width in [2576.0, 1920.0] {
@@ -33,6 +45,18 @@ enum NativeStarterStyleChecks {
     }
     try require(sizes == [32, 32], "Widescreen silently reduced the starter type size")
     var type = NativeStarterType.standard
+    type.body.step = -2
+    type.sub.alignment = "center"
+    type.head.colorRole = "accent2"
+    type.useFonts(head: "System Serif", sub: "System", body: "System")
+    try require(type.unavailableFonts.isEmpty && type.head.resolvedFont(size: 48)?.fontName != type.body.resolvedFont(size: 48)?.fontName,
+      "Apple font pair failed to resolve distinct serif and sans faces")
+    try require(type.body.step == -2 && type.sub.alignment == "center" && type.head.colorRole == "accent2",
+      "Choosing a font pair changed size, alignment or colour")
+    try require(type.head.stepLabel == "Step +5" && type.body.stepLabel == "Step -2" && NativeStarterType.standard.body.stepLabel == "Step 0",
+      "Visible size step does not match the stored role")
+    let savedType = try JSONDecoder().decode(NativeStarterType.self, from: JSONEncoder().encode(type))
+    try require(savedType == type, "Font pair or visible step did not survive saving")
     type.head.fontName = "WorkbenchProof-No-Such-Font-8764"
     try require(type.unavailableFonts == [type.head.fontName], "Missing project fonts were not surfaced")
   }

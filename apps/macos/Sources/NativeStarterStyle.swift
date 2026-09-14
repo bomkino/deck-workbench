@@ -6,6 +6,16 @@ struct NativeTypeRole: Codable, Equatable, Sendable {
   var step: Int
   var alignment: String = "left"
   var colorRole: String = "text"
+  var isSystemFont: Bool { fontName == "System" || fontName == "System Serif" }
+  var stepLabel: String { step > 0 ? "Step +\(step)" : "Step \(step)" }
+  func resolvedFont(size: Double, headline: Bool = false) -> NSFont? {
+    let system = NSFont.systemFont(ofSize: size, weight: headline ? .semibold : .regular)
+    if fontName == "System" { return system }
+    if fontName == "System Serif" {
+      return system.fontDescriptor.withDesign(.serif).flatMap { NSFont(descriptor: $0, size: size) }
+    }
+    return NSFont(name: fontName, size: size)
+  }
 }
 struct NativeStarterType: Codable, Equatable, Sendable {
   var head = NativeTypeRole(step: 5)
@@ -14,7 +24,12 @@ struct NativeStarterType: Codable, Equatable, Sendable {
   static let standard = NativeStarterType()
   func role(_ name: String) -> NativeTypeRole { name == "headline" ? head : name == "subheadline" ? sub : body }
   var unavailableFonts: [String] {
-    Array(Set([head, sub, body].map(\.fontName).filter { $0 != "System" && NSFont(name: $0, size: 32) == nil })).sorted()
+    Array(Set([head, sub, body].filter { $0.resolvedFont(size: 32) == nil }.map(\.fontName))).sorted()
+  }
+  mutating func useFonts(head: String, sub: String, body: String) {
+    self.head.fontName = head
+    self.sub.fontName = sub
+    self.body.fontName = body
   }
 }
 struct NativeTypeSize: Sendable {

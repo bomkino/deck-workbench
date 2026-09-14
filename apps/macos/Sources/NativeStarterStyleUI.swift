@@ -12,20 +12,25 @@ struct NativeStarterStyleSheet: View {
   }
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
-      Text("Type & colours").font(.title2)
+      Text("Type & colours").workbenchText(.sectionTitle)
       Picker("Edit", selection: $tab) { Text("Type").tag("type"); Text("Colours").tag("colours") }.pickerStyle(.segmented)
       ScrollView {
         VStack(alignment: .leading, spacing: 20) {
           if tab == "type" {
             Text("Choose each font yourself. Smaller / larger changes size and line spacing together.").foregroundStyle(.secondary)
+            Menu("Choose a font pair") {
+              Button("New York + SF Pro") { type.useFonts(head: "System Serif", sub: "System", body: "System") }
+              Button("pitch.dog Head + Body") { type.useFonts(head: "pd-head-Medium", sub: "pd-body-600", body: "pd-body-400") }
+              Button("SF Pro throughout") { type.useFonts(head: "System", sub: "System", body: "System") }
+            }.workbenchText(.action).help("Sets the three font faces. Your size steps, alignment and colours stay as chosen.")
             NativeTypeRoleEditor(title: "Head", roleName: "headline", role: $type.head)
             NativeTypeRoleEditor(title: "Sub", roleName: "subheadline", role: $type.sub)
             NativeTypeRoleEditor(title: "Body", roleName: "body", role: $type.body)
-            Text("The same type size applies at both slide widths. Review wrapping and overflow after changing fonts. Fit copy, when enabled, can reduce these sizes.").font(.caption).foregroundStyle(.secondary)
+            Text("Step 0 is Head 48, Sub 40 and Body 32. The same sizes apply at both slide widths. Review wrapping after changing fonts; Fit copy can reduce the rendered size.").workbenchText(.caption).foregroundStyle(.secondary)
             if !type.unavailableFonts.isEmpty { Text("Choose installed replacements for: " + type.unavailableFonts.joined(separator: ", ")).foregroundStyle(.orange) }
           } else {
             Text("Four accents and a monochrome option. Each role has a dark-slide and a light-slide colour. Set each slide’s appearance in the inspector.").foregroundStyle(.secondary)
-            HStack { Text("Role").frame(width: 95, alignment: .leading); Text("On dark slides").frame(maxWidth: .infinity); Text("On light slides").frame(maxWidth: .infinity) }.font(.caption)
+            HStack { Text("Role").frame(width: 95, alignment: .leading); Text("On dark slides").frame(maxWidth: .infinity); Text("On light slides").frame(maxWidth: .infinity) }.workbenchText(.caption)
             ForEach(NativeStarterPalette.roles, id: \.self) { role in
               HStack {
                 Text(role).frame(width: 95, alignment: .leading)
@@ -34,15 +39,15 @@ struct NativeStarterStyleSheet: View {
               }
             }
             if !validPalette { Text("Use # followed by six hex digits, for example #24171D.").foregroundStyle(.orange) }
-            Text("Colour changes apply to role-based text and slide backgrounds. Image contrast still needs a visual check.").font(.caption).foregroundStyle(.secondary)
+            Text("Colour changes apply to role-based text and slide backgrounds. Image contrast still needs a visual check.").workbenchText(.caption).foregroundStyle(.secondary)
             Button("Restore starter palette") { palette = .standard }.controlSize(.small)
           }
         }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 4)
       }
       Divider()
       Toggle("Apply to every slide", isOn: $allSlides)
-      Text("Saving starter features requires Workbench 0.2 or later. Older decks keep a recovery copy before upgrading.").font(.caption).foregroundStyle(.secondary)
-      Text(allSlides ? "One Undo restores the previous settings. Each slide keeps its dark or light appearance." : "Changes apply to the current slide. One Undo restores its previous settings.").font(.caption).foregroundStyle(.secondary)
+      Text("Saving starter features requires Workbench 0.2 or later. Older decks keep a recovery copy before upgrading.").workbenchText(.caption).foregroundStyle(.secondary)
+      Text(allSlides ? "One Undo restores the previous settings. Each slide keeps its dark or light appearance." : "Changes apply to the current slide. One Undo restores its previous settings.").workbenchText(.caption).foregroundStyle(.secondary)
       HStack {
         Button("Cancel") { controller.showStarterStyle = false }.keyboardShortcut(.cancelAction)
         Spacer()
@@ -52,7 +57,7 @@ struct NativeStarterStyleSheet: View {
             controller.applyStarterStyle(patch, allSlides: allSlides)
           } catch { controller.failure = error.localizedDescription }
         }.buttonStyle(.borderedProminent).disabled(tab == "type" ? !type.unavailableFonts.isEmpty : !validPalette)
-      }
+      }.workbenchText(.action)
     }.padding(24).nativeSheetFrame(width: 670, height: 770)
       .onAppear { type = controller.selectedSlide?.settings.layout.starterType ?? .standard; palette = controller.selectedSlide?.settings.layout.palette ?? .standard }
   }
@@ -69,7 +74,7 @@ private struct NativeTypeRoleEditor: View {
   let title: String
   let roleName: String
   @Binding var role: NativeTypeRole
-  private var family: String { role.fontName == "System" ? "System" : NSFont(name: role.fontName, size: 32)?.familyName ?? role.fontName }
+  private var family: String { role.isSystemFont ? role.fontName : NSFont(name: role.fontName, size: 32)?.familyName ?? role.fontName }
   private var faces: [(String, String)] {
     (NSFontManager.shared.availableMembers(ofFontFamily: family) ?? []).compactMap { row in
       guard row.count >= 2, let name = row[0] as? String, let face = row[1] as? String else { return nil }
@@ -78,29 +83,34 @@ private struct NativeTypeRoleEditor: View {
   }
   var body: some View {
     VStack(alignment: .leading, spacing: 9) {
-      Text(title).font(.headline)
+      HStack {
+        Text(title).workbenchText(.panelTitle)
+        Spacer()
+        Text(role.stepLabel).workbenchText(.caption).foregroundStyle(.secondary)
+      }
       HStack {
         Picker("Family", selection: Binding(get: { family }, set: { value in
-          if value == "System" { role.fontName = value }
+          if value == "System" || value == "System Serif" { role.fontName = value }
           else if let font = NSFontManager.shared.font(withFamily: value, traits: [], weight: 5, size: 32) { role.fontName = font.fontName }
         })) {
-          Text("System").tag("System")
+          Text("SF Pro (system)").tag("System")
+          Text("New York (system serif)").tag("System Serif")
           ForEach(NSFontManager.shared.availableFontFamilies.sorted(), id: \.self) { Text($0).tag($0) }
         }
-        if family != "System" {
+        if !role.isSystemFont {
           Picker("Face", selection: $role.fontName) { ForEach(faces, id: \.0) { Text($0.1).tag($0.0) } }.frame(maxWidth: 220)
         }
       }
       HStack {
-        Button("Smaller") { role.step = max(-6, role.step - 1) }.disabled(role.step <= -6)
-        Picker("Size / leading", selection: $role.step) {
+        Button("Smaller") { role.step = max(-6, role.step - 1) }.disabled(role.step <= -6).accessibilityLabel("Smaller \(title)")
+        Picker("Step / size / leading", selection: $role.step) {
           ForEach(-6...9, id: \.self) { step in
             let size = NativeTypeSize.preset(role: roleName, step: step)
-            Text(String(format: "%.2f / %.0f", size.size, size.leading)).tag(step)
+            Text(String(format: "\(step > 0 ? "+" : "")\(step) · %.2f / %.0f", size.size, size.leading)).tag(step)
           }
-        }
-        Button("Larger") { role.step = min(9, role.step + 1) }.disabled(role.step >= 9)
-      }
+        }.labelsHidden().accessibilityLabel("\(title) step, size and leading")
+        Button("Larger") { role.step = min(9, role.step + 1) }.disabled(role.step >= 9).accessibilityLabel("Larger \(title)")
+      }.workbenchText(.action)
       HStack {
         Picker("Alignment", selection: $role.alignment) {
           Text("Left").tag("left"); Text("Centre").tag("center"); Text("Right").tag("right"); Text("Justified").tag("justified")
