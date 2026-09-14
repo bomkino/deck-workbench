@@ -729,6 +729,11 @@ struct NativeExportSheet: View {
   @State private var acceptChanged = false
   @State private var scope = "all"
   @State private var selectedIDs: Set<String> = []
+  private var supportsPSD: Bool {
+    controller.document.map { NativePSDExporter.supports($0.deck.canvasPreset) } ?? false
+  }
+  private var includePSD: Bool { psd && supportsPSD }
+  private var includeProductionCopy: Bool { productionCopy || includePSD }
   private var exportCount: Int {
     let ids = scope == "current" ? Set([controller.selectedSlideID ?? ""]) : scope == "selected" ? selectedIDs : Set(controller.slides.map(\.id))
     return controller.slides.filter { $0.settings.included && ids.contains($0.id) }.count
@@ -742,9 +747,17 @@ struct NativeExportSheet: View {
       Toggle("Prototype.pdf · clean visual guide", isOn: $prototype)
       Toggle("Prototype with notes.pdf · complete copy and direction", isOn: $notes)
       Toggle("Copy.md · complete writing", isOn: $copy)
-      Toggle("Production / workbench.md · InDesign & Figma writing", isOn: $productionCopy).disabled(psd)
-      Toggle("Production / PSD · numbered Photoshop slides", isOn: $psd)
-      if psd { Text("One slide at a time. Editable shared artwork keeps its frame and crop. Photoshop is only needed when you edit it.").font(.caption).foregroundStyle(.secondary) }
+      Toggle("Production / workbench.md · Figma or InDesign writing", isOn: Binding(
+        get: { includeProductionCopy }, set: { productionCopy = $0 }
+      )).disabled(includePSD)
+      Toggle("Production / PSD · numbered Photoshop slides", isOn: Binding(
+        get: { includePSD }, set: { psd = $0 }
+      )).disabled(!supportsPSD)
+      if includePSD {
+        Text("Includes workbench.md. Use the same handoff for Figma or InDesign; both apps can stay closed. Artwork keeps its frame and crop. PSDs are created one at a time.").font(.caption).foregroundStyle(.secondary)
+      } else if !supportsPSD {
+        Text("PSDs need 1920 × 1080 or 2576 × 1080. Writing, PDFs and original media are available for this canvas.").font(.caption).foregroundStyle(.secondary)
+      }
       Toggle("Approved Media · original files per slide", isOn: $approved)
       Toggle("Shortlisted Media · candidates per slide", isOn: $shortlisted)
       Divider()
@@ -778,13 +791,13 @@ struct NativeExportSheet: View {
           options.copy = copy
           options.approved = approved
           options.shortlisted = shortlisted
-          options.productionCopy = productionCopy || psd
-          options.psd = psd
+          options.productionCopy = includeProductionCopy
+          options.psd = includePSD
           options.acceptChangedSources = acceptChanged
           options.selectedSlideIDs = scope == "current" ? Set([controller.selectedSlideID ?? ""]) : scope == "selected" ? selectedIDs : nil
           controller.export(options)
         }.buttonStyle(.borderedProminent).disabled(
-          (!prototype && !notes && !copy && !approved && !shortlisted && !productionCopy && !psd) || exportCount == 0 || !controller.canExport)
+          (!prototype && !notes && !copy && !approved && !shortlisted && !includeProductionCopy && !includePSD) || exportCount == 0 || !controller.canExport)
       }
     }.padding(24).nativeSheetFrame(width: 610, height: 650)
       .disabled(controller.exportChoosingDestination)

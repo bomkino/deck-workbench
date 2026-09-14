@@ -1,3 +1,11 @@
+# v0.2.1 — clearer optional exports
+
+PSD export now visibly includes its required workbench.md companion, even after writing export was previously turned off. The handoff works with either Figma or InDesign; neither application is required during export. Unsupported canvases disable the PSD option before export while keeping writing, PDFs and media available. The saved PSD preference remains available when returning to a supported canvas.
+
+Production writing is checked against the actual importer before delivery. This catches combined fields that exceed intake limits even when their individual source fields fit; Copy.md remains an independent, complete writing output.
+
+The native package journey covers writing-only export with PSDs off and combined copy at and beyond the import limit, alongside the existing save, Undo, layout, media and PSD checks. No document schema, font, artwork or Adobe-script changes.
+
 # v0.2.0 — starter layouts and production handoff
 
 Starter layouts, editable contents and moodboards, and a production handoff to Photoshop and InDesign.
