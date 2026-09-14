@@ -63,7 +63,7 @@ final class PitchDeckDocumentStore {
             let timestamp = iso8601(now)
             let manifest = PitchDeckManifest(
                 format: "pitchdog.deck-package",
-                schemaVersion: 2,
+                schemaVersion: 3,
                 deckId: metadata.deckId,
                 title: metadata.title,
                 createdAt: timestamp,
@@ -117,8 +117,8 @@ final class PitchDeckDocumentStore {
         } catch {
             throw WorkbenchFailure(name: "UnsupportedSchema", message: "manifest.json is invalid or unsupported")
         }
-        guard manifest.format == "pitchdog.deck-package", [1, 2].contains(manifest.schemaVersion) else {
-            throw WorkbenchFailure(name: "UnsupportedSchema", message: "Only .pitchdeck package schema 1 is supported")
+        guard manifest.format == "pitchdog.deck-package", [1, 2, 3].contains(manifest.schemaVersion) else {
+            throw WorkbenchFailure(name: "UnsupportedSchema", message: "This .pitchdeck needs a different Workbench version. Supported package schemas: 1, 2 and 3.")
         }
 
         let currentCheckpoint = try readRequired("checkpoint.json", in: packageURL)
@@ -287,6 +287,119 @@ final class PitchDeckDocumentStore {
         upgraded.schemaVersion = 2
         try persistManifest(upgraded)
         manifest = upgraded
+    }
+
+    /// Prepared results and typed history operations are inspected, never copy
+    /// strings. Undo history containing starter fields also requires the new reader.
+    static func preparedNeedsStarterSchema(_ prepared: [String: Any]) -> Bool {
+        if let deck = prepared["nextDeck"] as? [String: Any], deckNeedsStarterSchema(deck) { return true }
+        for key in ["nextUndoStack", "nextRedoStack"] {
+            for entry in prepared[key] as? [[String: Any]] ?? [] {
+                if operationNeedsStarterSchema(entry["forward"] as? [String: Any])
+                    || operationNeedsStarterSchema(entry["inverse"] as? [String: Any]) { return true }
+            }
+        }
+        return false
+    }
+
+    private static func deckNeedsStarterSchema(_ deck: [String: Any]) -> Bool {
+        (deck["sections"] as? [[String: Any]] ?? []).contains { section in
+            (section["slides"] as? [[String: Any]] ?? []).contains(where: slideNeedsStarterSchema)
+        }
+    }
+    private static func slideNeedsStarterSchema(_ slide: [String: Any]) -> Bool {
+        if let native = slide["native"] as? [String: Any], nativeNeedsStarterSchema(native) { return true }
+        return (slide["contentBlocks"] as? [[String: Any]] ?? []).contains { $0["state"] is String }
+    }
+    private static func nativeNeedsStarterSchema(_ native: [String: Any]) -> Bool {
+        guard let layout = native["layout"] as? [String: Any] else { return false }
+        if layout["preset"] as? String == "moodboard" { return true }
+        return ["starterType", "palette", "appearance", "imageCount", "contents"].contains {
+            layout[$0] != nil && !(layout[$0] is NSNull)
+        }
+    }
+    private static func operationNeedsStarterSchema(_ operation: [String: Any]?, depth: Int = 0) -> Bool {
+        guard let operation, let payload = operation["payload"] as? [String: Any] else { return false }
+        // Kernel history validation already bounds nesting. Refuse an old reader
+        // conservatively if a future operation reaches that boundary.
+        if depth >= 64 { return true }
+        switch operation["type"] as? String {
+        case "compound": return (payload["operations"] as? [[String: Any]] ?? []).contains { operationNeedsStarterSchema($0, depth: depth + 1) }
+        case "native.slide.set": return (payload["value"] as? [String: Any]).map(nativeNeedsStarterSchema) ?? false
+        case "slide.insert": return (payload["slide"] as? [String: Any]).map(slideNeedsStarterSchema) ?? false
+        case "section.insert": return ((payload["section"] as? [String: Any])?["slides"] as? [[String: Any]] ?? []).contains(where: slideNeedsStarterSchema)
+        case "content.insert": return (payload["block"] as? [String: Any])?["state"] is String
+        default: return false
+        }
+    }
+
+    /// Promotion precedes the incompatible journal record. Originals are copied
+    /// into an immutable directory, verified byte for byte, then atomically named.
+    /// A failed backup cannot change the active manifest/checkpoint/journal.
+    func ensureStarterCompatibilityBackup() throws {
+        try requireWriterLock()
+        guard manifest.schemaVersion < 3 else { return }
+        try Self.requireContainedDirectory("recovery", in: packageURL)
+        var originals: [String: Data] = [:]
+        for name in ["manifest.json", "checkpoint.json", "journal.ndjson"] {
+            originals[name] = try Self.readRequired(name, in: packageURL)
+        }
+        for (source, name) in [("media/catalog.json", "media-catalog.json"),
+            ("recovery/previous-checkpoint.json", "previous-checkpoint.json")] {
+            if FileManager.default.fileExists(atPath: packageURL.appendingPathComponent(source).path) {
+                originals[name] = try Self.readRequired(source, in: packageURL)
+            }
+        }
+        func matches(_ directory: String) -> Bool {
+            for (name, data) in originals {
+                guard let copied = try? Self.readRequired("recovery/\(directory)/\(name)", in: packageURL), copied == data else { return false }
+            }
+            return true
+        }
+        let base = "pre-starter-0.2.0"
+        var destination = base, suffix = 1
+        while FileManager.default.fileExists(atPath: packageURL.appendingPathComponent("recovery/\(destination)").path) {
+            if matches(destination) { break }
+            suffix += 1; destination = "\(base)-\(suffix)"
+        }
+        if !matches(destination) {
+            let staging = ".\(base)-\(UUID().uuidString)"
+            var promoted = false
+            try Self.withContainedParent(of: "recovery/\(staging)", in: packageURL) { directory, name in
+                guard Darwin.mkdirat(directory, name, S_IRWXU) == 0 else { throw Self.posixError() }
+            }
+            defer {
+                if !promoted, (try? Self.requireContainedDirectory("recovery/\(staging)", in: packageURL)) != nil {
+                    try? FileManager.default.removeItem(at: packageURL.appendingPathComponent("recovery/\(staging)"))
+                }
+            }
+            for (name, data) in originals {
+                try Self.writeDurable(data, relativePath: "recovery/\(staging)/\(name)", in: packageURL)
+            }
+            guard matches(staging) else { throw WorkbenchFailure(name: "CheckpointWriteFailure", message: "The pre-starter recovery copy did not verify. No edit was written.") }
+            try Self.withContainedParent(of: "recovery/\(staging)/.sync", in: packageURL) { directory, _ in
+                guard Darwin.fsync(directory) == 0 else { throw Self.posixError() }
+            }
+            try Self.withContainedParent(of: "recovery/\(staging)", in: packageURL) { directory, name in
+                guard Darwin.renameatx_np(directory, name, directory, destination, UInt32(RENAME_EXCL)) == 0 else { throw Self.posixError() }
+                promoted = true
+                guard Darwin.fsync(directory) == 0 else { throw Self.posixError() }
+            }
+        }
+        guard matches(destination) else { throw WorkbenchFailure(name: "CheckpointWriteFailure", message: "The pre-starter recovery copy could not be read back. No edit was written.") }
+        try Self.withContainedParent(of: "recovery/\(destination)/.sync", in: packageURL) { directory, _ in
+            guard Darwin.fsync(directory) == 0 else { throw Self.posixError() }
+        }
+        try Self.withContainedParent(of: "recovery/\(destination)", in: packageURL) { directory, _ in
+            guard Darwin.fsync(directory) == 0 else { throw Self.posixError() }
+        }
+        var upgraded = manifest
+        upgraded.schemaVersion = 3
+        do { try persistManifest(upgraded); manifest = upgraded }
+        catch {
+            requiresReopen = true
+            throw WorkbenchFailure(name: "CheckpointWriteFailure", message: "The recovery copy is safe, but the new reader guard could not be acknowledged. Reopen this deck before retrying; no new journal record was written.")
+        }
     }
 
     /// Recovery never steals another process's lock or changes the source package.

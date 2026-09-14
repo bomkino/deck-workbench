@@ -107,8 +107,9 @@ actor NativeDocumentSession {
     ]
     let prepared = try kernel.prepare(command: command)
     if prepared["duplicate"] as? Bool == true { return writeReceipt() }
-    // The backup/reader guard is applied only for the first native mutation.
-    if type.hasPrefix("native.") { try store.ensureNativeCompatibilityBackup() }
+    // Back up and promote before any incompatible record reaches the journal.
+    if PitchDeckDocumentStore.preparedNeedsStarterSchema(prepared) { try store.ensureStarterCompatibilityBackup() }
+    else if type.hasPrefix("native.") { try store.ensureNativeCompatibilityBackup() }
     var appended = false
     do {
       _ = try store.appendDurably(prepared: prepared)
@@ -133,6 +134,7 @@ actor NativeDocumentSession {
         name: "RecoveryRequired", message: "The intended deck is not writable.")
     }
     let prepared = try (redo ? kernel.prepareRedo() : kernel.prepareUndo())
+    if PitchDeckDocumentStore.preparedNeedsStarterSchema(prepared) { try store.ensureStarterCompatibilityBackup() }
     var appended = false
     do {
       _ = try store.appendDurably(prepared: prepared)
@@ -185,6 +187,7 @@ actor NativeDocumentSession {
   }
   func recoveryRequired() -> Bool { fenced || store?.needsRecovery == true }
   func documentURL() -> URL? { store?.packageURL }
+  func documentSchemaVersion() -> Int? { store?.manifest.schemaVersion }
   func mediaSession() throws -> MediaCatalogSession {
     guard let media else {
       throw WorkbenchFailure(name: "NoDocument", message: "Open a deck first.")

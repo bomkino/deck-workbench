@@ -30,6 +30,9 @@ struct ImportedCopyDocument: Sendable {
       let slides: [[String: Any]] = try part.slides.map { slide in
         var settings = NativeSlideSettings.initial
         settings.notes = slide.notes
+        settings.layout.starterType = .standard
+        settings.layout.appearance = "dark"
+        settings.layout.fitCopy = false
         if slide.style == "text-only" { settings.layout.preset = "text-only" }
         if slide.style == "diptych" { settings.layout.preset = "two-images" }
         if slide.style == "triptych" { settings.layout.preset = "three-images" }
@@ -69,8 +72,9 @@ enum NativeCopyImport {
       throw WorkbenchFailure(
         name: "ImportFormat", message: "Choose a UTF-8 Markdown or text file no larger than 1 MiB.")
     }
-    let source = input.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(
+    var source = input.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(
       of: "\r", with: "\n")
+    if source.hasPrefix("\u{FEFF}") { source.removeFirst() }
     // Fence contents are literal copy, never document structure.
     var detectingFence: String?
     var structured = false
@@ -85,12 +89,15 @@ enum NativeCopyImport {
       }
       if line.hasPrefix("Format: workbench-markdown/") || line.hasPrefix("### Slide:") { structured = true }
     }
+    if structured { return try NativeWorkbenchMarkdown.parse(source) }
     var result = ImportedCopyDocument(
       title: URL(fileURLWithPath: filename).deletingPathExtension().lastPathComponent, parts: [])
     var part = ImportedCopyPart(id: UUID().uuidString.lowercased(), title: "Deck", slides: [])
     var slide: ImportedCopySlide?
     var role: String?
     var lines: [String] = []
+    var literalLineIndices: Set<Int> = []
+    var usedLiteralFence = false
     var blockState = "present"
     var explicitRole = false
     func finishBlock() {
@@ -98,10 +105,17 @@ enum NativeCopyImport {
         lines = []
         return
       }
-      var contents = lines
-      // Structural blank separators are not paragraphs. Internal blank lines survive.
-      if contents.first == "" { contents.removeFirst() }
-      if contents.last == "" { contents.removeLast() }
+      var start = 0, end = lines.count
+      // Fenced lines are literal even when blank. Only separators outside the
+      // fence are discarded; authored leading/trailing LFs survive a round trip.
+      if usedLiteralFence {
+        while start < end && lines[start] == "" && !literalLineIndices.contains(start) { start += 1 }
+        while end > start && lines[end - 1] == "" && !literalLineIndices.contains(end - 1) { end -= 1 }
+      } else {
+        if start < end && lines[start] == "" { start += 1 }
+        if end > start && lines[end - 1] == "" { end -= 1 }
+      }
+      let contents = Array(lines[start..<end])
       let value = contents.joined(separator: "\n")
       let currentRole = role ?? "body"
       if currentRole == "notes" {
@@ -112,10 +126,11 @@ enum NativeCopyImport {
           slide!.blocks.append(
             DeckCopyBlock(
               id: UUID().uuidString.lowercased(), semanticKey: "\(currentRole).\(n)",
-              role: currentRole, value: RichCopy(value)))
+              role: currentRole, value: RichCopy(value), state: value.isEmpty ? nil : "present"))
         }
       }
       lines = []
+      literalLineIndices = []; usedLiteralFence = false
       role = nil
       blockState = "present"
       explicitRole = false
@@ -138,11 +153,12 @@ enum NativeCopyImport {
       let trimmed = line.trimmingCharacters(in: .whitespaces)
       if let fence = literalFence {
         if trimmed.hasPrefix(fence) && trimmed.allSatisfy({ $0 == fence.first! }) { literalFence = nil }
-        else { lines.append(line) }
+        else { literalLineIndices.insert(lines.count); lines.append(line) }
         continue
       }
       if trimmed.hasPrefix("```") || trimmed.hasPrefix("~~~") {
         if slide == nil { slide = ImportedCopySlide(id: UUID().uuidString.lowercased(), title: result.title); role = "body" }
+        usedLiteralFence = true
         literalFence = String(trimmed.prefix { $0 == trimmed.first! })
         continue
       }

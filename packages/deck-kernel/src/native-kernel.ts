@@ -1,7 +1,10 @@
+type NativeTypeRole = { fontName: string; step: number; alignment: string; colorRole: string }
+type NativeStarterType = { head: NativeTypeRole; sub: NativeTypeRole; body: NativeTypeRole }
 // Native prototype metadata, not another document store. Every edit participates
 // in the same kernel validation, atomic journal operation and undo history.
 type NativeLayout = {
   preset: string; columns: number; bodySize: number; fitCopy: boolean
+  imageCount?: number; contents?: boolean; starterType?: NativeStarterType; palette?: { colors: Record<string, { dark: string; light: string }> }; appearance?: string
   textFrame?: ElementFrame
   frames: Record<string, ElementFrame>; crops: Record<string, NormalizedCrop>
   imageFits: Record<string, ElementImageFit>; gradient?: ElementGradient
@@ -35,7 +38,7 @@ function nativeState(deck: DeckSnapshot, slide: Slide): NativeSlideState {
 // Visible slots follow an explicit prototype layout, never obsolete assignments.
 function nativeImageRoles(slide: Slide, state: NativeSlideState): string[] {
   const preset = state.layout.preset === 'auto'
-    ? (slide.intent === 'text-only' ? 'text-only' : slide.intent === 'triptych' ? 'three-images' : slide.intent === 'diptych' ? 'two-images' : 'left')
+    ? (slide.intent === 'moodboard' ? 'moodboard' : ['contents', 'text-only'].includes(slide.intent) ? 'text-only' : slide.intent === 'triptych' ? 'three-images' : slide.intent === 'diptych' ? 'two-images' : 'left')
     : state.layout.preset
   if (preset === 'text-only') return []
   if (preset === 'legacy') {
@@ -43,7 +46,7 @@ function nativeImageRoles(slide: Slide, state: NativeSlideState): string[] {
     const roles = (option?.composition.elements ?? []).filter((e) => e.kind === 'image').map((e) => e.mediaRole).filter((r): r is string => typeof r === 'string')
     return [...new Set(roles.length ? roles : (slide.mediaAssignments ?? []).map((a) => a.role))]
   }
-  const count = preset === 'three-images' ? 3 : preset === 'two-images' ? 2 : 1
+  const count = preset === 'moodboard' ? (state.layout.imageCount ?? 6) : preset === 'three-images' ? 3 : preset === 'two-images' ? 2 : 1
   return Array.from({ length: count }, (_, i) => i ? `primary:${i + 1}` : 'primary')
 }
 
@@ -69,14 +72,36 @@ function validateNativeState(value: unknown, deck?: DeckSnapshot): NativeSlideSt
     if (assets && !assets.has(id)) throw new Error('Pinned source Asset does not exist')
   }
   const layout = assertRecord(state.layout, 'layout') as unknown as NativeLayout
-  if (!['auto', 'legacy', 'left', 'right', 'lower', 'wide', 'text-only', 'image-only', 'two-images', 'three-images'].includes(layout.preset)) throw new Error('Unsupported prototype layout')
+  if (!['auto', 'legacy', 'left', 'right', 'lower', 'wide', 'text-only', 'image-only', 'two-images', 'three-images', 'moodboard'].includes(layout.preset)) throw new Error('Unsupported prototype layout')
   if (![1, 2, 3].includes(layout.columns) || typeof layout.fitCopy !== 'boolean') throw new Error('Invalid text flow settings')
   nativeNumber(layout.bodySize, 'bodySize', 16, 80)
+  if (layout.imageCount !== undefined && (!Number.isInteger(layout.imageCount) || layout.imageCount < 1 || layout.imageCount > 12)) throw new Error('Choose 1–12 moodboard slots')
+  if (layout.contents !== undefined && typeof layout.contents !== 'boolean') throw new Error('Invalid contents setting')
   if (layout.textFrame) assertElementFrame(layout.textFrame)
   for (const [id, frame] of Object.entries(assertRecord(layout.frames, 'frames'))) { assertIdentity(id, 'frame ID', 512); assertElementFrame(frame) }
   for (const [id, crop] of Object.entries(assertRecord(layout.crops, 'crops'))) { assertIdentity(id, 'crop ID', 512); assertNormalizedCrop(crop) }
   for (const [id, fit] of Object.entries(assertRecord(layout.imageFits, 'imageFits'))) { assertIdentity(id, 'image role', 512); assertElementImageFit(fit) }
   if (layout.gradient) assertElementGradient(layout.gradient)
+  if (layout.starterType !== undefined) {
+    const type = assertRecord(layout.starterType, 'starterType')
+    for (const name of ['head', 'sub', 'body']) {
+      const role = assertRecord(type[name], name)
+      assertIdentity(role.fontName, 'font name', 256)
+      nativeNumber(role.step, 'size step', -6, 9)
+      if (!Number.isInteger(role.step) || !['left', 'center', 'right', 'justified'].includes(String(role.alignment))) throw new Error('Invalid starter type settings')
+      if (!['text', 'muted', 'accent1', 'accent2', 'accent3', 'accent4', 'mono'].includes(String(role.colorRole))) throw new Error('Invalid text colour role')
+    }
+  }
+  if (layout.appearance !== undefined && !['dark', 'light'].includes(layout.appearance)) throw new Error('Invalid slide appearance')
+  if (layout.palette !== undefined) {
+    const colors = assertRecord(assertRecord(layout.palette, 'palette').colors, 'palette colours')
+    const roles = ['background', 'text', 'muted', 'accent1', 'accent2', 'accent3', 'accent4', 'mono']
+    if (Object.keys(colors).length !== roles.length) throw new Error('Palette needs every colour role')
+    for (const name of roles) {
+      const pair = assertRecord(colors[name], name)
+      for (const appearance of ['dark', 'light']) if (typeof pair[appearance] !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(pair[appearance] as string)) throw new Error('Palette colours need six-digit hex values')
+    }
+  }
   return clone(state)
 }
 function validateNativeDeck(deck: DeckSnapshot): void {
@@ -89,7 +114,7 @@ function nativeMutation(deck: DeckSnapshot, slide: Slide, next: NativeSlideState
 }
 // Slide management uses the existing insert/remove/move history, not a second store.
 function nativeCopySignature(blocks: ContentBlock[]): string {
-  return JSON.stringify(blocks.map((b) => [b.id, b.semanticKey, b.role, richTextToPlainText(b.value)]))
+  return JSON.stringify(blocks.map((b) => [b.id, b.semanticKey, b.role, richTextToPlainText(b.value), b.state ?? null]))
 }
 function nativeSlideInsertion(deck: DeckSnapshot, command: CommandEnvelope): NativeMutation {
   const id = assertIdentity(command.payload.slideId, 'slideId', 160)
@@ -102,6 +127,7 @@ function nativeSlideInsertion(deck: DeckSnapshot, command: CommandEnvelope): Nat
   if (afterSlideId !== null && !section.slides.some((slide) => slide.id === afterSlideId)) throw new Error('The insertion point no longer exists')
   const title = assertString(command.payload.title, 'Slide name', 500)
   let slide: Slide
+  const forward: HistoryOperation[] = [], inverse: HistoryOperation[] = []
   if (command.type === 'native.slide.duplicate') {
     const source = findSlide(deck, assertIdentity(command.payload.sourceSlideId, 'sourceSlideId', 256))
     if (!source) throw new Error('The source slide no longer exists')
@@ -135,9 +161,46 @@ function nativeSlideInsertion(deck: DeckSnapshot, command: CommandEnvelope): Nat
     slide = { id, internalTitle: title, intent: 'full-bleed-overlay', contentBlocks:
       ['headline', 'subheadline', 'body'].map((role) => ({ id: `${id}:${role}`, semanticKey: `slide.${role}`, role, value: importedRichText('') })) }
     slide.native = nativeState(deck, slide)
+    const anchor = afterSlideId ? findSlide(deck, afterSlideId)?.native?.layout : undefined
+    slide.native.layout.starterType = clone(anchor?.starterType ?? { head: { fontName: 'System', step: 5, alignment: 'left', colorRole: 'text' }, sub: { fontName: 'System', step: 5, alignment: 'left', colorRole: 'text' }, body: { fontName: 'System', step: 0, alignment: 'justified', colorRole: 'text' } })
+    slide.native.layout.appearance = anchor?.appearance ?? 'dark'
+    if (anchor?.palette) slide.native.layout.palette = clone(anchor.palette)
+    slide.native.layout.fitCopy = false
+    const kind = command.payload.kind ?? 'slide'
+    if (!['slide', 'moodboard', 'contents'].includes(String(kind))) throw new Error('Unsupported new slide kind')
+    if (kind !== 'slide') for (const block of slide.contentBlocks) block.state = 'intentionally-blank'
+    if (kind === 'contents') {
+      slide.intent = 'contents'
+      slide.native.layout.contents = true
+      slide.native.layout.preset = 'text-only'
+      slide.native.layout.columns = 2
+      slide.contentBlocks[0].value = importedRichText(title)
+      slide.contentBlocks[0].state = 'present'
+    }
+    if (kind === 'moodboard') {
+      slide.intent = 'moodboard'
+      slide.native.layout.preset = 'moodboard'
+      slide.contentBlocks[0].value = importedRichText('Moodboard')
+      slide.contentBlocks[0].state = 'present'
+      const inputs = command.payload.assets ?? []
+      if (!Array.isArray(inputs) || inputs.length > 12) throw new Error('Choose at most twelve moodboard images')
+      slide.native.layout.imageCount = inputs.length || 6
+      slide.mediaAssignments = []
+      const seen = new Set<string>()
+      for (const [index, raw] of inputs.entries()) {
+        const input = assertRecord(raw, 'Moodboard image'), asset = assertAssetReferenceSnapshot(input.asset)
+        if (seen.has(asset.id)) throw new Error('Choose unique moodboard images')
+        seen.add(asset.id)
+        if (!(deck.assetReferences ?? []).some((a) => a.id === asset.id)) appendOperationPair(forward, inverse,
+          { type: 'asset.reference.insert', payload: { assetReference: asset } }, { type: 'asset.reference.remove', payload: { assetReferenceId: asset.id } })
+        slide.mediaAssignments.push({ id: `${id}:assignment:${index + 1}`, role: index ? `primary:${index + 1}` : 'primary', assetReferenceId: asset.id })
+        slide.native.shortlist.push(asset.id)
+        if (input.fingerprint !== undefined) slide.native.sourceFingerprints[asset.id] = assertString(input.fingerprint, 'fingerprint', 500)
+      }
+    }
   }
-  return { forward: { type: 'slide.insert', payload: { sectionId, slide, afterSlideId } },
-    inverse: { type: 'slide.remove', payload: { slideId: id } }, label: command.type === 'native.slide.duplicate' ? 'Duplicate Slide' : 'Add Slide' }
+  appendOperationPair(forward, inverse, { type: 'slide.insert', payload: { sectionId, slide, afterSlideId } }, { type: 'slide.remove', payload: { slideId: id } })
+  return { forward: operationList(forward), inverse: operationList(inverse), label: command.type === 'native.slide.duplicate' ? 'Duplicate Slide' : 'Add Slide' }
 }
 function nativeSlideRename(deck: DeckSnapshot, command: CommandEnvelope): NativeMutation {
   const id = assertIdentity(command.payload.slideId, 'slideId', 256)
@@ -185,7 +248,7 @@ function prepareNativeCommand(deck: DeckSnapshot, command: CommandEnvelope): Nat
       const update = assertRecord(raw, 'copy update'), id = assertIdentity(update.slideId, 'slideId', 256), slide = findSlide(deck, id)
       if (!slide || seen.has(id) || !Array.isArray(update.blocks)) throw new Error('Unknown or duplicated copy destination')
       seen.add(id)
-      const metadata = (b: ContentBlock) => b.role.startsWith('workbench-') || b.semanticKey.startsWith('workbench.')
+      const metadata = (b: ContentBlock) => b.role === 'workbench-plan' || b.semanticKey === 'workbench.plan.v1'
       const oldBlocks = slide.contentBlocks.filter((b) => !metadata(b))
       if (update.expectedBlocks !== undefined) {
         if (!Array.isArray(update.expectedBlocks) || nativeCopySignature(update.expectedBlocks as ContentBlock[]) !== nativeCopySignature(oldBlocks)) {
@@ -201,6 +264,7 @@ function prepareNativeCommand(deck: DeckSnapshot, command: CommandEnvelope): Nat
       for (const b of blocks) {
         assertIdentity(b.id, 'Content ID', 256); assertString(b.role, 'role'); assertString(b.semanticKey, 'semanticKey')
         if (metadata(b) || !isRichTextDocument(b.value) || ids.has(b.id) || keys.has(b.semanticKey)) throw new Error('Invalid replacement Content Block')
+        if (b.state !== undefined && (!['present', 'intentionally-blank', 'unreviewed'].includes(b.state) || (b.state !== 'present' && richTextToPlainText(b.value) !== ''))) throw new Error('Invalid copy field state')
         if (blockIdentityExists(deck, b.id) && !oldBlocks.some((o) => o.id === b.id)) throw new Error('Content ID belongs to another Slide')
         ids.add(b.id); keys.add(b.semanticKey)
       }
@@ -237,7 +301,7 @@ function prepareNativeCommand(deck: DeckSnapshot, command: CommandEnvelope): Nat
     const forward: HistoryOperation[] = [], inverse: HistoryOperation[] = []
     if (patch.layout !== undefined) {
       const layout = assertRecord(patch.layout, 'layout patch')
-      if (Object.keys(layout).some((k) => !['preset', 'columns', 'bodySize', 'fitCopy', 'textFrame', 'frames', 'crops', 'imageFits', 'gradient'].includes(k))) throw new Error('Unsupported layout property')
+      if (Object.keys(layout).some((k) => !['preset', 'columns', 'bodySize', 'fitCopy', 'textFrame', 'frames', 'crops', 'imageFits', 'gradient', 'starterType', 'palette', 'appearance', 'imageCount', 'contents'].includes(k))) throw new Error('Unsupported layout property')
       const previousPreset = state.layout.preset
       // Null resets a map; a dictionary changes only the named entries. Null
       // entries reset one image. Ordinary edits must never replace sibling data.
@@ -255,9 +319,14 @@ function prepareNativeCommand(deck: DeckSnapshot, command: CommandEnvelope): Nat
       }
       if (layout.textFrame === null) delete next.textFrame
       if (layout.gradient === null) delete next.gradient
+      if (layout.starterType === null) delete next.starterType
+      if (layout.palette === null) delete next.palette
+      if (layout.appearance === null) delete next.appearance
+      if (layout.imageCount === null) delete next.imageCount
+      if (layout.contents === null) delete next.contents
       state.layout = next
       validateNativeState(state)
-      if (layout.preset !== undefined && (previousPreset !== next.preset || next.preset !== 'legacy')) {
+      if ((layout.preset !== undefined && (previousPreset !== next.preset || next.preset !== 'legacy')) || layout.imageCount !== undefined) {
         const roles = nativeImageRoles(slide, state)
         const assignments = slide.mediaAssignments ?? []
         const occupied = new Set(assignments.filter((a) => roles.includes(a.role)).map((a) => a.role))

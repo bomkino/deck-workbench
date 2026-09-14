@@ -20,6 +20,7 @@ type ContentBlock = {
   semanticKey: string
   role: string
   value: RichTextDocument
+  state?: 'present' | 'intentionally-blank' | 'unreviewed'
 }
 
 type AssetReference = {
@@ -1352,6 +1353,7 @@ function assertDeckMediaIntegrity(deck: DeckSnapshot): void {
         assertString(block.semanticKey, `Content Block ${blockId} semanticKey`)
         assertString(block.role, `Content Block ${blockId} role`)
         if (!isRichTextDocument(block.value)) throw new Error(`Content Block ${blockId} must contain semantic rich-text JSON`)
+        if (block.state !== undefined && !['present', 'intentionally-blank', 'unreviewed'].includes(block.state)) throw new Error(`Content Block ${blockId} has an unsupported copy state`)
       }
 
       if (slide.mediaAssignments !== undefined && !Array.isArray(slide.mediaAssignments)) {

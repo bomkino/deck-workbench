@@ -5,7 +5,9 @@ cd "$ROOT"
 test "$(uname -s)" = Darwin
 test "$(uname -m)" = arm64
 SHA="$(git rev-parse HEAD)"
+npm ci --ignore-scripts --no-audit --no-fund
 node scripts/build-kernel.mjs
+node scripts/build-psd-encoder.mjs
 if ! git diff --quiet || ! git diff --cached --quiet; then echo 'Refusing to package uncommitted source' >&2; exit 1; fi
 APP="$ROOT/build/native/Deck Workbench.app"
 rm -rf "$ROOT/build/native"
@@ -13,11 +15,12 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/Kernel" "$APP/Contents/R
 cp apps/macos/Info.plist "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :DeckWorkbenchCommit string $SHA" "$APP/Contents/Info.plist"
 cp build/generated/deck-kernel.js "$APP/Contents/Resources/Kernel/"
+cp build/generated/psd-encoder.js "$APP/Contents/Resources/Kernel/"
 cp apps/macos/Resources/Fonts/*.otf apps/macos/Resources/Fonts/*.ttf "$APP/Contents/Resources/Fonts/"
 cp LICENSE NOTICE THIRD_PARTY.md "$APP/Contents/Resources/Legal/"
-cp -R legal/fontblind-v13 legal/phosphor-icons "$APP/Contents/Resources/Legal/"
+cp -R legal/fontblind-v13 legal/phosphor-icons legal/psd-encoder "$APP/Contents/Resources/Legal/"
 scripts/build-macos-icon.sh "$APP/Contents/Resources/DeckWorkbench.icns"
-swiftc -O -swift-version 5 -target arm64-apple-macosx26.0 \
+swiftc -O -swift-version 5 -sdk "${SDKROOT:-$(xcrun --show-sdk-path)}" -target arm64-apple-macosx26.0 \
   -framework AppKit -framework AVFoundation -framework Combine -framework CoreGraphics -framework CoreText \
   -framework CryptoKit -framework ImageIO -framework JavaScriptCore -framework PDFKit -framework SwiftUI \
   -framework UniformTypeIdentifiers \

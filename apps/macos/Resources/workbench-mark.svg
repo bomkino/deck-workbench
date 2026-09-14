@@ -1,9 +1,48 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
-  <title id="title">Deck Workbench mark</title>
-  <desc id="desc">An imperfect ink frame whose coral hanging cord escapes into orbit.</desc>
-  <rect width="256" height="256" fill="#dcebf2"/>
-  <path d="M55 144 58 207 158 204 155 139Z" fill="#fffdf7" stroke="#151513" stroke-width="10" stroke-linejoin="miter"/>
-  <path d="M77 164 131 162M78 183 118 182" fill="none" stroke="#151513" stroke-width="8" stroke-linecap="square"/>
-  <path d="M155 141c19-3 29-16 24-32-5-17-27-18-35-4-8 15 5 32 25 31 26-2 43-27 33-51" fill="none" stroke="#ff6847" stroke-width="9" stroke-linecap="round"/>
-  <circle cx="202" cy="84" r="7" fill="#ff6847"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Deck Workbench</title>
+  <desc id="desc">Layered ivory slides on a deep plum work surface, with a coral editing handle.</desc>
+  <defs>
+    <linearGradient id="ivory" x1="0" y1="0" x2="0.8" y2="1">
+      <stop stop-color="#FFF9ED"/>
+      <stop offset="1" stop-color="#E6D9CB"/>
+    </linearGradient>
+    <linearGradient id="ink" x1="0" y1="0" x2="0.7" y2="1">
+      <stop stop-color="#49384F"/>
+      <stop offset="1" stop-color="#281E31"/>
+    </linearGradient>
+    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#FFFCF4"/>
+      <stop offset="1" stop-color="#F0E5D7"/>
+    </linearGradient>
+  </defs>
+  <!-- The exterior stays transparent, including every icon-size corner. -->
+  <rect x="64" y="74" width="896" height="896" rx="208" fill="#2B2030" opacity="0.12"/>
+  <rect x="56" y="48" width="912" height="912" rx="208" fill="url(#ivory)"/>
+  <rect x="62" y="54" width="900" height="900" rx="202" fill="none" stroke="#FFFFFF" stroke-opacity="0.65" stroke-width="4"/>
+
+  <!-- A broad ledge grounds the loose sheets without miniature bench furniture. -->
+  <rect x="154" y="748" width="724" height="94" rx="36" fill="#2B2030" opacity="0.13"/>
+  <rect x="154" y="716" width="716" height="100" rx="34" fill="url(#ink)"/>
+
+  <g transform="rotate(9 550 410)">
+    <rect x="274" y="238" width="568" height="360" rx="32" fill="#2B2030" opacity="0.12"/>
+    <rect x="266" y="220" width="568" height="360" rx="32" fill="#6D5B74"/>
+    <rect x="298" y="252" width="504" height="296" rx="10" fill="#D9CAD9"/>
+  </g>
+  <g transform="rotate(-7 497 494)">
+    <rect x="190" y="306" width="632" height="382" rx="34" fill="#2B2030" opacity="0.15"/>
+    <rect x="182" y="286" width="632" height="382" rx="34" fill="#A596AD"/>
+    <rect x="216" y="320" width="564" height="314" rx="10" fill="url(#paper)"/>
+  </g>
+
+  <rect x="170" y="402" width="688" height="386" rx="38" fill="#281E31" opacity="0.16"/>
+  <rect x="162" y="382" width="688" height="386" rx="36" fill="url(#ink)"/>
+  <rect x="200" y="422" width="612" height="302" rx="10" fill="url(#paper)"/>
+  <rect x="236" y="458" width="152" height="230" rx="8" fill="#D6C9D7"/>
+  <rect x="414" y="458" width="362" height="230" rx="8" fill="#49384F"/>
+
+  <!-- One oversized handle remains a distinct accent at 16 and 32 pixels. -->
+  <rect x="774" y="692" width="116" height="116" rx="24" fill="#281E31" opacity="0.18"/>
+  <rect x="762" y="680" width="116" height="116" rx="22" fill="#F57660"/>
+  <path d="M786 685H854" fill="none" stroke="#FFAF91" stroke-width="6" stroke-linecap="round"/>
 </svg>

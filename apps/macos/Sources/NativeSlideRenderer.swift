@@ -28,32 +28,25 @@ struct ResolvedPrototype {
   var overflowCharacters: Int
   var effectiveBodySize: Double
   var legacy: Bool
+  var backgroundColor: String = "#090909"
+  var dottedLines: [PrototypeDottedLine] = []
 }
 
 enum NativeSlideRenderer {
   static func defaultTextRegion(canvas: DeckCanvas, preset: String) -> CGRect {
-    let sx = canvas.width / 2576
-    let sy = canvas.height / 1080
-    let mx = 96 * sx
-    let my = 64 * sy
-    let usable = CGRect(x: mx, y: my, width: canvas.width - 2 * mx, height: canvas.height - 2 * my)
-    if canvas.width / canvas.height < 1.3 || ["wide", "text-only"].contains(preset) {
-      return usable
-    }
-    if preset == "lower" {
-      return CGRect(x: mx, y: 544 * sy, width: usable.width, height: 472 * sy)
-    }
-    if preset == "right" {
-      return CGRect(x: 1296 * sx, y: my, width: 1184 * sx, height: usable.height)
-    }
-    if ["two-images", "three-images"].contains(preset) {
-      return CGRect(x: mx, y: 704 * sy, width: usable.width, height: 312 * sy)
-    }
-    return CGRect(x: mx, y: my, width: 1184 * sx, height: usable.height)
+    let grid = NativeSlideGrid(canvas: canvas), usable = grid.usable
+    if preset == "moodboard" { return CGRect(x: grid.marginX, y: grid.marginY, width: usable.width, height: grid.rowStart(2) - grid.marginY - grid.rowGutter) }
+    if canvas.width / canvas.height < 1.3 || ["wide", "text-only"].contains(preset) { return usable }
+    if preset == "lower" { return CGRect(x: grid.marginX, y: grid.rowStart(6), width: usable.width, height: usable.maxY - grid.rowStart(6)) }
+    if preset == "right" { return CGRect(x: grid.columnStart(12), y: grid.marginY, width: grid.span(12), height: usable.height) }
+    if ["two-images", "three-images"].contains(preset) { return CGRect(x: grid.marginX, y: grid.rowStart(8), width: usable.width, height: usable.maxY - grid.rowStart(8)) }
+    return CGRect(x: grid.marginX, y: grid.marginY, width: grid.span(12), height: usable.height)
   }
   static func resolvedPreset(slide: DeckSlide) -> String {
     let preset = slide.settings.layout.preset
     if preset != "auto" { return preset }
+    if slide.intent == "moodboard" { return "moodboard" }
+    if slide.intent == "contents" { return "text-only" }
     if slide.intent == "text-only" { return "text-only" }
     if slide.intent == "diptych" { return "two-images" }
     if slide.intent == "triptych" { return "three-images" }
@@ -61,6 +54,11 @@ enum NativeSlideRenderer {
   }
   static func resolve(slide: DeckSlide, canvas: DeckCanvas) -> ResolvedPrototype {
     let layout = slide.settings.layout
+    let grid = NativeSlideGrid(canvas: canvas)
+    let appearance = layout.appearance ?? "dark"
+    let palette = layout.palette ?? .standard
+    let usePalette = layout.starterType != nil || layout.appearance != nil || layout.palette != nil
+    let background = palette.hex("background", appearance: appearance)
     let preset = resolvedPreset(slide: slide)
     let full = CGRect(x: 0, y: 0, width: canvas.width, height: canvas.height)
     let region = layout.textFrame?.rect ?? defaultTextRegion(canvas: canvas, preset: preset)
@@ -68,6 +66,7 @@ enum NativeSlideRenderer {
       slideID: slide.id, canvas: canvas, imageLayers: [], gradient: nil, gradientFrame: full,
       textRegion: region, texts: [], overflowCharacters: 0, effectiveBodySize: layout.bodySize,
       legacy: preset == "legacy")
+    if usePalette { scene.backgroundColor = background }
     if preset == "legacy", let composition = slide.legacyComposition {
       var represented = Set<String>()
       for element in composition.elements {
@@ -105,11 +104,20 @@ enum NativeSlideRenderer {
     let roles = slide.imageRoles
     if showImages {
       let multiple = roles.count > 1
-      let gap = 16 * canvas.width / 2576
+      let gap = grid.columnGutter
       let height = multiple && preset != "image-only" ? canvas.height * 0.61 : canvas.height
       for (index, role) in roles.enumerated() {
         let width = (canvas.width - gap * Double(roles.count - 1)) / Double(roles.count)
-        let frame = CGRect(x: Double(index) * (width + gap), y: 0, width: width, height: height)
+        var frame = CGRect(x: Double(index) * (width + gap), y: 0, width: width, height: height)
+        if preset == "moodboard" {
+          let count = roles.count
+          let columns = count <= 2 ? count : count <= 4 ? 2 : count <= 6 ? 3 : count <= 8 ? 4 : count == 9 ? 3 : 4
+          let rows = Int(ceil(Double(count) / Double(columns)))
+          let startRow = rows == 2 ? 3 + (index / columns) * 5 : 3 + (index / columns) * (9 / rows)
+          let rowSpan = rows == 2 ? 4 : 9 / rows
+          frame = CGRect(x: grid.columnStart((index % columns) * (24 / columns)), y: grid.rowStart(startRow),
+            width: grid.span(24 / columns), height: Double(rowSpan) * grid.cellHeight + Double(rowSpan - 1) * grid.rowGutter)
+        }
         scene.imageLayers.append(
           PrototypeImageLayer(
             role: role,
@@ -117,8 +125,9 @@ enum NativeSlideRenderer {
             frame: layout.frames[role]?.rect ?? frame, crop: layout.crops[role] ?? .full,
             fit: layout.imageFits[role] ?? "fill"))
       }
-      if !multiple && preset != "image-only" {
+      if !multiple && preset != "image-only" && preset != "moodboard" {
         var gradient = PrototypeGradient()
+        if layout.starterType != nil || layout.appearance != nil { gradient.colors = PrototypeColors(start: background, end: background) }
         if preset == "right" {
           gradient.start = PrototypePoint(x: 1, y: 0.5)
           gradient.end = PrototypePoint(x: 0.28, y: 0.5)
@@ -137,31 +146,37 @@ enum NativeSlideRenderer {
     if preset == "image-only" { return scene }
     // Empty optional fields take no space. Every non-metadata block is accounted for.
     let blocks = slide.copyBlocks.filter { !$0.text.isEmpty }
-    let unitScale = min(canvas.width / 2576, canvas.height / 1080)
-    let targetSize = layout.bodySize * unitScale
+    let unitScale = layout.starterType == nil ? min(canvas.width / 2576, canvas.height / 1080) : canvas.height / 1080
+    let targetSize = (layout.starterType.map { NativeTypeSize.preset(role: "body", step: $0.body.step).size } ?? layout.bodySize) * unitScale
+    let gutter = layout.starterType == nil ? nil : (layout.columns == 2 && abs(region.width - grid.usable.width) < 0.01 ? grid.span(2) + 2 * grid.columnGutter : grid.columnGutter)
+    let contentsGutter = abs(region.width - grid.usable.width) < 0.01
+      ? grid.span(2) + 2 * grid.columnGutter : grid.columnGutter
     let key = TextLayoutKey(blocks: blocks, width: region.width, height: region.height,
-      columns: layout.columns, targetSize: targetSize, minimumSize: min(20 * unitScale, targetSize), fit: layout.fitCopy)
+      columns: layout.columns, targetSize: targetSize, minimumSize: min(20 * unitScale, targetSize), fit: layout.fitCopy, starterType: layout.starterType, palette: palette, appearance: appearance, gutter: gutter,
+      usePalette: usePalette, contentsID: layout.contents == true ? slide.id + ":contents" : nil,
+      contentsGutter: contentsGutter)
     let encodedKey = (try? nativeJSON(key)).map { $0 as NSData }
     let cached: CachedTextLayout
     if let encodedKey, let hit = textLayoutCache.object(forKey: encodedKey) { cached = hit }
     else {
       let localRegion = CGRect(origin: .zero, size: region.size)
-      var result = flow(blocks: blocks, region: localRegion, columns: layout.columns, bodySize: targetSize)
+      var result = flow(blocks: blocks, region: localRegion, columns: layout.columns, bodySize: targetSize, style: key)
       var chosenSize = targetSize
       if result.overflow > 0 && layout.fitCopy {
         var low = key.minimumSize, high = targetSize
-        var lowResult = flow(blocks: blocks, region: localRegion, columns: layout.columns, bodySize: low)
+        var lowResult = flow(blocks: blocks, region: localRegion, columns: layout.columns, bodySize: low, style: key)
         if lowResult.overflow == 0 {
           for _ in 0..<8 {
             let mid = (low + high) / 2
-            let attempt = flow(blocks: blocks, region: localRegion, columns: layout.columns, bodySize: mid)
+            let attempt = flow(blocks: blocks, region: localRegion, columns: layout.columns, bodySize: mid, style: key)
             if attempt.overflow == 0 { low = mid; lowResult = attempt }
             else { high = mid }
           }
         }
         result = lowResult; chosenSize = low
       }
-      cached = CachedTextLayout(placements: result.placements, overflow: result.overflow, size: chosenSize)
+      cached = CachedTextLayout(placements: result.placements, leaders: result.leaders,
+        overflow: result.overflow, size: chosenSize)
       if let encodedKey {
         textLayoutCache.setObject(cached, forKey: encodedKey,
           cost: encodedKey.length + blocks.reduce(0) { $0 + $1.text.utf16.count * 48 })
@@ -173,6 +188,7 @@ enum NativeSlideRenderer {
     }
     scene.overflowCharacters = cached.overflow
     scene.effectiveBodySize = cached.size / max(unitScale, 0.001)
+    scene.dottedLines = cached.leaders
     return scene
   }
   private struct TextLayoutKey: Encodable {
@@ -183,13 +199,21 @@ enum NativeSlideRenderer {
     let targetSize: Double
     let minimumSize: Double
     let fit: Bool
+    let starterType: NativeStarterType?
+    let palette: NativeStarterPalette
+    let appearance: String
+    let gutter: Double?
+    let usePalette: Bool
+    let contentsID: String?
+    let contentsGutter: Double
   }
   private final class CachedTextLayout {
     let placements: [PrototypeTextPlacement]
+    let leaders: [PrototypeDottedLine]
     let overflow: Int
     let size: Double
-    init(placements: [PrototypeTextPlacement], overflow: Int, size: Double) {
-      self.placements = placements; self.overflow = overflow; self.size = size
+    init(placements: [PrototypeTextPlacement], leaders: [PrototypeDottedLine], overflow: Int, size: Double) {
+      self.placements = placements; self.leaders = leaders; self.overflow = overflow; self.size = size
     }
   }
   private static let textLayoutCache: NSCache<NSData, CachedTextLayout> = {
@@ -198,11 +222,11 @@ enum NativeSlideRenderer {
     cache.totalCostLimit = 8 * 1024 * 1024
     return cache
   }()
-  private static func flow(blocks: [DeckCopyBlock], region: CGRect, columns: Int, bodySize: Double)
-    -> (placements: [PrototypeTextPlacement], overflow: Int)
+  private static func flow(blocks: [DeckCopyBlock], region: CGRect, columns: Int, bodySize: Double, style: TextLayoutKey)
+    -> (placements: [PrototypeTextPlacement], leaders: [PrototypeDottedLine], overflow: Int)
   {
     guard region.width > 1, region.height > 1 else {
-      return ([], blocks.reduce(0) { $0 + $1.text.utf16.count })
+      return ([], [], blocks.reduce(0) { $0 + $1.text.utf16.count })
     }
     var headers: [DeckCopyBlock] = []
     var body: [DeckCopyBlock] = []
@@ -216,10 +240,12 @@ enum NativeSlideRenderer {
       }
     }
     var placements: [PrototypeTextPlacement] = []
+    var leaders: [PrototypeDottedLine] = []
     var y = region.minY
     var overflow = 0
     if !headers.isEmpty {
-      let text = attributedBlocks(headers, bodySize: bodySize)
+      let text = attributedBlocks(headers, bodySize: bodySize, starterType: style.starterType,
+        palette: style.palette, appearance: style.appearance, usePalette: style.usePalette)
       let setter = CTFramesetterCreateWithAttributedString(text)
       let measured = CTFramesetterSuggestFrameSizeWithConstraints(
         setter, CFRange(location: 0, length: 0), nil,
@@ -233,9 +259,47 @@ enum NativeSlideRenderer {
       y += height + (body.isEmpty ? 0 : bodySize * 0.7)
     }
     if !body.isEmpty {
-      let text = attributedBlocks(body, bodySize: bodySize)
+      if let contentsID = style.contentsID, let index = body.firstIndex(where: { $0.id == contentsID }) {
+        func attributed(_ blocks: [DeckCopyBlock]) -> NSAttributedString {
+          attributedBlocks(blocks, bodySize: bodySize, starterType: style.starterType,
+            palette: style.palette, appearance: style.appearance, usePalette: style.usePalette)
+        }
+        func measuredHeight(_ text: NSAttributedString) -> CGFloat {
+          guard text.length > 0 else { return 0 }
+          let size = CTFramesetterSuggestFrameSizeWithConstraints(
+            CTFramesetterCreateWithAttributedString(text), CFRange(location: 0, length: 0), nil,
+            CGSize(width: region.width, height: CGFloat.greatestFiniteMagnitude), nil)
+          return ceil(size.height) + 3
+        }
+        func append(_ text: NSAttributedString) {
+          guard text.length > 0 else { return }
+          let height = min(max(0, region.maxY - y), measuredHeight(text))
+          guard height > 1 else { overflow += text.length; return }
+          let item = textPlacement(text, range: CFRange(location: 0, length: 0),
+            rect: CGRect(x: region.minX, y: y, width: region.width, height: height))
+          placements.append(item)
+          overflow += max(0, text.length - item.visible.length)
+          y += height + bodySize * 0.7
+        }
+        // Keep any caption/credit or other visible blocks on either side in order.
+        append(attributed(Array(body[..<index])))
+        let after = attributed(Array(body[(index + 1)...]))
+        let reserved = measuredHeight(after) + (after.length > 0 ? bodySize * 0.7 : 0)
+        let contents = NativeContentsRenderer.layout(attributed([body[index]]),
+          in: CGRect(x: region.minX, y: y, width: region.width,
+            height: max(0, region.maxY - y - reserved)),
+          gutter: style.contentsGutter, bodySize: bodySize)
+        placements += contents.placements
+        leaders += contents.leaders
+        overflow += contents.overflow
+        y += contents.height + (after.length > 0 ? bodySize * 0.7 : 0)
+        append(after)
+        return (placements, leaders, overflow)
+      }
+      let text = attributedBlocks(body, bodySize: bodySize, starterType: style.starterType,
+        palette: style.palette, appearance: style.appearance, usePalette: style.usePalette)
       let n = max(1, min(3, columns))
-      let gutter = bodySize * 1.25
+      let gutter = style.gutter ?? bodySize * 1.25
       let width = max(1, (region.width - gutter * Double(n - 1)) / Double(n))
       let height = max(0, region.maxY - y)
       var offset = 0
@@ -252,9 +316,11 @@ enum NativeSlideRenderer {
       }
       overflow += max(0, text.length - offset)
     }
-    return (placements, overflow)
+    return (placements, leaders, overflow)
   }
-  static func attributedBlocks(_ blocks: [DeckCopyBlock], bodySize: Double, dark: Bool = false)
+  static func attributedBlocks(_ blocks: [DeckCopyBlock], bodySize: Double, dark: Bool = false,
+    starterType: NativeStarterType? = nil, palette: NativeStarterPalette = .standard,
+    appearance: String = "dark", usePalette: Bool = false)
     -> NSAttributedString
   {
     let result = NSMutableAttributedString(string: "")
@@ -264,14 +330,33 @@ enum NativeSlideRenderer {
         ? 2.125
         : block.role == "subheadline"
           ? 1.1875 : ["caption", "credit"].contains(block.role) ? 0.82 : 1
-      let font = NSFont.systemFont(
+      var font = NSFont.systemFont(
         ofSize: bodySize * factor, weight: block.role == "headline" ? .semibold : .regular)
       let paragraph = NSMutableParagraphStyle()
       paragraph.lineSpacing = bodySize * 0.2
       paragraph.paragraphSpacing = bodySize * 0.45
+      var foreground = dark ? NSColor.black : NSColor.white
+      if usePalette {
+        foreground = NSColor(cgColor: color(palette.hex("text", appearance: appearance))) ?? foreground
+      }
+      if let type = starterType {
+        let role = type.role(block.role)
+        let preset = NativeTypeSize.preset(role: block.role, step: role.step)
+        let ratio = bodySize / NativeTypeSize.preset(role: "body", step: type.body.step).size
+        let captionScale = ["caption", "credit"].contains(block.role) ? 0.75 : 1.0
+        let size = preset.size * ratio * captionScale
+        font = (role.fontName == "System" ? nil : NSFont(name: role.fontName, size: size))
+          ?? NSFont.systemFont(ofSize: size, weight: block.role == "headline" ? .semibold : .regular)
+        paragraph.lineSpacing = 0
+        paragraph.minimumLineHeight = preset.leading * ratio * captionScale
+        paragraph.maximumLineHeight = paragraph.minimumLineHeight
+        paragraph.paragraphSpacing = (block.role == "body" ? 16 : 8) * ratio
+        paragraph.hyphenationFactor = block.role == "body" ? 0.7 : 0
+        paragraph.alignment = role.alignment == "justified" ? .justified : role.alignment == "center" ? .center : role.alignment == "right" ? .right : .left
+        foreground = NSColor(cgColor: color(palette.hex(role.colorRole, appearance: appearance))) ?? foreground
+      }
       let attributes: [NSAttributedString.Key: Any] = [
-        .font: font, .foregroundColor: dark ? NSColor.black : NSColor.white,
-        .paragraphStyle: paragraph,
+        .font: font, .foregroundColor: foreground, .paragraphStyle: paragraph,
       ]
       if index > 0 { result.append(NSAttributedString(string: "\n\n", attributes: attributes)) }
       result.append(NSAttributedString(string: block.text, attributes: attributes))
@@ -300,7 +385,7 @@ enum NativeSlideRenderer {
     context.scaleBy(x: rect.width / scene.canvas.width, y: -rect.height / scene.canvas.height)
     let bounds = CGRect(x: 0, y: 0, width: scene.canvas.width, height: scene.canvas.height)
     context.clip(to: bounds)
-    context.setFillColor(CGColor(gray: 0.035, alpha: 1))
+    context.setFillColor(color(scene.backgroundColor))
     context.fill(bounds)
     for layer in scene.imageLayers {
       guard let id = layer.assetID, let image = images[id] else { continue }
@@ -326,6 +411,19 @@ enum NativeSlideRenderer {
       context.restoreGState()
     }
     for item in scene.texts { drawText(item, context: context) }
+    for line in scene.dottedLines {
+      context.saveGState()
+      context.setStrokeColor(line.color)
+      context.setLineWidth(line.weight)
+      context.setLineCap(.round)
+      context.setLineDash(phase: 0, lengths: [line.weight * 0.1, line.spacing])
+      context.move(to: CGPoint(x: scene.textRegion.minX + line.start.x,
+        y: scene.textRegion.minY + line.start.y))
+      context.addLine(to: CGPoint(x: scene.textRegion.minX + line.end.x,
+        y: scene.textRegion.minY + line.end.y))
+      context.strokePath()
+      context.restoreGState()
+    }
   }
   private static let gradientCache: NSCache<NSString, CGImage> = {
     let cache = NSCache<NSString, CGImage>()

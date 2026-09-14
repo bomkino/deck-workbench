@@ -6,6 +6,7 @@ SOURCE="$REPOSITORY_ROOT/apps/macos/Resources/workbench-mark.svg"
 OUTPUT="${1:-$REPOSITORY_ROOT/build/macos/DeckWorkbench.icns}"
 ICON_ROOT="$(mktemp -d)"
 ICONSET="$ICON_ROOT/DeckWorkbench.iconset"
+MASTER="$ICON_ROOT/workbench-mark-1024.png"
 trap 'rm -rf "$ICON_ROOT"' EXIT
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
@@ -14,8 +15,10 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
 fi
 
 mkdir -p "$ICONSET" "$(dirname "$OUTPUT")"
+# Render the canonical vector once at full size; all icon members retain its alpha.
+sips -s format png -z 1024 1024 "$SOURCE" --out "$MASTER" >/dev/null
 while read -r filename pixels; do
-  sips -s format png -z "$pixels" "$pixels" "$SOURCE" --out "$ICONSET/$filename" >/dev/null
+  sips -z "$pixels" "$pixels" "$MASTER" --out "$ICONSET/$filename" >/dev/null
 done <<'SIZES'
 icon_16x16.png 16
 icon_16x16@2x.png 32

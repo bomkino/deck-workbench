@@ -34,8 +34,20 @@ enum NativeAcceptance {
     if !condition { throw WorkbenchFailure(name: "AcceptanceFailure", message: message) }
   }
   static func run(output: URL) async throws {
+    try await NativeCompatibilityChecks.run()
+    try NativeProductionCopyChecks.run()
+    try NativeStarterStyleChecks.run()
     let manager = FileManager.default
     try manager.createDirectory(at: output, withIntermediateDirectories: true)
+    let psdProof = output.appendingPathComponent("psd", isDirectory: true)
+    if manager.fileExists(atPath: psdProof.path) {
+      let receipt = try Data(contentsOf: psdProof.appendingPathComponent("PSD proof.json"))
+      guard let value = try JSONSerialization.jsonObject(with: receipt) as? [String: Any], value["format"] as? String == "pitchdog.native-psd-proof/1" else {
+        throw WorkbenchFailure(name: "AcceptanceFailure", message: "Refusing to replace an unrecognized PSD proof directory")
+      }
+      try manager.removeItem(at: psdProof)
+    }
+    try await Task.detached(priority: .utility) { try NativePSDChecks.run(output: psdProof) }.value
     let root = manager.temporaryDirectory.appendingPathComponent(
       "Workbench-native-acceptance-\(UUID().uuidString)", isDirectory: true)
     try manager.createDirectory(at: root, withIntermediateDirectories: false)
@@ -340,6 +352,7 @@ enum NativeAcceptance {
       "notesPages": notes.pageCount, "originalCopies": exported.originalCopies,
       "copyComplete": true, "previewScope": true, "shortlistIndependent": true, "reopen": true,
       "savedCopyRecovery": true, "uiIndependentPDF": true, "imageVisibleInPDF": true, "nativeKeyEvents": true,
+      "productionCopy": true, "starterGridAndType": true, "sharedPSDExport": true,
       "slideManagement": true, "copyEditorTarget": true, "editedCopyHandoff": true,
       "layoutFrameCopy": true, "layoutResetUndo": true, "textLayoutReused": true,
       "gradientScreenExportParity": true, "visibleLayoutTargets": true,
