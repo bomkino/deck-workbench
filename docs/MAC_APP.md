@@ -55,7 +55,7 @@ Apply Arrangement copies the resolved arrangement to explicitly selected slides 
 
 ## Export
 
-Command-Shift-E selects complete handoff components and all/current/selected slide scope. Component choices are remembered; accepting changed original files requires explicit consent each time.
+Command-Shift-E selects complete handoff components and all/current/selected slide scope. Component choices are remembered; accepting changed original files requires explicit consent each time. PSDs are optional and include the production writing when selected. The same handoff supports Figma or InDesign; running an InDesign script is a separate choice. On other canvas sizes the PSD switch is unavailable, while writing, PDFs and media remain selectable.
 
 - Prototype.pdf: clean proportional slides, one page per exported slide.
 - Prototype with notes.pdf: slide preview, full copy, direction and source filenames; long copy continues onto labelled companion pages.

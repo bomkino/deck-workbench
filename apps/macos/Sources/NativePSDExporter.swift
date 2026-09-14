@@ -13,6 +13,10 @@ enum NativePSDExporter {
   private static let maximumEmbeddedBytes = 128 * 1024 * 1024
   private static let maximumWorkingBytes = 768 * 1024 * 1024
 
+  static func supports(_ canvas: DeckCanvas) -> Bool {
+    [1920.0, 2576.0].contains(canvas.width) && canvas.height == 1080
+  }
+
   static func write(slide: DeckSlide, canvas: DeckCanvas, staged: [String: URL], to output: URL)
     throws -> [String]
   {
@@ -27,7 +31,7 @@ enum NativePSDExporter {
   private static func writeSlide(slide: DeckSlide, canvas: DeckCanvas, staged: [String: URL], to output: URL)
     throws -> [String]
   {
-    guard [1920.0, 2576.0].contains(canvas.width), canvas.height == 1080 else {
+    guard supports(canvas) else {
       throw failure("PSD export supports 1920 × 1080 and 2576 × 1080 slides.")
     }
     guard !FileManager.default.fileExists(atPath: output.path) else {

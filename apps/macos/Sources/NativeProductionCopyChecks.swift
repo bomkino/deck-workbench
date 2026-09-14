@@ -55,6 +55,19 @@ enum NativeProductionCopyChecks {
       let mixedManifest = try JSONDecoder().decode(WorkbenchProductionManifest.self, from: JSONEncoder().encode(mixedCopy.manifest))
       try require(mixedManifest.slides.map(\.appearance) == ["light", "dark"], "Production appearance lost per-slide ownership")
       if width == 1920 {
+        var combined = snapshot
+        combined.deck.sections[0].slides[0].contentBlocks[1].setText(String(repeating: "a", count: 131_071))
+        combined.deck.sections[0].slides[0].contentBlocks[2].setText(String(repeating: "b", count: 131_071))
+        combined.deck.sections[0].slides[0].contentBlocks[3].setText("")
+        combined.deck.sections[0].slides[0].contentBlocks[4].setText("")
+        let boundary = try NativeWorkbenchMarkdown.project(snapshot: combined, slides: combined.deck.slides)
+        let boundaryImport = try NativeCopyImport.parse(Data(boundary.markdown.utf8), filename: "workbench.md")
+        try require(boundaryImport.slides[0].blocks[2].text.utf16.count == 262_144, "Valid combined copy at the intake boundary was lost")
+        combined.deck.sections[0].slides[0].contentBlocks[2].setText(String(repeating: "b", count: 131_072))
+        var combinedRefused = false
+        do { _ = try NativeWorkbenchMarkdown.project(snapshot: combined, slides: combined.deck.slides) }
+        catch let error as WorkbenchFailure { combinedRefused = error.name == "ProductionCopy" && error.message.contains("262144") }
+        try require(combinedRefused, "Production delivered combined writing that its importer rejects")
         var oversized = snapshot
         oversized.deck.sections[0].slides[0].contentBlocks[1].setText(String(repeating: "a", count: 1_048_577))
         var refused = false
@@ -78,6 +91,13 @@ enum NativeProductionCopyChecks {
       let reread = try NativeCopyImport.read(exported.url.appendingPathComponent("Copy.md"))
       try require(reread.canvasID == canvasID, "Copy.md re-import silently changed the canvas")
       try require(reread.slides[0].blocks.map(\.text) == snapshot.deck.slides[0].copyBlocks.map(\.text), "Copy.md round trip changed literal fields or their boundary LFs")
+      options.copy = false; options.productionCopy = true
+      try require(NativeHandoffExporter.requiredAssetIDs(snapshot: snapshot, options: options).isEmpty, "Production writing alone requested artwork")
+      let writing = try NativeHandoffExporter.export(snapshot: snapshot, sources: [:], to: folder, options: options, progress: { _ in })
+      let writingDirectory = writing.url.appendingPathComponent("Production")
+      let writingImport = try NativeCopyImport.read(writingDirectory.appendingPathComponent("workbench.md"))
+      try require(writing.produced.contains("Production") && writingImport.slides.count == 2
+        && !FileManager.default.fileExists(atPath: writingDirectory.appendingPathComponent("PSD").path), "Optional PSD export created artwork or omitted importable production writing")
       var field = snapshot.deck.slides[0].copyBlocks[0]
       field.setText("")
       try require(field.state == "intentionally-blank", "Deliberately cleared copy was not recorded as blank")

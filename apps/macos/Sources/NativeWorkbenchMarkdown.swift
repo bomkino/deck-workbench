@@ -163,6 +163,12 @@ enum NativeWorkbenchMarkdown {
     guard markdown.utf8.count <= 1_048_576 else {
       throw WorkbenchFailure(name: "ProductionCopy", message: "Production writing exceeds Workbench’s 1 MiB import limit. Export a smaller slide selection so the new workbench.md can be imported again.")
     }
+    // Grouped fields can exceed intake limits even when each source field fits.
+    // Validate the actual payload before delivering a file an importer rejects.
+    do { _ = try parse(markdown) }
+    catch {
+      throw WorkbenchFailure(name: "ProductionCopy", message: "Production writing cannot be imported: \(error.localizedDescription) Split long combined fields or shorten the affected title. Copy.md retains the original fields.")
+    }
     return WorkbenchProductionCopy(markdown: markdown, manifest: WorkbenchProductionManifest(
       deckID: snapshot.deck.deckId, revision: snapshot.revision, title: snapshot.deck.title,
       canvas: snapshot.deck.canvasPreset, copySHA256: sha256(Data(markdown.utf8)), slides: entries, warnings: warnings))
