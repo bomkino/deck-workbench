@@ -8,7 +8,13 @@ enum NativeProductionCopyChecks {
   }
   static func run() throws {
     let exact = "\nFirst — ₹1,000.\nsoft return\n\nA paragraph.\n\n\nLast.\n"
-    let structural = NativeWorkbenchMarkdown.reserved.flatMap { [$0 + " literal", "\\" + $0 + " literal", "\\\\" + $0 + " literal"] }.joined(separator: "\n") + "\n```\nliteral fence\n```"
+    var structuralLines: [String] = []
+    for prefix in NativeWorkbenchMarkdown.reserved {
+      structuralLines.append(prefix + " literal")
+      structuralLines.append("\\" + prefix + " literal")
+      structuralLines.append("\\\\" + prefix + " literal")
+    }
+    let structural = structuralLines.joined(separator: "\n") + "\n```\nliteral fence\n```"
     for (canvasID, width) in [("cinemascope-2576x1080", 2576), ("widescreen-1920x1080", 1920)] {
       func block(_ id: String, _ role: String, _ text: String, key: String? = nil, state: String? = nil) throws -> [String: Any] {
         var value: [String: Any] = ["id": id, "semanticKey": key ?? id, "role": role, "value": try nativeObject(RichCopy(text))]
