@@ -64,6 +64,11 @@ struct NativeStarterPalette: Codable, Equatable, Sendable {
   ]
   static let standard = NativeStarterPalette()
   static let roles = ["background", "text", "muted", "accent1", "accent2", "accent3", "accent4", "mono"]
+  static func label(_ role: String) -> String {
+    if role == "mono" { return "Monochrome" }
+    if role.hasPrefix("accent") { return "Accent \(role.suffix(1))" }
+    return role.capitalized
+  }
   func hex(_ role: String, appearance: String) -> String {
     let pair = colors[role] ?? Self.standard.colors[role] ?? Self.standard.colors["text"]!
     return appearance == "light" ? pair.light : pair.dark

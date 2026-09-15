@@ -220,8 +220,9 @@ struct NativeSlideRow: View {
       Text(ordinal).workbenchText(.data)
         .foregroundStyle(.secondary).frame(width: 28)
       VStack(alignment: .leading, spacing: 4) {
-        Text(slide.title).lineLimit(2)
-        Text(summary).workbenchText(.caption).foregroundStyle(.secondary)
+        Text(slide.title).workbenchText(.body).lineLimit(2)
+        Text(summary).workbenchText(.caption).foregroundStyle(.secondary).lineLimit(2)
+          .fixedSize(horizontal: false, vertical: true)
       }
     }.padding(.vertical, 5)
   }
@@ -868,7 +869,7 @@ struct NativeSettingsView: View {
       }
       Toggle("Advance after choosing, shortlisting or rejecting", isOn: $controller.autoAdvance)
       Text("Interface size does not change the canvas or exported deck.").workbenchText(.caption)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
       Button("Done") { controller.showSettings = false }
     }.padding(28).frame(width: 450)
   }

@@ -7,6 +7,8 @@ struct NativeStarterStyleSheet: View {
   @State private var palette = NativeStarterPalette.standard
   @State private var tab = "type"
   @State private var allSlides = false
+  @Environment(\.workbenchInterfaceScale) private var interfaceScale
+  private var roleLabelWidth: CGFloat { 95 * max(1, interfaceScale) }
   private var validPalette: Bool {
     palette.colors.values.allSatisfy { pair in [pair.dark, pair.light].allSatisfy { $0.range(of: "^#[0-9A-Fa-f]{6}$", options: .regularExpression) != nil } }
   }
@@ -30,10 +32,10 @@ struct NativeStarterStyleSheet: View {
             if !type.unavailableFonts.isEmpty { Text("Choose installed replacements for: " + type.unavailableFonts.joined(separator: ", ")).foregroundStyle(.orange) }
           } else {
             Text("Four accents and a monochrome option. Each role has a dark-slide and a light-slide colour. Set each slide’s appearance in the inspector.").foregroundStyle(.secondary)
-            HStack { Text("Role").frame(width: 95, alignment: .leading); Text("On dark slides").frame(maxWidth: .infinity); Text("On light slides").frame(maxWidth: .infinity) }.workbenchText(.caption)
+            HStack { Text("Role").frame(width: roleLabelWidth, alignment: .leading); Text("On dark slides").frame(maxWidth: .infinity); Text("On light slides").frame(maxWidth: .infinity) }.workbenchText(.caption)
             ForEach(NativeStarterPalette.roles, id: \.self) { role in
               HStack {
-                Text(role).frame(width: 95, alignment: .leading)
+                Text(NativeStarterPalette.label(role)).frame(width: roleLabelWidth, alignment: .leading)
                 colourField(role, light: false)
                 colourField(role, light: true)
               }
@@ -46,7 +48,6 @@ struct NativeStarterStyleSheet: View {
       }
       Divider()
       Toggle("Apply to every slide", isOn: $allSlides)
-      Text("Saving starter features requires Workbench 0.2 or later. Older decks keep a recovery copy before upgrading.").workbenchText(.caption).foregroundStyle(.secondary)
       Text(allSlides ? "One Undo restores the previous settings. Each slide keeps its dark or light appearance." : "Changes apply to the current slide. One Undo restores its previous settings.").workbenchText(.caption).foregroundStyle(.secondary)
       HStack {
         Button("Cancel") { controller.showStarterStyle = false }.keyboardShortcut(.cancelAction)
@@ -66,6 +67,7 @@ struct NativeStarterStyleSheet: View {
     return HStack(spacing: 6) {
       RoundedRectangle(cornerRadius: 4).fill(Color(nsColor: NSColor(cgColor: NativeSlideRenderer.color(hex)) ?? .clear)).frame(width: 24, height: 24)
       TextField(light ? "Light \(role)" : "Dark \(role)", text: Binding(get: { light ? palette.colors[role]!.light : palette.colors[role]!.dark }, set: { if light { palette.colors[role]!.light = $0.uppercased() } else { palette.colors[role]!.dark = $0.uppercased() } })).textFieldStyle(.roundedBorder)
+        .accessibilityLabel("\(light ? "Light" : "Dark") slide \(NativeStarterPalette.label(role)) hex colour")
     }
   }
 }
@@ -116,7 +118,7 @@ private struct NativeTypeRoleEditor: View {
           Text("Left").tag("left"); Text("Centre").tag("center"); Text("Right").tag("right"); Text("Justified").tag("justified")
         }
         Picker("Colour", selection: $role.colorRole) {
-          ForEach(NativeStarterPalette.roles.filter { $0 != "background" }, id: \.self) { Text($0).tag($0) }
+          ForEach(NativeStarterPalette.roles.filter { $0 != "background" }, id: \.self) { Text(NativeStarterPalette.label($0)).tag($0) }
         }
       }
     }
