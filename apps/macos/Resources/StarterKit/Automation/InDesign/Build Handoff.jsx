@@ -2,6 +2,10 @@
 /* Workbench's portable automatic build. Run the copy in a handoff's Automation folder. */
 (function () {
     var automation = File($.fileName).parent, root = automation.parent;
+    if (!File(automation.fsName+'/job.json').exists || !Folder(root.fsName+'/Starter Kit').exists) {
+        alert('Workbench launches this runner from a handoff. For a manual build, use Build Deck from Workbench.jsx.');
+        return;
+    }
     var template = null, original = null, oldUI = app.scriptPreferences.userInteractionLevel;
     var oldUnits = app.scriptPreferences.measurementUnit, job = null, outcome = null, ownsScratch = false;
     function read(file) {

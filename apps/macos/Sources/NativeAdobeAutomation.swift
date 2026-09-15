@@ -87,7 +87,7 @@ enum NativeAdobeAutomation {
     guard [inDesignID, photoshopID].contains(id), installed(id) else {
       throw WorkbenchFailure(name: "AdobeNotInstalled", message: "This Adobe app was not found. Install it, then try setup again.")
     }
-    let version = try execute("with timeout of 90 seconds\n tell application id \(quoted(id))\n return version as text\n end tell\nend timeout")
+    let version = try execute("with timeout of 90 seconds\n tell application id \(quoted(id))\n get version\n end tell\nend timeout")
     return "Connected · version \(version). macOS may ask again after an app update."
   }
 
