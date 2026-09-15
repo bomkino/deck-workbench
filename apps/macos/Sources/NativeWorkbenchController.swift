@@ -1222,14 +1222,9 @@ final class NativeWorkbenchController: ObservableObject {
           let cancellation = handoff.appendingPathComponent("Automation/cancel")
           do {
             try FileManager.default.createDirectory(at: cancellation.deletingLastPathComponent(), withIntermediateDirectories: true)
-            let build = Task.detached(priority: .userInitiated) {
+            let overflow = try await NativeAdobeAutomation.waitForBuild(cancellation: cancellation) {
               try NativeAdobeAutomation.build(in: handoff, width: width, slideCount: count, cancellation: cancellation)
             }
-            let overflow = try await withTaskCancellationHandler(operation: { try await build.value }, onCancel: {
-              // Adobe owns its current operation; stop at the next safe step.
-              try? Data("cancel\n".utf8).write(to: cancellation, options: .atomic)
-              build.cancel()
-            })
             result.produced.append("InDesign/Deck.indd")
             if !overflow.isEmpty {
               result = NativeAdobeAutomation.withIssue(result, "Deck saved, but copy overflows on pages \(overflow.map(String.init).joined(separator: ", ")). Adjust those text frames before delivery.")

@@ -83,7 +83,7 @@ enum NativeAdobeAutomation {
   }
 
   static func setUp(_ id: String) throws -> String {
-    lock.lock(); defer { lock.unlock() }
+    guard lock.try() else { throw busy() }; defer { lock.unlock() }
     guard [inDesignID, photoshopID].contains(id), installed(id) else {
       throw WorkbenchFailure(name: "AdobeNotInstalled", message: "This Adobe app was not found. Install it, then try setup again.")
     }
@@ -91,8 +91,34 @@ enum NativeAdobeAutomation {
     return "Connected · version \(version). macOS may ask again after an app update."
   }
 
+  private static func busy() -> WorkbenchFailure {
+    WorkbenchFailure(name: "AdobeBusy", message: "The previous Adobe request is still finishing or waiting for a macOS permission response. You can continue working and export without automatic InDesign meanwhile.")
+  }
+
+  /// Stop waiting immediately on cancellation, even while AppleScript is blocked
+  /// by a macOS prompt. The worker still owns its safe cleanup and reads the marker.
+  static func waitForBuild(cancellation: URL, operation: @escaping @Sendable () throws -> [Int]) async throws -> [Int] {
+    let stream = AsyncThrowingStream<[Int], Error> { continuation in
+      let worker = Task.detached(priority: .userInitiated) {
+        do {
+          try Task.checkCancellation()
+          continuation.yield(try operation())
+          continuation.finish()
+        } catch { continuation.finish(throwing: error) }
+      }
+      continuation.onTermination = { termination in
+        if case .cancelled = termination {
+          try? Data("cancel\n".utf8).write(to: cancellation, options: .atomic)
+          worker.cancel()
+        }
+      }
+    }
+    for try await overflow in stream { return overflow }
+    throw CancellationError()
+  }
+
   static func build(in handoff: URL, width: Int, slideCount: Int, cancellation: URL) throws -> [Int] {
-    lock.lock(); defer { lock.unlock() }
+    guard lock.try() else { throw busy() }; defer { lock.unlock() }
     try Task.checkCancellation()
     guard installed(inDesignID) else {
       throw WorkbenchFailure(name: "InDesignNotInstalled", message: "InDesign was not found. Your PSDs and writing are ready; use the included starter and Build script on a Mac with InDesign installed.")
