@@ -74,7 +74,8 @@ var PitchdogColours = (function () {
             var sw=doc.colors[i],match=/^PD Export [0-9]+ \| (.+) \(on (dark|light)\)$/.exec(sw.name);
             if(match&&p.colors[match[1]])colour(doc,sw.name,p.colors[match[1]][match[2]]);
         }
-        doc.insertLabel(FROZEN,json(p));if(selection)doc.insertLabel(LABEL,json(selection));doc.recompose();return s;
+        var frozen=json(p);for(var pageIndex=0;pageIndex<doc.pages.length;pageIndex++)if(doc.pages[pageIndex].extractLabel(FROZEN))doc.pages[pageIndex].insertLabel(FROZEN,frozen);
+        doc.insertLabel(FROZEN,frozen);if(selection)doc.insertLabel(LABEL,json(selection));doc.recompose();return s;
     }
     function existing(doc){var c={},modes=['dark','light'];function current(name){var col=doc.colors.itemByName(name);if(!col.isValid||col.space!==ColorSpace.RGB)fail('Use the RGB pitch.dog starter; missing '+name);return hex(col.colorValue);}
         for(var m=0;m<2;m++){var mode=modes[m];pair(c,'background',mode,current(mode==='dark'?'warm-black':'warm-white'));pair(c,'text',mode,current(mode==='dark'?'warm-white':'warm-black'));pair(c,'muted',mode,current('Ink - Muted (on '+mode+')'));pair(c,'raised',mode,current(mode==='dark'?'Surface - Raised':'Surface - Raised (light)'));pair(c,'line',mode,current('Rule - Divider (on '+mode+')'));
