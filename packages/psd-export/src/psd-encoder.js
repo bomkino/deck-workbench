@@ -22,7 +22,30 @@ const structureOptions = {
 }
 let session
 const guidePathName = 'GRID NUMBERS - nonprinting'
+const textGuideName = 'GUIDE - Text area (hide for export)'
 const documentResolution = 144
+
+function textGuideLayer() {
+  if (!session.textGuideRect) return undefined
+  const [x, y, width, height] = session.textGuideRect
+  const left = Math.max(0, Math.floor(x)), top = Math.max(0, Math.floor(y))
+  const right = Math.min(session.width, Math.ceil(x + width))
+  const bottom = Math.min(session.height, Math.ceil(y + height))
+  const data = new Uint8Array((right - left) * (bottom - top) * 4)
+  for (let i = 0; i < data.length; i += 4) {
+    data[i] = 64; data[i + 1] = 184; data[i + 2] = 255; data[i + 3] = 255
+  }
+  return {
+    id: session.layers.length + 1, name: textGuideName, hidden: true, opacity: 0.5,
+    left, top, imageData: { width: right - left, height: bottom - top, data },
+    vectorFill: { type: 'color', color: { r: 64, g: 184, b: 255 } },
+    vectorMask: { fillStartsWithAllPixels: false, paths: [{
+      open: false, operation: 'combine', fillRule: 'non-zero',
+      knots: [[x, y], [x + width, y], [x + width, y + height], [x, y + height]].map(([px, py]) =>
+        ({ linked: true, points: [px, py, px, py, px, py] })),
+    }] },
+  }
+}
 
 // Saved paths are image resource 2000, using Adobe's 26-byte path records.
 // These original geometric digits use no font data and never enter pixel layers.
@@ -195,6 +218,14 @@ globalThis.PitchdogPSD = {
     }
     session = { ...input, icc: bytes(icc, undefined, 'ICC'), layers: [], files: new Map() }
     if (session.icc.length < 128) throw new Error('The sRGB ICC profile is missing')
+    if (session.textGuideRect !== undefined) {
+      const rect = session.textGuideRect
+      if (!Array.isArray(rect) || rect.length !== 4 || rect.some(value => !Number.isFinite(value)) ||
+          rect[2] <= 0 || rect[3] <= 0 || rect[0] >= session.width || rect[1] >= session.height ||
+          rect[0] + rect[2] <= 0 || rect[1] + rect[3] <= 0) {
+        throw new Error('Invalid visible text guide frame')
+      }
+    }
     session.guidePath = guideNumberPath()
     return true
   },
@@ -233,6 +264,8 @@ globalThis.PitchdogPSD = {
     if (!session.layers.length) {
       session.layers.push({ id: 1, name: 'Place artwork here', top: 0, left: 0, imageData: composite })
     }
+    const textGuide = textGuideLayer()
+    if (textGuide) session.layers.push(textGuide)
     const inner = withGuideNumberPath(writePsdUint8Array({
       width: session.width, height: session.height, imageData: composite,
       children: session.layers, linkedFiles: [...session.files.values()], imageResources: resources(),
@@ -240,6 +273,15 @@ globalThis.PitchdogPSD = {
     const parsedInner = verify(inner, session.layers.map(layer => layer.name), [...session.files.values()])
     for (const [index, layer] of parsedInner.children.entries()) {
       const expected = session.layers[index]
+      if (expected === textGuide) {
+        const paths = layer.vectorMask?.paths, expectedKnots = textGuide.vectorMask.paths[0].knots
+        if (!layer.hidden || Math.abs(layer.opacity - 0.5) > 1 / 255 ||
+            layer.vectorFill?.type !== 'color' || paths?.length !== 1 || paths[0].knots.length !== 4 ||
+            paths[0].knots.some((knot, i) => knot.points.some((value, j) =>
+              Math.abs(value - expectedKnots[i].points[j]) > 0.001))) {
+          throw new Error('PSD verification failed: hidden editable text guide changed')
+        }
+      }
       if (!expected.placedLayer) continue
       if (!layer.mask || layer.mask.disabled !== !session.cropToFrames ||
           layer.placedLayer?.id !== expected.placedLayer.id ||

@@ -98,6 +98,17 @@ enum NativeProductionCopyChecks {
       let writingImport = try NativeCopyImport.read(writingDirectory.appendingPathComponent("workbench.md"))
       try require(writing.produced.contains("Production") && writingImport.slides.count == 2
         && !FileManager.default.fileExists(atPath: writingDirectory.appendingPathComponent("PSD").path), "Optional PSD export created artwork or omitted importable production writing")
+      try require(writing.issues.isEmpty && writing.produced.contains("Starter Kit"), "Portable starter kit was omitted from production export")
+      try NativeStarterKit.verify(writing.url.appendingPathComponent("Starter Kit"))
+      if width == 1920 {
+        // Exercise the export boundary with only InDesign requested. Its writing,
+        // PSDs and portable scripts must exist before an Adobe app is contacted.
+        options.productionCopy = false; options.psd = false; options.inDesign = true
+        let automatic = try NativeHandoffExporter.export(snapshot: snapshot, sources: [:], to: folder, options: options, progress: { _ in })
+        try require(automatic.issues.isEmpty && automatic.produced.contains("Production") && automatic.produced.contains("Starter Kit"), "Automatic InDesign omitted its dependencies")
+        try require(FileManager.default.fileExists(atPath: automatic.url.appendingPathComponent("Production/PSD/Slide 02.psd").path)
+          && FileManager.default.fileExists(atPath: automatic.url.appendingPathComponent("Starter Kit/Automation/Photoshop/Export Slide PNGs.jsx").path), "The portable Adobe handoff is incomplete")
+      }
       var field = snapshot.deck.slides[0].copyBlocks[0]
       field.setText("")
       try require(field.state == "intentionally-blank", "Deliberately cleared copy was not recorded as blank")

@@ -1,0 +1,106 @@
+{
+  "format": "pitchdog-starter-kit/1",
+  "version": "0.3.0",
+  "files": [
+    {
+      "path": "1920x1080/Layout Kit 1920x1080 v0.03.indd",
+      "sha256": "ecc269275f9bf71b32a95ead997b3cf05d6ab13fbb5a2bfcb105cff7676a510a"
+    },
+    {
+      "path": "1920x1080/Layout Kit 1920x1080 v0.03.pdf",
+      "sha256": "d02a7a6edec6d5e084ec43d609f75355cd2fc588d2b783e9dbde945709a9288f"
+    },
+    {
+      "path": "1920x1080/[Starter File] [Pitch Deck] 1920x1080 v0.03 [pitch.dog].indd",
+      "sha256": "4c7b30fbd2b4adc2928dd26c868b8d2cd1b3d582d32c669b359e7f9eea349756"
+    },
+    {
+      "path": "1920x1080/slide-00 - 1920x1080.psd",
+      "sha256": "4584898c426f9a63bd17f1dace3c389075ac9256eba4b611d9dbaa6cfd0a7520"
+    },
+    {
+      "path": "Automation/InDesign/Build Deck from Workbench.jsx",
+      "sha256": "7fe05ab46dfc45e6487c4a49064d54b96f9fe649dd2f9a080ac72d1fc9e53d63"
+    },
+    {
+      "path": "Automation/InDesign/Build Handoff.jsx",
+      "sha256": "8590ecf586ed1031348257535ee79cb33f3d608a69337bd9bf18f0e21fc54133"
+    },
+    {
+      "path": "Automation/InDesign/Deck Production.jsxinc",
+      "sha256": "01393f59835402e34f204ab519690fcf547e861d964a35f341d11addb0a71eb8"
+    },
+    {
+      "path": "Automation/InDesign/Refresh PSD Links.jsx",
+      "sha256": "90909402593d47fb3637051b43e7164eae5c781ce89b93df8dbd82d796392ae5"
+    },
+    {
+      "path": "Automation/InDesign/Starter Layers.jsxinc",
+      "sha256": "42ef2ae5b84e46952b372221940f716d7da634d32c8fc261c649c9458bbc9230"
+    },
+    {
+      "path": "Automation/InDesign/WorkbenchImportCore.jsxinc",
+      "sha256": "76cabe9ee2cd97edc8e01f569b9695e63e50768961553ef79203aa597b35c017"
+    },
+    {
+      "path": "Automation/Photoshop/Export Slide PNGs - Read me.md",
+      "sha256": "ce5bab2449a37bf2b57a076d1ec66ea0e66913e894acb57fe4327b148eacd6b6"
+    },
+    {
+      "path": "Automation/Photoshop/Export Slide PNGs.jsx",
+      "sha256": "e8341c0ce6ae59b29416b43ff9b0c56cedb9a35870fb9ae32e47b4847854f76b"
+    },
+    {
+      "path": "Deck Size Controls.jsx",
+      "sha256": "babed120fb407485156ec9652b2cbdb47b14ee0c39e12da3e00adce97c7a39d0"
+    },
+    {
+      "path": "Figma Parity.md",
+      "sha256": "bc994bc3861eb8f2c895a7f668aae1c0e46d03a97394ca216e8f97ebc0ef4ba1"
+    },
+    {
+      "path": "Layout Kit v0.03.indd",
+      "sha256": "2390a46748c37469a961d6332807f5bbe331b71fadd467240382e0bcb9a73da1"
+    },
+    {
+      "path": "Layout Kit v0.03.pdf",
+      "sha256": "aadfb438a9e17e8f629ba2bc2b8d13dae0cdd1882acbf49d3298edb3d208a3e2"
+    },
+    {
+      "path": "Notices/Raycast-MIT.txt",
+      "sha256": "7f727f8b20cdd0e65f84e70b9cac2fce337dcecee4dc88955eb012ea27f02755"
+    },
+    {
+      "path": "Notices/Read me.txt",
+      "sha256": "911e2369f3e90f9ce6801a007ac4608eba2a16cd8367400b81ed3e6cddcfd884"
+    },
+    {
+      "path": "Start Here - Deck Production.md",
+      "sha256": "6a72b635f736c4aca95bbd86eb0229c234dd5a6701632be6df0da69bd2e78d23"
+    },
+    {
+      "path": "Start Here - InDesign.md",
+      "sha256": "20b8343e98be0bd77ca652576c2d471ab756365bff65bdbfc775ba09b49fb353"
+    },
+    {
+      "path": "Start Here.md",
+      "sha256": "30db51ed9357fb51fba7b0a20a5a9307d943723ca2e4774aa02b9dde7282ea8b"
+    },
+    {
+      "path": "Text Scramble Head Sub Body - Read me.md",
+      "sha256": "16b62d2ecca7d1b831ea5e9146603dc6666a41c2f8480848ff6faba317fd974a"
+    },
+    {
+      "path": "Text Scramble Head Sub Body.jsx",
+      "sha256": "c3863ab3a0d256a01f55a69e2d50e2032fadf498c2e3307498d1de68cd13c6f5"
+    },
+    {
+      "path": "[Starter File] [Pitch Deck] 2576x1080 v0.03 [pitch.dog].indd",
+      "sha256": "a4b3c931f9eb5f535a466a679f4214066953ff7762e0df63f7c9e75c9e7cf69e"
+    },
+    {
+      "path": "slide-00 - 2576x1080.psd",
+      "sha256": "3383ed8faa987c98fc31522a0dca06c3cda519821e248fcfa41a9d2f89d49765"
+    }
+  ]
+}

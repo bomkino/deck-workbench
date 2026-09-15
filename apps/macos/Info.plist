@@ -34,9 +34,11 @@
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.2.2</string>
+  <string>0.3.0</string>
   <key>CFBundleVersion</key>
-  <string>202</string>
+  <string>300</string>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>Workbench builds your optional InDesign deck and checks the Adobe apps you choose during setup. Your original documents and images stay unchanged.</string>
   <key>ATSApplicationFontsPath</key>
   <string>Fonts</string>
   <key>LSMinimumSystemVersion</key>

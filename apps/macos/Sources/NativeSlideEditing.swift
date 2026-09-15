@@ -57,6 +57,7 @@ struct NativeSlideActions: View {
   var body: some View {
     Group {
       Button("Add Slide After This") { controller.addSlide(after: slideID) }
+      Button("Add Blank Slide") { controller.addSpecialSlide("blank", after: slideID) }
       Button("Add Contents / Index") { controller.addSpecialSlide("contents", after: slideID) }
       Button("Add Moodboard…") { if let slideID { controller.selectSlide(slideID) }; controller.showMoodboard = true }
       Button("Duplicate Slide") { controller.duplicateSlide(slideID) }

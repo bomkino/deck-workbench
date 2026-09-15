@@ -33,3 +33,9 @@ A replacement import includes expected source copy and remains visible until dur
 MediaCatalogSession.nativeCatalogUpdate returns nil for unchanged revisions, otherwise one actor-owned catalogue/source projection. The controller coalesces refresh requests and rejects old catalogue/access generations. This removes repeated JSON serialization/decoding and redundant unchanged-catalog indexing, without introducing another persisted store.
 
 Review deck reuses NativeCanvas and never issues mutation commands. NativeLayoutGeometry computes normalized crop zoom from the same image-placement math as the renderer. Export reserves its operation before flushing drafts, preserves its originating deck, ignores obsolete progress callbacks and shows selected-output slide counts.
+
+## Optional Adobe production
+
+NativeHandoffExporter writes and verifies the portable StarterKit and commits the regular handoff before Adobe is contacted. NativeAdobeAutomation serializes NSAppleScript requests off the main actor. A fixed bundled JSX runner reads a structured job, opens an owned starter copy and invokes the existing production module; user copy is never evaluated as code. A run-ID receipt and saved production manifest must agree on counts and the expected Deck.indd destination before the app reports success. Cancellation creates a cooperative stop marker; the completed handoff is retained even if Adobe fails. Setup requests only the explicitly chosen Adobe application.
+
+StarterKit/manifest.json records every distributed file hash. The native package journey exercises kit extraction and InDesign option dependencies without requiring Adobe on CI. Actual InDesign and Photoshop execution remains a separate native acceptance check. Blank slides reuse text-only and deliberately-empty copy states. Text-only transitions keep hidden media assignments, and Approved Media includes them independently of rendered slots.

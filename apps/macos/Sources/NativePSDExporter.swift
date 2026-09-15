@@ -39,6 +39,7 @@ enum NativePSDExporter {
     }
     let width = Int(canvas.width), height = Int(canvas.height)
     let scene = NativeSlideRenderer.resolve(slide: slide, canvas: canvas)
+    let textGuide = textGuideFrame(scene: scene)
     guard scene.imageLayers.count <= 12 else {
       throw failure("This slide has more than twelve image placements. Its originals remain available for manual assembly.")
     }
@@ -54,7 +55,7 @@ enum NativePSDExporter {
       }
       embeddedBytes += size
     }
-    let estimated = width * height * 4 * (scene.imageLayers.count * 2 + 8) + embeddedBytes * 4
+    let estimated = width * height * 4 * (scene.imageLayers.count * 2 + (textGuide == nil ? 8 : 10)) + embeddedBytes * 4
     guard embeddedBytes <= maximumEmbeddedBytes, estimated <= maximumWorkingBytes else {
       throw failure("This slide exceeds the PSD export memory budget. Export its originals and assemble this slide manually.")
     }
@@ -65,10 +66,14 @@ enum NativePSDExporter {
     let grid = NativeSlideGrid(canvas: canvas)
     let guides = grid.verticalGuides.map { ["location": $0, "direction": "vertical"] as [String: Any] }
       + grid.horizontalGuides.map { ["location": $0, "direction": "horizontal"] as [String: Any] }
-    _ = try host.call("start", arguments: [try json([
+    var configuration: [String: Any] = [
       "width": width, "height": height, "guides": guides, "cropToFrames": cropToFrames,
       "sharedID": uuid(), "instanceIDs": [uuid(), uuid()],
-    ]), try host.bytes(profile as Data)])
+    ]
+    if let frame = textGuide {
+      configuration["textGuideRect"] = [frame.minX, frame.minY, frame.width, frame.height]
+    }
+    _ = try host.call("start", arguments: [try json(configuration), try host.bytes(profile as Data)])
     let composite = try Bitmap(width: width, height: height, colorSpace: colorSpace)
     var sourceIDs: [String: String] = [:]
     var issues: [String] = []
@@ -129,6 +134,24 @@ enum NativePSDExporter {
     try Task.checkCancellation()
     try host.write(result, to: output)
     return issues
+  }
+
+  /// The guide follows the text region, but exists only if rendered copy uses it.
+  /// Empty fields, image-only slides and entirely overset text get no placeholder.
+  static func textGuideFrame(scene: ResolvedPrototype) -> CGRect? {
+    let canvas = CGRect(x: 0, y: 0, width: scene.canvas.width, height: scene.canvas.height)
+    let region = scene.textRegion
+    guard [region.minX, region.minY, region.width, region.height].allSatisfy({ $0.isFinite }),
+      region.width > 0, region.height > 0, region.intersects(canvas),
+      scene.texts.contains(where: { placement in
+        guard placement.frame.intersects(canvas), placement.visible.location >= 0,
+          placement.visible.length > 0, placement.visible.location < placement.content.length else { return false }
+        let range = NSRange(location: placement.visible.location,
+          length: min(placement.visible.length, placement.content.length - placement.visible.location))
+        return !(placement.content.string as NSString).substring(with: range)
+          .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      }) else { return nil }
+    return region
   }
 
   private struct Artwork {

@@ -167,8 +167,12 @@ function nativeSlideInsertion(deck: DeckSnapshot, command: CommandEnvelope): Nat
     if (anchor?.palette) slide.native.layout.palette = clone(anchor.palette)
     slide.native.layout.fitCopy = false
     const kind = command.payload.kind ?? 'slide'
-    if (!['slide', 'moodboard', 'contents'].includes(String(kind))) throw new Error('Unsupported new slide kind')
+    if (!['slide', 'blank', 'moodboard', 'contents'].includes(String(kind))) throw new Error('Unsupported new slide kind')
     if (kind !== 'slide') for (const block of slide.contentBlocks) block.state = 'intentionally-blank'
+    if (kind === 'blank') {
+      slide.intent = 'text-only'
+      slide.native.layout.preset = 'text-only'
+    }
     if (kind === 'contents') {
       slide.intent = 'contents'
       slide.native.layout.contents = true
@@ -200,7 +204,7 @@ function nativeSlideInsertion(deck: DeckSnapshot, command: CommandEnvelope): Nat
     }
   }
   appendOperationPair(forward, inverse, { type: 'slide.insert', payload: { sectionId, slide, afterSlideId } }, { type: 'slide.remove', payload: { slideId: id } })
-  return { forward: operationList(forward), inverse: operationList(inverse), label: command.type === 'native.slide.duplicate' ? 'Duplicate Slide' : 'Add Slide' }
+  return { forward: operationList(forward), inverse: operationList(inverse), label: command.type === 'native.slide.duplicate' ? 'Duplicate Slide' : command.payload.kind === 'blank' ? 'Add Blank Slide' : 'Add Slide' }
 }
 function nativeSlideRename(deck: DeckSnapshot, command: CommandEnvelope): NativeMutation {
   const id = assertIdentity(command.payload.slideId, 'slideId', 256)
@@ -303,6 +307,7 @@ function prepareNativeCommand(deck: DeckSnapshot, command: CommandEnvelope): Nat
       const layout = assertRecord(patch.layout, 'layout patch')
       if (Object.keys(layout).some((k) => !['preset', 'columns', 'bodySize', 'fitCopy', 'textFrame', 'frames', 'crops', 'imageFits', 'gradient', 'starterType', 'palette', 'appearance', 'imageCount', 'contents'].includes(k))) throw new Error('Unsupported layout property')
       const previousPreset = state.layout.preset
+      const previousRoles = nativeImageRoles(slide, state)
       // Null resets a map; a dictionary changes only the named entries. Null
       // entries reset one image. Ordinary edits must never replace sibling data.
       const next = { ...state.layout, ...clone(layout) } as NativeLayout
@@ -326,8 +331,11 @@ function prepareNativeCommand(deck: DeckSnapshot, command: CommandEnvelope): Nat
       if (layout.contents === null) delete next.contents
       state.layout = next
       validateNativeState(state)
-      if ((layout.preset !== undefined && (previousPreset !== next.preset || next.preset !== 'legacy')) || layout.imageCount !== undefined) {
-        const roles = nativeImageRoles(slide, state)
+      const roles = nativeImageRoles(slide, state)
+      // Text-only hides artwork without changing its chosen or shortlisted state.
+      // Restore those assignments when artwork is shown again; ordinary changes
+      // between image layouts still reconcile displaced slots below.
+      if (roles.length && previousRoles.length && ((layout.preset !== undefined && (previousPreset !== next.preset || next.preset !== 'legacy')) || layout.imageCount !== undefined)) {
         const assignments = slide.mediaAssignments ?? []
         const occupied = new Set(assignments.filter((a) => roles.includes(a.role)).map((a) => a.role))
         for (const assignment of assignments.filter((a) => !roles.includes(a.role))) {
