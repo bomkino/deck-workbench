@@ -17,18 +17,18 @@ enum NativePSDExporter {
     [1920.0, 2576.0].contains(canvas.width) && canvas.height == 1080
   }
 
-  static func write(slide: DeckSlide, canvas: DeckCanvas, staged: [String: URL], to output: URL)
+  static func write(slide: DeckSlide, canvas: DeckCanvas, staged: [String: URL], cropToFrames: Bool = true, to output: URL)
     throws -> [String]
   {
     try Task.checkCancellation()
     lock.lock()
     defer { lock.unlock() }
     return try autoreleasepool {
-      try writeSlide(slide: slide, canvas: canvas, staged: staged, to: output)
+      try writeSlide(slide: slide, canvas: canvas, staged: staged, cropToFrames: cropToFrames, to: output)
     }
   }
 
-  private static func writeSlide(slide: DeckSlide, canvas: DeckCanvas, staged: [String: URL], to output: URL)
+  private static func writeSlide(slide: DeckSlide, canvas: DeckCanvas, staged: [String: URL], cropToFrames: Bool, to output: URL)
     throws -> [String]
   {
     guard supports(canvas) else {
@@ -66,7 +66,7 @@ enum NativePSDExporter {
     let guides = grid.verticalGuides.map { ["location": $0, "direction": "vertical"] as [String: Any] }
       + grid.horizontalGuides.map { ["location": $0, "direction": "horizontal"] as [String: Any] }
     _ = try host.call("start", arguments: [try json([
-      "width": width, "height": height, "guides": guides,
+      "width": width, "height": height, "guides": guides, "cropToFrames": cropToFrames,
       "sharedID": uuid(), "instanceIDs": [uuid(), uuid()],
     ]), try host.bytes(profile as Data)])
     let composite = try Bitmap(width: width, height: height, colorSpace: colorSpace)
@@ -103,7 +103,9 @@ enum NativePSDExporter {
         mask.context.fill(CGRect(origin: .zero, size: maskRect.size))
         mask.context.setFillColor(CGColor(gray: 1, alpha: 1))
         mask.context.fill(layer.frame.offsetBy(dx: -maskRect.minX, dy: -maskRect.minY))
-        composite.draw(source.image, placement: placement, clip: layer.frame)
+        // The full original remains embedded in both modes. Only the optional
+        // framing mask and visible composite change; placement stays identical.
+        composite.draw(source.image, placement: placement, clip: cropToFrames ? layer.frame : nil)
         let transform = [placement.minX, placement.minY, placement.maxX, placement.minY,
           placement.maxX, placement.maxY, placement.minX, placement.maxY]
         _ = try host.call("addLayer", arguments: [try json([

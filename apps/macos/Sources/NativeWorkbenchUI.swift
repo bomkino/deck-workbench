@@ -732,6 +732,7 @@ struct NativeExportSheet: View {
   @AppStorage("native.export.shortlisted") private var shortlisted = true
   @AppStorage("native.export.productionCopy") private var productionCopy = true
   @AppStorage("native.export.psd") private var psd = true
+  @AppStorage("native.export.psdCropToFrames") private var psdCropToFrames = true
   @State private var acceptChanged = false
   @State private var scope = "all"
   @State private var selectedIDs: Set<String> = []
@@ -760,7 +761,15 @@ struct NativeExportSheet: View {
         get: { includePSD }, set: { psd = $0 }
       )).disabled(!supportsPSD)
       if includePSD {
-        Text("Includes workbench.md. Use the same handoff for Figma or InDesign; both apps can stay closed. Artwork keeps its frame and crop. PSDs are created one at a time.").workbenchText(.caption).foregroundStyle(.secondary)
+        Picker("PSD artwork", selection: $psdCropToFrames) {
+          Text("Match Workbench · editable masks").tag(true)
+          Text("Full images · no frame crop").tag(false)
+        }
+        Text(psdCropToFrames
+          ? "Keeps the Workbench framing with editable layer masks. Full original images remain inside Smart Objects; disable a mask in Photoshop to reveal them."
+          : "Keeps image position and scale, with framing masks disabled. Images may extend beyond their Workbench frames. The full originals remain editable inside Smart Objects.")
+          .workbenchText(.caption).foregroundStyle(.secondary)
+        Text("Includes workbench.md for Figma or InDesign. PSDs are created one at a time; Adobe apps can stay closed.").workbenchText(.caption).foregroundStyle(.secondary)
       } else if !supportsPSD {
         Text("PSDs need 1920 × 1080 or 2576 × 1080. Writing, PDFs and original media are available for this canvas.").workbenchText(.caption).foregroundStyle(.secondary)
       }
@@ -799,6 +808,7 @@ struct NativeExportSheet: View {
           options.shortlisted = shortlisted
           options.productionCopy = includeProductionCopy
           options.psd = includePSD
+          options.psdCropToFrames = psdCropToFrames
           options.acceptChangedSources = acceptChanged
           options.selectedSlideIDs = scope == "current" ? Set([controller.selectedSlideID ?? ""]) : scope == "selected" ? selectedIDs : nil
           controller.export(options)

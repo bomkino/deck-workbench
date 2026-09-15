@@ -35,7 +35,7 @@ Media index.csv
 
 New decks default to **2576 × 1080**; **1920 × 1080** has its own exact starter grid. Head, Sub and Body fonts and size/leading steps are editable. Fit Copy is optional; review any overflow before handoff. Shortlist membership remains independent of the chosen image.
 
-`Production/workbench.md` supplies the three writing roles for the existing InDesign/Figma import workflow. Its manifest records source fields, slide order, projection warnings and output hashes. PSDs contain editable artwork with the chosen frames, fit and crops: `00.Background` and `01.Character` share one embedded artwork source. Text, gradients and character cut-outs still need design work; the PDF remains the visual guide. See [production workflow and limits](docs/MAC_APP.md#export).
+`Production/workbench.md` supplies the three writing roles for the existing InDesign/Figma import workflow. Its manifest records source fields, slide order, projection warnings and output hashes. PSDs retain full editable images and default to Workbench framing with editable masks; a full-image option disables those masks: `00.Background` and `01.Character` share one embedded artwork source. Text, gradients and character cut-outs still need design work; the PDF remains the visual guide. See [production workflow and limits](docs/MAC_APP.md#export).
 
 **Help → Keyboard Shortcuts** or **Command-/** opens the reference. Curate: arrows browse, Space opens/closes preview, S shortlists, Shift-S removes shortlist membership, M chooses, X rejects, [ and ] switch slides. Commands pause while editing text. Command-F focuses search. Command-Shift-E exports.
 

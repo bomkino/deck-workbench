@@ -14,6 +14,7 @@ struct HandoffOptions: Codable, Sendable {
   var shortlisted = true
   var productionCopy = false
   var psd = false
+  var psdCropToFrames = true
   var acceptChangedSources = false
   var selectedSlideIDs: Set<String>?
 }
@@ -166,9 +167,10 @@ enum NativeHandoffExporter {
             try autoreleasepool {
               let path = "PSD/Slide \(String(format: "%02d", index + 1)).psd"
               let output = directory.appendingPathComponent(path)
-              let warnings = try NativePSDExporter.write(slide: slide, canvas: snapshot.deck.canvasPreset, staged: staged, to: output)
+              let warnings = try NativePSDExporter.write(slide: slide, canvas: snapshot.deck.canvasPreset, staged: staged, cropToFrames: options.psdCropToFrames, to: output)
               production.manifest.warnings += warnings.map { "Slide \(index + 1): \($0)" }
               production.manifest.slides[index].psd = WorkbenchProductionPSD(path: path, sha256: try checksum(output), width: Int(snapshot.deck.canvasPreset.width), height: Int(snapshot.deck.canvasPreset.height))
+              production.manifest.slides[index].psd?.framing = options.psdCropToFrames ? "workbench-masks" : "full-images"
             }
             advance("Preparing Photoshop slide \(index + 1) of \(slides.count)")
           }

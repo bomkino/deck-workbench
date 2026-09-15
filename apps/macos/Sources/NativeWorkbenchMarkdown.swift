@@ -8,6 +8,7 @@ struct WorkbenchProductionPSD: Codable, Sendable {
   var height: Int
   var depth = 8
   var colorMode = "RGB"
+  var framing: String? = nil
 }
 struct WorkbenchProductionBlock: Codable, Sendable {
   var blockID: String

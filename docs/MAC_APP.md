@@ -1,4 +1,4 @@
-# Mac workflow — v0.2.0 implementation
+# Mac workflow
 
 ## Intake and copy
 
@@ -57,7 +57,7 @@ Apply Arrangement copies the resolved arrangement to explicitly selected slides 
 
 ## Export
 
-Command-Shift-E selects complete handoff components and all/current/selected slide scope. Component choices are remembered; accepting changed original files requires explicit consent each time. PSDs are optional and include the production writing when selected. The same handoff supports Figma or InDesign; running an InDesign script is a separate choice. On other canvas sizes the PSD switch is unavailable, while writing, PDFs and media remain selectable.
+Command-Shift-E selects complete handoff components and all/current/selected slide scope. Component choices are remembered; accepting changed original files requires explicit consent each time. PSDs are optional and include the production writing when selected. **PSD artwork → Match Workbench · editable masks** is the default, matching the canvas framing. **Full images · no frame crop** disables those masks while retaining position and scale. Both modes retain the complete embedded JPEG/PNG/TIFF originals; no crop is baked into those source files. The PDF remains the framed Workbench preview, so a full-image PSD may reveal additional artwork beyond the prototype frames. The same handoff supports Figma or InDesign; running an InDesign script is a separate choice. On other canvas sizes the PSD switch is unavailable, while writing, PDFs and media remain selectable.
 
 - Prototype.pdf: clean proportional slides, one page per exported slide.
 - Prototype with notes.pdf: slide preview, full copy, direction and source filenames; long copy continues onto labelled companion pages.
@@ -105,3 +105,5 @@ The copy editor can remove optional body/subheadline/caption/credit fields. Remo
 Search closes preview/comparison and returns to the media collection. Escape leaves the search field. Returning from a candidate preview restores a visible media focus. Comparison resets for a different slide rather than silently reusing unrelated candidates.
 
 Import parses locally off the UI thread with the existing 1 MiB limit. Replacement stays open until saving is acknowledged and retains errors/drafts when rejected. Document transitions are serialized; a late chooser or Save cannot redirect work into a newly opened deck. Export is unavailable while a conflicting edit/transition/destination chooser is active, but creative layout warnings remain nonblocking. The export chooser shows the actual included slide count.
+
+Inside Photoshop, double-click **00.Background** to open Shared Artwork. Every chosen image is another editable Smart Object. Shift-click its mask thumbnail to enable/disable the saved Workbench framing, or edit the mask normally. Image content beyond the slide canvas remains in the embedded original; double-click the image Smart Object or transform it to reach that content. Save Shared Artwork and the main PSD to update both outer roles. A mask can be changed after saving and reopening; it does not depend on Photoshop undo history.
