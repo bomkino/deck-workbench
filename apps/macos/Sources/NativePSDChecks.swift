@@ -11,7 +11,7 @@ enum NativePSDChecks {
   static func run(output: URL) throws {
     let manager = FileManager.default
     try manager.createDirectory(at: output, withIntermediateDirectories: true)
-    let names = ["Slide 01.psd", "Slide 02.psd", "Slide 03.psd", "Slide 04.psd", "PSD proof.json"]
+    let names = ["Slide 01.psd", "Slide 02.psd", "Slide 03.psd", "Slide 04.psd", "Slide 05.psd", "PSD proof.json"]
     for name in names where manager.fileExists(atPath: output.appendingPathComponent(name).path) {
       throw failure("Choose a fresh PSD proof directory; \(name) already exists.")
     }
@@ -38,6 +38,7 @@ enum NativePSDChecks {
         "fixtureSourceSHA256": hashes, "sourceFilesRemovedAfterRun": sourcesRemoved,
         "orientationFixture": orientationFixture,
         "embeddedOriginalVerification": "Encoder reads back and compares every embedded source byte.",
+        "framingVerification": "Encoder reads back mask enablement and exact placement in both modes. Slide 01 is masked; Slide 05 uses the same full images with masks disabled.",
         "existingOutputProtected": outputProtected,
         "processLifetimePeakRSSBytesAtStart": initialRSS, "processLifetimePeakRSSBytesAtEnd": peakRSS(),
         "photoshopVisualInspection": "Pending: inspect cropping, colour, shared-content updates and guide visibility.",
@@ -101,22 +102,25 @@ enum NativePSDChecks {
       ]
       exif.native!.layout.imageFits["primary"] = "fit"
       exif.native!.layout.crops["primary:2"] = PrototypeCrop(x: 0.1, y: 0.25, width: 0.55, height: 0.65)
-      let cases: [(DeckSlide, DeckCanvas, String, Int)] = [
-        (cropped, scope, names[0], 2), (blank, wide, names[1], 0),
-        (moodboard, wide, names[2], 12), (exif, wide, names[3], 2),
+      guard HandoffOptions().psdCropToFrames else { throw failure("New exports must default to editable Workbench framing masks.") }
+      let cases: [(DeckSlide, DeckCanvas, String, Int, Bool)] = [
+        (cropped, scope, names[0], 2, true), (blank, wide, names[1], 0, false),
+        (moodboard, wide, names[2], 12, false), (exif, wide, names[3], 2, true),
+        (cropped, scope, names[4], 2, false),
       ]
-      for (slide, canvas, filename, expected) in cases {
+      for (slide, canvas, filename, expected, cropToFrames) in cases {
         try Task.checkCancellation()
         let scene = NativeSlideRenderer.resolve(slide: slide, canvas: canvas)
         guard scene.imageLayers.count == expected else { throw failure("The proof scene did not resolve \(expected) image placements.") }
         let url = output.appendingPathComponent(filename)
-        let warnings = try NativePSDExporter.write(slide: slide, canvas: canvas, staged: staged, to: url)
+        let warnings = try NativePSDExporter.write(slide: slide, canvas: canvas, staged: staged, cropToFrames: cropToFrames, to: url)
         var record: [String: Any] = [
           "file": filename, "width": canvas.width, "height": canvas.height,
           "chosenPlacements": expected, "sha256": try sha256(url),
           "bytes": try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0,
           "layout": try nativeObject(slide.settings.layout), "warnings": warnings,
           "innerGuides": 72, "outerGuides": 72,
+          "framing": cropToFrames ? "workbench-masks" : "full-images",
         ]
         if filename == names[3] {
           record["expectedImageRects"] = scene.imageLayers.map { layer in

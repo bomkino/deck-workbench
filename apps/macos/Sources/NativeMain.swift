@@ -4,6 +4,7 @@ import SwiftUI
 @main
 struct NativeMain {
   @MainActor static func main() {
+    NativeTypography.registerBundledFonts()
     if let index = CommandLine.arguments.firstIndex(of: "--native-parity-probe"), CommandLine.arguments.indices.contains(index + 1) {
       let app = NSApplication.shared
       let delegate = NativeParityProbeDelegate(output: URL(fileURLWithPath: CommandLine.arguments[index + 1], isDirectory: true))

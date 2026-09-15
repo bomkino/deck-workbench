@@ -1,3 +1,13 @@
+# v0.2.2 — studio type and editable PSD framing
+
+The interface uses bundled pitch.dog fonts, including the corrected welcome headline. Interface size now scales headings, captions and dialogs consistently; large-text settings, slide labels and colour controls remain readable in compact windows.
+
+In **Type & colours…**, choose each font yourself or start with **New York + SF Pro**, **pitch.dog Head + Body**, or **SF Pro throughout**. Head, Sub and Body show their current size step beside Smaller/Larger. Font-pair changes keep the chosen sizes, spacing, alignment and colours. Existing deck fonts change only when Apply is used.
+
+PSD export defaults to **Match Workbench · editable masks**. **Full images · no frame crop** is optional: it disables the same masks while retaining image position, scale and complete embedded originals. Open the shared artwork in Photoshop and enable or disable a layer mask later; this remains reversible after saving and reopening. Both exports keep the existing shared Background/Character structure. PDFs continue to show the Workbench framing.
+
+Verification includes the packaged native journey, actual app screenshots at 100% and 175%, bundled-font resolution, size controls and five PSD cases across both supported widths. Photoshop verified mask enablement, save/reopen and recovery of the full image without Undo. No document schema or Adobe-script changes; the existing type-system binary pin is retained. Large real-photo libraries and exhaustive accessibility remain outside these synthetic checks.
+
 # v0.2.1 — clearer optional exports
 
 PSD export now visibly includes its required workbench.md companion, even after writing export was previously turned off. The handoff works with either Figma or InDesign; neither application is required during export. Unsupported canvases disable the PSD option before export while keeping writing, PDFs and media available. The saved PSD preference remains available when returning to a supported canvas.

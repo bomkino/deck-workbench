@@ -1,4 +1,4 @@
-# Mac workflow — v0.2.0 implementation
+# Mac workflow
 
 ## Intake and copy
 
@@ -41,7 +41,9 @@ The interface acknowledges pending saves. A definitively invalid action is rejec
 
 Default canvas: 2576 × 1080. Both slide starters use a numbered 24-column/12-row grid. At 2576 × 1080, horizontal/vertical margins are 96/64 and gutters 16/8; at 1920 × 1080 they are 72/64 and 12/8. Guides and snapping share this geometry, including the widescreen grid's fractional column widths.
 
-Open **Type & colours…** to choose installed Head, Sub and Body font families/faces, alignment, colour roles, and paired size/leading steps. Smaller/Larger changes size and leading together. Starter type keeps the same size at both slide widths. Apply to the current slide or enable **Apply to every slide**; one Undo restores the previous settings. Missing fonts are flagged and temporarily rendered with the system font. The app's existing FontBlind v13.0.0 binary pin remains unchanged.
+Open **Type & colours…** to choose installed Head, Sub and Body font families/faces, alignment, colour roles, and paired size/leading steps. Each role shows **Step +5**, **Step 0**, etc.; Smaller/Larger moves one step and changes size and leading together. Step 0 is Head 48, Sub 40 and Body 32. **Choose a font pair** offers New York + SF Pro, pitch.dog Head + Body, or SF Pro throughout, changing fonts only. Starter type keeps the same size at both slide widths. Apply to the current slide or enable **Apply to every slide**; one Undo restores the previous settings. Missing fonts are flagged and temporarily rendered with the system font.
+
+The application interface uses pitch.dog Head/Body from the existing FontBlind v13.0.0 pin. **Settings → Interface size** scales the workspace, captions and dialogs without changing the canvas or exports. Native window/menu typography and monospace data remain system fonts. Existing decks keep their fonts; the Apple and pitch.dog canvas pairs are opt-in.
 
 In the Colours tab, edit the background, text, muted, four accent and monochrome roles for both dark and light slides. Set **Slide appearance → Dark/Light** separately for each slide; applying colours across the deck retains those choices. Check image contrast yourself. Older native layouts keep their existing type until you apply type settings; choosing an appearance or palette also recolours their text. Preserved legacy layouts require explicit conversion before these controls apply.
 
@@ -55,7 +57,7 @@ Apply Arrangement copies the resolved arrangement to explicitly selected slides 
 
 ## Export
 
-Command-Shift-E selects complete handoff components and all/current/selected slide scope. Component choices are remembered; accepting changed original files requires explicit consent each time. PSDs are optional and include the production writing when selected. The same handoff supports Figma or InDesign; running an InDesign script is a separate choice. On other canvas sizes the PSD switch is unavailable, while writing, PDFs and media remain selectable.
+Command-Shift-E selects complete handoff components and all/current/selected slide scope. Component choices are remembered; accepting changed original files requires explicit consent each time. PSDs are optional and include the production writing when selected. **PSD artwork → Match Workbench · editable masks** is the default, matching the canvas framing. **Full images · no frame crop** disables those masks while retaining position and scale. Both modes retain the complete embedded JPEG/PNG/TIFF originals; no crop is baked into those source files. The PDF remains the framed Workbench preview, so a full-image PSD may reveal additional artwork beyond the prototype frames. The same handoff supports Figma or InDesign; running an InDesign script is a separate choice. On other canvas sizes the PSD switch is unavailable, while writing, PDFs and media remain selectable.
 
 - Prototype.pdf: clean proportional slides, one page per exported slide.
 - Prototype with notes.pdf: slide preview, full copy, direction and source filenames; long copy continues onto labelled companion pages.
@@ -103,3 +105,5 @@ The copy editor can remove optional body/subheadline/caption/credit fields. Remo
 Search closes preview/comparison and returns to the media collection. Escape leaves the search field. Returning from a candidate preview restores a visible media focus. Comparison resets for a different slide rather than silently reusing unrelated candidates.
 
 Import parses locally off the UI thread with the existing 1 MiB limit. Replacement stays open until saving is acknowledged and retains errors/drafts when rejected. Document transitions are serialized; a late chooser or Save cannot redirect work into a newly opened deck. Export is unavailable while a conflicting edit/transition/destination chooser is active, but creative layout warnings remain nonblocking. The export chooser shows the actual included slide count.
+
+Inside Photoshop, double-click **00.Background** to open Shared Artwork. Every chosen image is another editable Smart Object. Shift-click its mask thumbnail to enable/disable the saved Workbench framing, or edit the mask normally. Image content beyond the slide canvas remains in the embedded original; double-click the image Smart Object or transform it to reach that content. Save Shared Artwork and the main PSD to update both outer roles. A mask can be changed after saving and reopening; it does not depend on Photoshop undo history.

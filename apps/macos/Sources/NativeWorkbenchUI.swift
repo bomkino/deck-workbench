@@ -12,7 +12,7 @@ struct NativeWorkbenchRoot: View {
       VStack(spacing: 0) {
         if let failure = controller.failure {
           VStack(alignment: .leading, spacing: 8) {
-            Text(failure).font(.callout).textSelection(.enabled)
+            Text(failure).workbenchText(.bodyCompact).textSelection(.enabled)
             HStack {
               if !controller.failedCommands.isEmpty {
                 Button("Retry Pending Actions") { controller.retryPending() }
@@ -31,19 +31,17 @@ struct NativeWorkbenchRoot: View {
         }
         if controller.document == nil {
           VStack(alignment: .leading, spacing: 20) {
-            Text("Copy. Images. Intent.").font(.custom("pd-head-500", size: 36))
+            Text("Copy. Images. Intent.").workbenchText(.display)
             Text(
               "Bring in the final writing. Choose the media. Give the designer a clear starting point."
-            ).font(.title3).foregroundStyle(.secondary).frame(maxWidth: 500, alignment: .leading)
-            HStack {
-              Button("Import Final Copy…") { controller.importFile() }.buttonStyle(
-                .borderedProminent)
-              Button("Paste Final Copy") { controller.pasteCopy() }
-              Button("Open Deck…") { controller.openPanel() }
-            }
+            ).workbenchText(.body).foregroundStyle(.secondary).frame(maxWidth: 500, alignment: .leading)
+            ViewThatFits(in: .horizontal) {
+              HStack { homeActions }
+              VStack(alignment: .leading, spacing: 10) { homeActions }
+            }.workbenchText(.action)
             if !controller.recentDocuments.isEmpty {
               Divider()
-              Text("Recent decks").font(.headline)
+              Text("Recent decks").workbenchText(.label)
               ForEach(controller.recentDocuments.prefix(5), id: \.path) { url in
                 Button(url.deletingPathExtension().lastPathComponent) {
                   Task { await controller.open(url) }
@@ -80,10 +78,10 @@ struct NativeWorkbenchRoot: View {
             controller.pendingCount > 0
               ? "Saving \(controller.pendingCount) action\(controller.pendingCount==1 ? "" : "s")…"
               : !controller.failedCommands.isEmpty ? "\(controller.failedCommands.count) actions need recovery" : controller.status
-          ).font(.caption).lineLimit(2)
+          ).workbenchText(.caption).lineLimit(2)
           Spacer()
-          if controller.importRunning { ProgressView().controlSize(.small); Text("Reading copy…").font(.caption) }
-          if controller.lifecycleBusy { ProgressView().controlSize(.small); Text("Saving and switching…").font(.caption) }
+          if controller.importRunning { ProgressView().controlSize(.small); Text("Reading copy…").workbenchText(.caption) }
+          if controller.lifecycleBusy { ProgressView().controlSize(.small); Text("Saving and switching…").workbenchText(.caption) }
           if controller.scanRunning {
             ProgressView().controlSize(.small)
             Button("Cancel Scan") { controller.cancelScan() }.controlSize(.small)
@@ -136,7 +134,6 @@ struct NativeWorkbenchRoot: View {
       if clean { editingColumns = columns; columns = .detailOnly }
       else { columns = editingColumns }
     }
-    .font(.system(size: 14 * controller.interfaceScale))
     .background(NativeKeyboardRouter(controller: controller).frame(width: 0, height: 0))
     .background(NativeWindowGuard(controller: controller).frame(width: 0, height: 0))
     .sheet(isPresented: $controller.showShortcuts) { NativeShortcutSheet(controller: controller) }
@@ -159,11 +156,18 @@ struct NativeWorkbenchRoot: View {
         NativeImportSheet(controller: controller, imported: imported)
       }
     }
+    .workbenchText(.body)
+    .environment(\.workbenchInterfaceScale, controller.interfaceScale)
     .frame(minWidth: 900, minHeight: 600)
   }
   private func ordinal(_ slide: DeckSlide) -> String {
     guard let ordinal = controller.slideOrdinals[slide.id] else { return "" }
     return String(format: "%02d", ordinal)
+  }
+  @ViewBuilder private var homeActions: some View {
+    Button("Import Final Copy…") { controller.importFile() }.buttonStyle(.borderedProminent)
+    Button("Paste Final Copy") { controller.pasteCopy() }
+    Button("Open Deck…") { controller.openPanel() }
   }
 }
 
@@ -213,11 +217,12 @@ struct NativeSlideRow: View {
   }
   var body: some View {
     HStack(alignment: .top) {
-      Text(ordinal).font(.system(.caption, design: .monospaced))
+      Text(ordinal).workbenchText(.data)
         .foregroundStyle(.secondary).frame(width: 28)
       VStack(alignment: .leading, spacing: 4) {
-        Text(slide.title).lineLimit(2)
-        Text(summary).font(.caption).foregroundStyle(.secondary)
+        Text(slide.title).workbenchText(.body).lineLimit(2)
+        Text(summary).workbenchText(.caption).foregroundStyle(.secondary).lineLimit(2)
+          .fixedSize(horizontal: false, vertical: true)
       }
     }.padding(.vertical, 5)
   }
@@ -300,7 +305,7 @@ struct NativeCurateView: View {
           Text("· " + controller.collection.capitalized)
           Spacer()
           Button("Clear filters") { controller.clearFilters() }
-        }.font(.caption).foregroundStyle(.secondary).padding(.horizontal, 14).padding(.bottom, 8)
+        }.workbenchText(.caption).foregroundStyle(.secondary).padding(.horizontal, 14).padding(.bottom, 8)
       }
       Divider()
       if controller.assets.isEmpty {
@@ -308,7 +313,7 @@ struct NativeCurateView: View {
           Image(systemName: "photo.on.rectangle.angled").font(.system(size: 36)).foregroundStyle(
             .secondary)
           Text(controller.scanRunning ? "Reading your media folder…" : "Choose a folder of media.")
-            .font(.headline)
+            .workbenchText(.label)
           Text("Originals stay where they are. Decisions are saved with the deck.").foregroundStyle(
             .secondary)
           Button("Add Media Folder…") { controller.addMediaFolder() }
@@ -316,7 +321,7 @@ struct NativeCurateView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
       } else if controller.filteredAssets.isEmpty {
         VStack(spacing: 12) {
-          Text("No media matches this view.").font(.headline)
+          Text("No media matches this view.").workbenchText(.label)
           Button("Clear filters") { controller.clearFilters() }
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
       } else {
@@ -329,7 +334,7 @@ struct NativeCurateView: View {
     }
   }
   private var mediaCount: some View {
-    Text("\(controller.filteredAssets.count) media files").font(.caption).foregroundStyle(.secondary).fixedSize()
+    Text("\(controller.filteredAssets.count) media files").workbenchText(.caption).foregroundStyle(.secondary).fixedSize()
   }
   private var sortPicker: some View {
     Picker("Sort media", selection: $controller.sortOrder) {
@@ -356,7 +361,7 @@ struct NativeAssetTile: View {
       NativeAssetImage(source: controller.sources[asset.id], longestSide: 512).frame(
         height: controller.gridSize * 0.66
       ).frame(maxWidth: .infinity).background(Color.black.opacity(0.10)).clipped()
-      Text(asset.filename).font(.caption).lineLimit(1).truncationMode(.middle)
+      Text(asset.filename).workbenchText(.caption).lineLimit(1).truncationMode(.middle)
       HStack(spacing: 7) {
         if controller.chosenAssetIDs.contains(asset.id) {
           Label("Chosen", systemImage: "checkmark.circle.fill")
@@ -366,7 +371,8 @@ struct NativeAssetTile: View {
         }
         if controller.compareIDs.contains(asset.id) { Image(systemName: "square.split.2x1") }
       }
-      .font(.system(size: 10)).foregroundStyle(.secondary).frame(height: 14, alignment: .leading)
+      .workbenchText(.caption).foregroundStyle(.secondary).lineLimit(1)
+        .frame(minHeight: 16 * controller.interfaceScale, alignment: .leading)
     }.padding(7).background(
       controller.focusedAssetID == asset.id ? Color.accentColor.opacity(0.12) : Color.clear
     )
@@ -413,7 +419,7 @@ struct NativeAssetImage: View {
           if loading { ProgressView().controlSize(.small) }
           else {
             Image(systemName: "photo")
-            Text(message ?? "Media unavailable. Reconnect or rescan its folder.").font(.caption).multilineTextAlignment(.center)
+            Text(message ?? "Media unavailable. Reconnect or rescan its folder.").workbenchText(.caption).multilineTextAlignment(.center)
           }
         }.foregroundStyle(.secondary).padding(12)
       }
@@ -461,11 +467,11 @@ struct NativePreviewView: View {
     VStack(spacing: 12) {
       HStack {
         VStack(alignment: .leading) {
-          Text(controller.focusedAsset?.filename ?? "Preview").font(.headline)
-          Text(controller.selectedSlide?.title ?? "").font(.caption).foregroundStyle(.secondary)
+          Text(controller.focusedAsset?.filename ?? "Preview").workbenchText(.label)
+          Text(controller.selectedSlide?.title ?? "").workbenchText(.caption).foregroundStyle(.secondary)
         }
         Spacer()
-        Text(position).font(.caption)
+        Text(position).workbenchText(.caption)
         Button("Done · Esc") { controller.previewOpen = false }
       }
       NativeAssetImage(source: controller.focusedAssetID.flatMap { controller.sources[$0] }).frame(
@@ -485,7 +491,7 @@ struct NativePreviewView: View {
         }
       }
       Text("← → Browse · S Shortlist · M Choose · X Reject · C Compare · Space/Esc Close")
-        .font(.caption).foregroundStyle(.secondary)
+        .workbenchText(.caption).foregroundStyle(.secondary)
     }.padding(18).frame(maxWidth: .infinity, maxHeight: .infinity)
   }
   private var position: String {
@@ -499,7 +505,7 @@ struct NativeCompareView: View {
   var body: some View {
     VStack {
       HStack {
-        Text("Compare for \(controller.selectedSlide?.title ?? "slide")").font(.headline)
+        Text("Compare for \(controller.selectedSlide?.title ?? "slide")").workbenchText(.label)
         Spacer()
         Button("Done") { controller.compareOpen = false }
       }
@@ -507,14 +513,14 @@ struct NativeCompareView: View {
         ForEach(controller.compareIDs, id: \.self) { id in
           VStack {
             NativeAssetImage(source: controller.sources[id])
-            Text(controller.assetIndex[id]?.filename ?? id).font(.caption).lineLimit(
+            Text(controller.assetIndex[id]?.filename ?? id).workbenchText(.caption).lineLimit(
               1)
             Button("Choose this image") { controller.decide("use", assetID: id) }
           }.padding(6).overlay(RoundedRectangle(cornerRadius: 5).stroke(controller.comparedAssetID == id ? Color.accentColor : Color.clear, lineWidth: 2))
             .onTapGesture { controller.comparedAssetID = id }
         }
       }
-      Text("← → Select candidate · M Choose · S Shortlist · 1/2/3 Choose directly · Esc Close").font(.caption).foregroundStyle(.secondary)
+      Text("← → Select candidate · M Choose · S Shortlist · 1/2/3 Choose directly · Esc Close").workbenchText(.caption).foregroundStyle(.secondary)
       Button("Clear comparison") {
         controller.compareIDs = []
         controller.compareOpen = false
@@ -534,7 +540,7 @@ struct NativeAssembleView: View {
             .monospacedDigit().foregroundStyle(.secondary)
           Button { controller.moveSlide(1) } label: { Image(systemName: "chevron.right") }
             .disabled(!controller.canReorderSlide(controller.selectedSlideID, by: 1)).accessibilityLabel("Next slide")
-          Text(controller.selectedSlide?.title ?? "").font(.headline).lineLimit(1)
+          Text(controller.selectedSlide?.title ?? "").workbenchText(.label).lineLimit(1)
           Spacer()
           Button("Back to editing · Esc") { controller.endCleanPreview() }
         }.padding(12)
@@ -553,7 +559,7 @@ struct NativeAssembleView: View {
       Text(controller.cleanPreview
         ? "← → Browse slides · Home / End Jump · Escape Return to editing"
         : "Drag text to move · Drag image to crop · Command-drag moves its frame · Space-drag pans · Escape cancels")
-        .font(.caption).foregroundStyle(.secondary).padding(10)
+        .workbenchText(.caption).foregroundStyle(.secondary).padding(10)
     }
   }
 }
@@ -566,17 +572,17 @@ struct NativeAssemblyInspector: View {
   @State private var editingOpacity = false
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
-      Text("Prototype layout").font(.headline)
+      Text("Prototype layout").workbenchText(.panelTitle)
       NativeLayoutPicker(controller: controller, slide: slide)
       if NativeSlideRenderer.resolvedPreset(slide: slide) == "moodboard" {
         Picker("Image slots", selection: Binding(get: { slide.settings.layout.imageCount ?? 6 }, set: { controller.patchLayout(["imageCount": $0, "frames": NSNull()]) })) {
           ForEach(1...12, id: \.self) { Text(String($0)).tag($0) }
         }
-        Text("Drag an image to crop it; Command-drag moves its frame. Reducing slots keeps displaced images shortlisted.").font(.caption).foregroundStyle(.secondary)
+        Text("Drag an image to crop it; Command-drag moves its frame. Reducing slots keeps displaced images shortlisted.").workbenchText(.caption).foregroundStyle(.secondary)
       }
-      if slide.settings.layout.contents == true { Text("Contents updates from included slide names and order. Selected exports recalculate its page references.").font(.caption).foregroundStyle(.secondary) }
+      if slide.settings.layout.contents == true { Text("Contents updates from included slide names and order. Selected exports recalculate its page references.").workbenchText(.caption).foregroundStyle(.secondary) }
       if slide.settings.layout.preset == "legacy" {
-        Text("Preserved layout. Text fitting and region controls require conversion; unsupported legacy shapes are not rendered.").font(.caption).foregroundStyle(.secondary)
+        Text("Preserved layout. Text fitting and region controls require conversion; unsupported legacy shapes are not rendered.").workbenchText(.caption).foregroundStyle(.secondary)
         Button("Convert to native prototype layout") { controller.chooseLayout("left") }
       }
       Group {
@@ -594,7 +600,7 @@ struct NativeAssemblyInspector: View {
         Text("Provisional size")
         Spacer()
         Text("\(Int(bodySize))")
-      }.font(.caption)
+      }.workbenchText(.caption)
       Slider(
         value: $bodySize, in: 20...48, step: 1,
         onEditingChanged: { editing in
@@ -608,8 +614,8 @@ struct NativeAssemblyInspector: View {
         Text("Dark").tag("dark"); Text("Light").tag("light")
       }.pickerStyle(.segmented)
       if let type = slide.settings.layout.starterType {
-        Text("Head \(Int(NativeTypeSize.preset(role: "headline", step: type.head.step).size.rounded())) · Sub \(Int(NativeTypeSize.preset(role: "subheadline", step: type.sub.step).size.rounded())) · Body \(Int(NativeTypeSize.preset(role: "body", step: type.body.step).size.rounded()))").font(.caption).foregroundStyle(.secondary)
-        if !type.unavailableFonts.isEmpty { Text("Missing fonts: " + type.unavailableFonts.joined(separator: ", ") + ". System font is shown temporarily.").font(.caption).foregroundStyle(.orange) }
+        Text("Head \(Int(NativeTypeSize.preset(role: "headline", step: type.head.step).size.rounded())) · Sub \(Int(NativeTypeSize.preset(role: "subheadline", step: type.sub.step).size.rounded())) · Body \(Int(NativeTypeSize.preset(role: "body", step: type.body.step).size.rounded()))").workbenchText(.caption).foregroundStyle(.secondary)
+        if !type.unavailableFonts.isEmpty { Text("Missing fonts: " + type.unavailableFonts.joined(separator: ", ") + ". System font is shown temporarily.").workbenchText(.caption).foregroundStyle(.orange) }
       }
       }.disabled(slide.settings.layout.preset == "legacy" || NativeSlideRenderer.resolvedPreset(slide: slide) == "image-only")
       if slide.settings.layout.preset != "legacy" {
@@ -627,7 +633,7 @@ struct NativeAssemblyInspector: View {
           Text("Gradient strength")
           Spacer()
           Text("\(Int(opacity*100))%")
-        }.font(.caption)
+        }.workbenchText(.caption)
         Slider(
           value: $opacity, in: 0...1,
           onEditingChanged: { editing in
@@ -678,11 +684,11 @@ struct NativeAssemblyInspector: View {
       if let canvas = controller.document?.deck.canvasPreset, let resolved = controller.resolvedScene {
         Text(
           "Fit size: \(Int(resolved.effectiveBodySize)) · \(Int(canvas.width)) × \(Int(canvas.height))"
-        ).font(.caption).foregroundStyle(.secondary)
+        ).workbenchText(.caption).foregroundStyle(.secondary)
         if resolved.overflowCharacters > 0 {
           Text(
             "Some copy does not fit this rough layout. Export remains available; include a notes or copy companion to deliver the complete writing."
-          ).font(.caption).foregroundStyle(.orange)
+          ).workbenchText(.caption).foregroundStyle(.orange)
         }
       }
       if controller.selectionTarget == "text", slide.settings.layout.preset != "legacy" {
@@ -726,6 +732,7 @@ struct NativeExportSheet: View {
   @AppStorage("native.export.shortlisted") private var shortlisted = true
   @AppStorage("native.export.productionCopy") private var productionCopy = true
   @AppStorage("native.export.psd") private var psd = true
+  @AppStorage("native.export.psdCropToFrames") private var psdCropToFrames = true
   @State private var acceptChanged = false
   @State private var scope = "all"
   @State private var selectedIDs: Set<String> = []
@@ -740,7 +747,7 @@ struct NativeExportSheet: View {
   }
   var body: some View {
     VStack(alignment: .leading, spacing: 18) {
-      Text("Export designer handoff").font(.title2)
+      Text("Export designer handoff").workbenchText(.sectionTitle)
       Text("A new folder. Original source files stay untouched.").foregroundStyle(.secondary)
       ScrollView {
       VStack(alignment: .leading, spacing: 14) {
@@ -754,9 +761,17 @@ struct NativeExportSheet: View {
         get: { includePSD }, set: { psd = $0 }
       )).disabled(!supportsPSD)
       if includePSD {
-        Text("Includes workbench.md. Use the same handoff for Figma or InDesign; both apps can stay closed. Artwork keeps its frame and crop. PSDs are created one at a time.").font(.caption).foregroundStyle(.secondary)
+        Picker("PSD artwork", selection: $psdCropToFrames) {
+          Text("Match Workbench · editable masks").tag(true)
+          Text("Full images · no frame crop").tag(false)
+        }
+        Text(psdCropToFrames
+          ? "Keeps the Workbench framing with editable layer masks. Full original images remain inside Smart Objects; disable a mask in Photoshop to reveal them."
+          : "Keeps image position and scale, with framing masks disabled. Images may extend beyond their Workbench frames. The full originals remain editable inside Smart Objects.")
+          .workbenchText(.caption).foregroundStyle(.secondary)
+        Text("Includes workbench.md for Figma or InDesign. PSDs are created one at a time; Adobe apps can stay closed.").workbenchText(.caption).foregroundStyle(.secondary)
       } else if !supportsPSD {
-        Text("PSDs need 1920 × 1080 or 2576 × 1080. Writing, PDFs and original media are available for this canvas.").font(.caption).foregroundStyle(.secondary)
+        Text("PSDs need 1920 × 1080 or 2576 × 1080. Writing, PDFs and original media are available for this canvas.").workbenchText(.caption).foregroundStyle(.secondary)
       }
       Toggle("Approved Media · original files per slide", isOn: $approved)
       Toggle("Shortlisted Media · candidates per slide", isOn: $shortlisted)
@@ -774,11 +789,11 @@ struct NativeExportSheet: View {
         }.frame(maxHeight: 180)
       }
       Text(exportCount == 0 ? "No included slides in this selection. Enable Include in handoff, or choose other slides." : "\(exportCount) included slide\(exportCount == 1 ? "" : "s")")
-        .font(.callout).foregroundStyle(exportCount == 0 ? Color.orange : Color.secondary)
+        .workbenchText(.bodyCompact).foregroundStyle(exportCount == 0 ? Color.orange : Color.secondary)
       Toggle("Accept externally changed source files", isOn: $acceptChanged)
       Text(
         "Leave this off to detect originals that changed after selection. Missing media and layout warnings are reported, not hidden."
-      ).font(.caption).foregroundStyle(.secondary)
+      ).workbenchText(.caption).foregroundStyle(.secondary)
       }.frame(maxWidth: .infinity, alignment: .leading)
       }
       HStack {
@@ -793,6 +808,7 @@ struct NativeExportSheet: View {
           options.shortlisted = shortlisted
           options.productionCopy = includeProductionCopy
           options.psd = includePSD
+          options.psdCropToFrames = psdCropToFrames
           options.acceptChangedSources = acceptChanged
           options.selectedSlideIDs = scope == "current" ? Set([controller.selectedSlideID ?? ""]) : scope == "selected" ? selectedIDs : nil
           controller.export(options)
@@ -809,8 +825,8 @@ struct NativeImportSheet: View {
   @State private var matching = false
   var body: some View {
     VStack(alignment: .leading, spacing: 18) {
-      Text("Import \(imported.title)").font(.title2)
-      if let error = controller.importError { Text(error).font(.callout).foregroundStyle(.orange).textSelection(.enabled) }
+      Text("Import \(imported.title)").workbenchText(.sectionTitle)
+      if let error = controller.importError { Text(error).workbenchText(.bodyCompact).foregroundStyle(.orange).textSelection(.enabled) }
       Text("\(imported.slides.count) slides · \(imported.canvasID) · copy locked by default")
         .foregroundStyle(.secondary)
       if matching {
@@ -829,13 +845,13 @@ struct NativeImportSheet: View {
       }.help("Choose the size before creating a deck. Copy replacement retains the open deck’s canvas.")
       List(imported.slides) { slide in
         VStack(alignment: .leading, spacing: 5) {
-          Text(slide.title).font(.headline)
-          Text(slide.blocks.map(\.text).joined(separator: "\n")).lineLimit(4).font(.caption)
+          Text(slide.title).workbenchText(.label)
+          Text(slide.blocks.map(\.text).joined(separator: "\n")).lineLimit(4).workbenchText(.caption)
         }
       }.frame(maxHeight: .infinity)
       }
       Text("No text is rewritten. Slide boundaries and optional copy fields come from the file.")
-        .font(.caption).foregroundStyle(.secondary)
+        .workbenchText(.caption).foregroundStyle(.secondary)
       HStack {
         Button("Cancel") { controller.imported = nil }
         if controller.document != nil {
@@ -862,8 +878,8 @@ struct NativeSettingsView: View {
         ForEach([0.9, 1.0, 1.1, 1.25, 1.5, 1.75], id: \.self) { Text("\(Int($0*100))%").tag($0) }
       }
       Toggle("Advance after choosing, shortlisting or rejecting", isOn: $controller.autoAdvance)
-      Text("Interface size does not change the canvas or exported deck.").font(.caption)
-        .foregroundStyle(.secondary)
+      Text("Interface size does not change the canvas or exported deck.").workbenchText(.caption)
+        .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
       Button("Done") { controller.showSettings = false }
     }.padding(28).frame(width: 450)
   }

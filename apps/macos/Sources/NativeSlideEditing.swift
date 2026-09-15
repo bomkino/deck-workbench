@@ -31,11 +31,11 @@ struct NativeSlideEditingBar: View {
     if let slide = controller.selectedSlide {
       ViewThatFits(in: .horizontal) {
         HStack(spacing: 12) {
-          Text(slide.title).font(.headline).lineLimit(1).frame(minWidth: 60, maxWidth: .infinity, alignment: .leading)
+          Text(slide.title).workbenchText(.label).lineLimit(1).frame(minWidth: 60, maxWidth: .infinity, alignment: .leading)
           controls(slide)
         }
         VStack(alignment: .leading, spacing: 8) {
-          Text(slide.title).font(.headline).lineLimit(1)
+          Text(slide.title).workbenchText(.label).lineLimit(1)
           HStack(spacing: 8) { controls(slide) }
         }
       }.padding(.horizontal, 14).padding(.vertical, 10)
@@ -105,18 +105,18 @@ struct NativeCopyEditor: View {
   }
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
-      Text("Edit Slide Copy").font(.title2)
+      Text("Edit Slide Copy").workbenchText(.sectionTitle)
       TextField("Slide name (sidebar and handoff)", text: $title).textFieldStyle(.roundedBorder)
         .accessibilityLabel("Slide name")
       Text("The name above is not the on-slide headline. Saving keeps this slide’s media and notes. Undo restores the whole edit.")
-        .font(.callout).foregroundStyle(.secondary)
+        .workbenchText(.bodyCompact).foregroundStyle(.secondary)
       if let error = controller.copyEditorError { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
       ScrollView {
         VStack(alignment: .leading, spacing: 16) {
           ForEach(blocks) { block in
             VStack(alignment: .leading, spacing: 6) {
               HStack {
-                Text(block.role.capitalized).font(.headline)
+                Text(block.role.capitalized).workbenchText(.label)
                 Spacer()
                 if block.role != "headline" {
                   Button("Remove field", role: .destructive) { blocks.removeAll { $0.id == block.id } }
@@ -125,7 +125,7 @@ struct NativeCopyEditor: View {
               }
               TextEditor(text: Binding(get: { blocks.first { $0.id == block.id }?.text ?? "" },
                 set: { value in if let i = blocks.firstIndex(where: { $0.id == block.id }) { blocks[i].setText(value) } }))
-                .font(.system(size: 14 * controller.interfaceScale)).frame(minHeight: block.role == "body" ? 150 : 80)
+                .workbenchText(.input).frame(minHeight: block.role == "body" ? 150 : 80)
                 .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.secondary.opacity(0.25)))
                 .accessibilityLabel("\(block.role) copy")
             }

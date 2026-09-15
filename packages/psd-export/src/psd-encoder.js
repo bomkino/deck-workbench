@@ -189,7 +189,7 @@ globalThis.PitchdogPSD = {
   start(json, icc) {
     const input = JSON.parse(json)
     if (![1920, 2576].includes(input.width) || input.height !== 1080 ||
-        input.guides?.length !== 72 || input.guides.some(g => !Number.isFinite(g.location) ||
+        typeof input.cropToFrames !== 'boolean' || input.guides?.length !== 72 || input.guides.some(g => !Number.isFinite(g.location) ||
           !['vertical', 'horizontal'].includes(g.direction) || !Number.isInteger(g.location * 32))) {
       throw new Error('PSD export requires a supported canvas and exact 24 by 12 guides')
     }
@@ -216,6 +216,7 @@ globalThis.PitchdogPSD = {
       id: session.layers.length + 1, name: input.name, top: input.pixelRect[1], left: input.pixelRect[0],
       imageData: layerPixels(pixels, input.pixelRect),
       mask: { top: input.maskRect[1], left: input.maskRect[0], defaultColor: 0,
+        disabled: !session.cropToFrames,
         positionRelativeToLayer: false, imageData: layerPixels(mask, input.maskRect) },
       placedLayer: {
         id: input.id, placed: input.placed, type: 'raster',
@@ -236,7 +237,16 @@ globalThis.PitchdogPSD = {
       width: session.width, height: session.height, imageData: composite,
       children: session.layers, linkedFiles: [...session.files.values()], imageResources: resources(),
     }, options))
-    verify(inner, session.layers.map(layer => layer.name), [...session.files.values()])
+    const parsedInner = verify(inner, session.layers.map(layer => layer.name), [...session.files.values()])
+    for (const [index, layer] of parsedInner.children.entries()) {
+      const expected = session.layers[index]
+      if (!expected.placedLayer) continue
+      if (!layer.mask || layer.mask.disabled !== !session.cropToFrames ||
+          layer.placedLayer?.id !== expected.placedLayer.id ||
+          layer.placedLayer?.transform?.some((value, i) => value !== expected.placedLayer.transform[i])) {
+        throw new Error('PSD verification failed: editable framing mask or image placement changed')
+      }
+    }
     // Drop the native per-role previews and originals before serializing the outer PSD.
     session.layers = []
     session.files.clear()

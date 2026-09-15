@@ -151,7 +151,7 @@ struct NativeShortcutSheet: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
       HStack {
-        Text("Keyboard Shortcuts").font(.title2)
+        Text("Keyboard Shortcuts").workbenchText(.sectionTitle)
         Spacer()
         Button("Done") { controller.showShortcuts = false }.keyboardShortcut(.cancelAction)
       }
@@ -163,7 +163,7 @@ struct NativeShortcutSheet: View {
           ForEach(Array(NativeShortcuts.definitions.enumerated()), id: \.offset) { _, item in
             if !["right", "down", "]"].contains(item.key) {
               GridRow {
-                Text(item.display).font(.system(.body, design: .monospaced))
+                Text(item.display).workbenchText(.code)
                 Text(item.label)
               }
             }

@@ -345,7 +345,7 @@ enum NativeSlideRenderer {
         let ratio = bodySize / NativeTypeSize.preset(role: "body", step: type.body.step).size
         let captionScale = ["caption", "credit"].contains(block.role) ? 0.75 : 1.0
         let size = preset.size * ratio * captionScale
-        font = (role.fontName == "System" ? nil : NSFont(name: role.fontName, size: size))
+        font = role.resolvedFont(size: size, headline: block.role == "headline")
           ?? NSFont.systemFont(ofSize: size, weight: block.role == "headline" ? .semibold : .regular)
         paragraph.lineSpacing = 0
         paragraph.minimumLineHeight = preset.leading * ratio * captionScale

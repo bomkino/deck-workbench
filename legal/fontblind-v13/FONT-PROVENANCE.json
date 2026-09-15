@@ -10,12 +10,36 @@
   "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
   "licenseFile": "FONT-LICENSE.md",
   "files": [
-    { "name": "pd-head.woff2", "bytes": 270176, "sha256": "528dd6d9d5d79265f4e3589523a250cd652110d1380e87a0252bca9489da50e9" },
-    { "name": "pd-head-alt.woff2", "bytes": 276308, "sha256": "bf4db03493580a52e3e01cb6aec2fe791da8e7293d6083e2c567c3bb3f0b927a" },
-    { "name": "pd-body-roman.woff2", "bytes": 171820, "sha256": "433a1b69a8e8a903478b978c198b879824541dc9eb62db959058ae37a250819f" },
-    { "name": "pd-body-italic.woff2", "bytes": 218976, "sha256": "6bd35c9ad364e585ca5667c1df74f892eebbe32237005ba926b54ffa61df8a78" },
-    { "name": "pd-body-alt-roman.woff2", "bytes": 169540, "sha256": "4ae6044273de9010d1a9660001319c34a4a8ece764279bb7f1e0f81f01dca85b" },
-    { "name": "pd-body-alt-italic.woff2", "bytes": 179020, "sha256": "9f59a7f058ba824e0b3e2760204c0c70b7cfb2f61956a460b730e486b1209285" },
+    {
+      "name": "pd-head.woff2",
+      "bytes": 270176,
+      "sha256": "528dd6d9d5d79265f4e3589523a250cd652110d1380e87a0252bca9489da50e9"
+    },
+    {
+      "name": "pd-head-alt.woff2",
+      "bytes": 276308,
+      "sha256": "bf4db03493580a52e3e01cb6aec2fe791da8e7293d6083e2c567c3bb3f0b927a"
+    },
+    {
+      "name": "pd-body-roman.woff2",
+      "bytes": 171820,
+      "sha256": "433a1b69a8e8a903478b978c198b879824541dc9eb62db959058ae37a250819f"
+    },
+    {
+      "name": "pd-body-italic.woff2",
+      "bytes": 218976,
+      "sha256": "6bd35c9ad364e585ca5667c1df74f892eebbe32237005ba926b54ffa61df8a78"
+    },
+    {
+      "name": "pd-body-alt-roman.woff2",
+      "bytes": 169540,
+      "sha256": "4ae6044273de9010d1a9660001319c34a4a8ece764279bb7f1e0f81f01dca85b"
+    },
+    {
+      "name": "pd-body-alt-italic.woff2",
+      "bytes": 179020,
+      "sha256": "9f59a7f058ba824e0b3e2760204c0c70b7cfb2f61956a460b730e486b1209285"
+    },
     {
       "name": "pd-eyebrow-site.woff2",
       "sourcePath": "assets/fonts/pd-eyebrow-site.woff2",
@@ -26,8 +50,14 @@
       "sha256": "d461ef973c2c429c29235c30c9100aaa92e36d2db37796b6e194f71be1074b74",
       "transform": {
         "tool": "fonttools varLib.instancer 4.61",
-        "arguments": ["wdth=87.5", "ital=0", "--no-recalc-timestamp"],
-        "retainedAxes": { "wght": "100 900" },
+        "arguments": [
+          "wdth=87.5",
+          "ital=0",
+          "--no-recalc-timestamp"
+        ],
+        "retainedAxes": {
+          "wght": "100 900"
+        },
         "unicodeCoverage": "unchanged"
       }
     },
@@ -51,10 +81,17 @@
       "distributionPath": "apps/macos/Resources/Fonts/pd-body-700.otf",
       "bytes": 69564,
       "sha256": "78a04f141bb723d746aa40802bc4a365277f489fab09e11eb78e9b591d90fdbc"
+    },
+    {
+      "name": "pd-head-medium.ttf",
+      "sourcePath": "pitchdog-font-handoff-v13/03-STATIC-ANCHORS-NATIVE/pd-head/pd-head-medium.ttf",
+      "distributionPath": "apps/macos/Resources/Fonts/pd-head-medium.ttf",
+      "bytes": 145840,
+      "sha256": "5e7539a4e245509fd78e95bc754358dfaaa10d6f81351272cc12e011c286d7ba"
     }
   ],
   "knownIssues": [
     "PD Eyebrow's native internal family name is Untitled / Untitled Regular; Deck Workbench uses only the web font in this release.",
-    "The packaged PD Eyebrow webfont pins the source's unused width and italic axes to the UI contract while retaining its complete character map and 100–900 weight axis."
+    "The packaged PD Eyebrow webfont pins the source's unused width and italic axes to the UI contract while retaining its complete character map and 100\u2013900 weight axis."
   ]
 }

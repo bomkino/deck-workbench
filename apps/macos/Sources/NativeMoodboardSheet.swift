@@ -12,7 +12,7 @@ struct NativeMoodboardSheet: View {
   }
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
-      Text("Add a moodboard").font(.title2)
+      Text("Add a moodboard").workbenchText(.sectionTitle)
       Text("Choose up to 12 images. Selection order sets the initial grid; drag frames and crop images in Assemble.").foregroundStyle(.secondary)
       HStack {
         TextField("Search media", text: $query).textFieldStyle(.roundedBorder)
@@ -27,8 +27,8 @@ struct NativeMoodboardSheet: View {
             } label: {
               VStack(alignment: .leading, spacing: 6) {
                 NativeAssetImage(source: controller.sources[asset.id], longestSide: 384).frame(height: 90).clipped()
-                Text(asset.filename).lineLimit(2).font(.caption).frame(maxWidth: .infinity, alignment: .leading)
-                Text(selected.firstIndex(of: asset.id).map { "Selected · \($0 + 1)" } ?? "Choose").font(.caption).foregroundStyle(.secondary)
+                Text(asset.filename).lineLimit(2).workbenchText(.caption).frame(maxWidth: .infinity, alignment: .leading)
+                Text(selected.firstIndex(of: asset.id).map { "Selected · \($0 + 1)" } ?? "Choose").workbenchText(.caption).foregroundStyle(.secondary)
               }.padding(8).background(selected.contains(asset.id) ? Color.accentColor.opacity(0.18) : Color.secondary.opacity(0.07)).clipShape(RoundedRectangle(cornerRadius: 8))
             }.buttonStyle(.plain).disabled(selected.count == 12 && !selected.contains(asset.id))
               .accessibilityLabel("\(asset.filename), \(selected.contains(asset.id) ? "selected" : "not selected")")
@@ -38,7 +38,7 @@ struct NativeMoodboardSheet: View {
       }
       HStack {
         Button("Cancel") { controller.showMoodboard = false }.keyboardShortcut(.cancelAction)
-        Text("\(selected.count) / 12 images").font(.caption).foregroundStyle(.secondary)
+        Text("\(selected.count) / 12 images").workbenchText(.caption).foregroundStyle(.secondary)
         Spacer()
         Button(selected.isEmpty ? "Add blank moodboard" : "Add moodboard") { controller.addSpecialSlide("moodboard", assetIDs: selected) }.buttonStyle(.borderedProminent)
       }
