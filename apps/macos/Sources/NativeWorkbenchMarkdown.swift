@@ -32,6 +32,8 @@ struct WorkbenchProductionSlide: Codable, Sendable {
   var title: String
   var intent: String
   var appearance: String? = nil
+  var palette: NativeStarterPalette? = nil
+  var colourRoles: [String: String]? = nil
   var notes: String
   var blocks: [WorkbenchProductionBlock]
   var projection: [WorkbenchCopyProjection]
@@ -155,9 +157,14 @@ enum NativeWorkbenchMarkdown {
       for field in projection {
         chunks.append("#### \(field.role.capitalized)\n\nState: \(field.state)" + (field.state == "present" ? "\n" + escapeCopy(field.text) : ""))
       }
+      let layout = slide.settings.layout
+      let carriesColours = layout.palette != nil || layout.appearance != nil || layout.starterType != nil
+      let type = layout.starterType ?? .standard
       entries.append(WorkbenchProductionSlide(slideID: slide.id, sectionID: section.id,
         sourceOrdinal: ordinal + 1, exportOrdinal: index + 1, title: slide.title,
-        intent: slide.intent, appearance: slide.settings.layout.appearance,
+        intent: slide.intent, appearance: layout.appearance,
+        palette: carriesColours ? layout.palette ?? .standard : nil,
+        colourRoles: carriesColours ? ["head": type.head.colorRole, "sub": type.sub.colorRole, "body": type.body.colorRole] : nil,
         notes: slide.settings.notes, blocks: blocks, projection: projection))
     }
     let markdown = chunks.joined(separator: "\n\n") + "\n"

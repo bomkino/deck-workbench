@@ -10,7 +10,7 @@ final class NativeParityProbeDelegate: NSObject, NSApplicationDelegate {
     Task {
       do {
         try await NativeCompatibilityChecks.run()
-        try NativeProductionCopyChecks.run()
+        try NativeProductionCopyChecks.run(output: output)
         try NativeStarterStyleChecks.run()
         try await Task.detached(priority: .utility) { [output] in
           try NativePSDChecks.run(output: output)

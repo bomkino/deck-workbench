@@ -96,8 +96,9 @@ function validateNativeState(value: unknown, deck?: DeckSnapshot): NativeSlideSt
   if (layout.palette !== undefined) {
     const colors = assertRecord(assertRecord(layout.palette, 'palette').colors, 'palette colours')
     const roles = ['background', 'text', 'muted', 'accent1', 'accent2', 'accent3', 'accent4', 'mono']
-    if (Object.keys(colors).length !== roles.length) throw new Error('Palette needs every colour role')
-    for (const name of roles) {
+    const optional = ['raised', 'line', ...['accent1', 'accent2', 'accent3', 'accent4', 'mono'].flatMap((role) => ['solid', 'onSolid', 'soft', 'onSoft', 'line'].map((usage) => `${role}.${usage}`))]
+    if (roles.some((role) => !(role in colors)) || Object.keys(colors).some((role) => !roles.includes(role) && !optional.includes(role))) throw new Error('Palette needs every colour role and only supported fill roles')
+    for (const name of Object.keys(colors)) {
       const pair = assertRecord(colors[name], name)
       for (const appearance of ['dark', 'light']) if (typeof pair[appearance] !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(pair[appearance] as string)) throw new Error('Palette colours need six-digit hex values')
     }

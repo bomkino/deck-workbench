@@ -32,6 +32,35 @@ test('independent type and palette edits preserve crop, copy and per-slide appea
   assert.equal(s.checkpoint.revision, revision)
 })
 
+test('library palette is a frozen undoable snapshot and old eight-role custom palettes still reopen', () => {
+  const s = session()
+  send(s, 'native.slide.add', { slideId: 'two', sectionId: 'part', afterSlideId: 'one', title: 'Second' })
+  send(s, 'native.slide.patch', { slideId: 'one', patch: { layout: { appearance: 'light' } } })
+  const roles = ['background', 'text', 'muted', 'accent1', 'accent2', 'accent3', 'accent4', 'mono']
+  const old = { colors: Object.fromEntries(roles.map(role => [role, { dark: '#123456', light: '#FEDCBA' }])) }
+  send(s, 'native.layout.apply', { slideIds: ['one', 'two'], layout: { palette: old } })
+  assert.deepEqual(slides(k.open(plain(k.serializeSession(s)))).map(slide => slide.native.layout.palette), [old, old])
+  const before = slides(s)
+  const library = JSON.parse(fs.readFileSync(new URL('../apps/macos/Resources/StarterKit/Colour System/pitchdog-colours-v1.json', import.meta.url)))
+  const palette = structuredClone(old), base = library.bases.find(base => base.id === 'sand'), family = library.families.find(family => family.id === 'blue')
+  for (const role of Object.keys(base.dark)) palette.colors[role] = { dark: base.dark[role], light: base.light[role] }
+  for (const usage of ['text', 'solid', 'onSolid', 'soft', 'onSoft', 'line']) {
+    palette.colors[usage === 'text' ? 'accent1' : `accent1.${usage}`] = { dark: family.dark[usage], light: family.light[usage] }
+  }
+  send(s, 'native.layout.apply', { slideIds: ['one', 'two'], layout: { palette } })
+  const after = slides(s)
+  assert.deepEqual(after.map(slide => slide.native.layout.appearance), ['light', 'dark'])
+  assert.deepEqual(after.map(slide => slide.contentBlocks), before.map(slide => slide.contentBlocks))
+  assert.deepEqual(after.map(slide => slide.native.layout.palette), [palette, palette])
+  history(s); assert.deepEqual(slides(s), before); history(s, true)
+  family.dark.text = '#000000'
+  assert.deepEqual(slides(k.open(plain(k.serializeSession(s)))), after)
+  for (const colors of [{ ...palette.colors, 'accent1.solid': { dark: 'broken', light: '#000000' } }, { ...palette.colors, invented: { dark: '#000000', light: '#FFFFFF' } }]) {
+    assert.equal(prepare(s, 'native.slide.patch', { slideId: 'one', patch: { layout: { palette: { colors } } } }).ok, false)
+  }
+  assert.deepEqual(slides(s), after)
+})
+
 test('twelve-image moodboard inserts atomically, keeps source identity and returns displaced slots to shortlist', () => {
   const s = session()
   const assets = Array.from({ length: 12 }, (_, i) => ({ asset: { id: `image-${i}`, label: `${i}.png`, mediaKind: 'image', availability: 'available' }, fingerprint: `hash-${i}` }))

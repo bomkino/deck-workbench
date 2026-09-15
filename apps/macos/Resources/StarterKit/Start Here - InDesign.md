@@ -41,9 +41,21 @@ The five flat layers, front to back, are **TEXT → PSD - CHARACTERS → GRADIEN
 
 ## Bring in your Workbench copy
 
-The quickest route is **Workbench → Export Handoff → Build InDesign automatically**. This creates a new `InDesign/Deck.indd`, already filled with your writing and linked PSDs. Open that document to begin.
+For copy **and** numbered PSDs, run **Build Deck from Workbench.jsx** from Scripts → User; follow [Deck Production](<Start Here - Deck Production.md>). The steps below are your older copy-only importer. Both use the one-page starter.
 
-For a manual build, use the adjacent [Deck Production guide](Start%20Here%20-%20Deck%20Production.md). Never import into the reusable starter itself.
+1. Put `workbench.md` and your existing `Workbench to InDesign.jsx` beside the saved project INDD.
+2. Open **Window → Utilities → Scripts → User**.
+3. Run your Workbench importer.
+4. Read its result. Review any pages it reports as overset.
+5. Save the populated deck.
+
+**You should see:** one slide for each Workbench slide, with your copy in the original frame.
+
+Run the importer before adding layouts or a contents page. It needs the original one-page `Head. / Sub. / Body.` setup. Your importer makes a dated backup and leaves the populated document unsaved for review.
+
+If your Markdown includes a `Canvas:` line, use `widescreen-1920x1080` for the 1920 starter or `cinemascope-2576x1080` for the 2576 starter.
+
+If the importer is missing from Scripts → User, copy `Workbench to InDesign.jsx` into that installation's User Scripts folder. Your existing **Import Workbench.jsx** shortcut was installed in InDesign Beta; the regular InDesign installation has a separate folder.
 
 ## Choose your fonts
 
@@ -83,6 +95,10 @@ Bullets, numbered lists and justified body text follow **Project | Body**, inclu
 Double-click **Project | Body**, choose **General**, and change **Based On** to a different preset in the **Body** group. Use the matching **Head** or **Sub** group for those roles.
 
 ## Change colours
+
+**Fastest:** run **Deck Colour Controls** from User Scripts. Choose a base plus your Primary and accents, review both dark/light previews, then Apply. One Undo restores the change. Both canvas sizes include the same controls. [Step-by-step colour guide](<Deck Colour Controls - Read me.md>).
+
+Use **Character Styles / Object Styles → Project Colours** for the friendly Primary, Secondary, Accent 3, Accent 4 and Mono roles. Use the matching **Ink on fill** for every coloured shape. The older Pink/Purple/Blue/Teal names below stay as compatibility slots.
 
 Open **Window → Color → Swatches**. Double-click a named swatch to edit its RGB values.
 

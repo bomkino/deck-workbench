@@ -1,0 +1,86 @@
+/* pitch.dog Colour Core 1.0.0. ES3, local JSON only. */
+var PitchdogColours = (function () {
+    var here=File($.fileName).parent, LABEL='pitchdog.colours.selection', FROZEN='pitchdog.colours.resolved';
+    var aliases=['Pink','Purple','Blue','Teal','Mono'], labels=['Primary','Secondary','Accent 3','Accent 4','Mono'], keys=['accent1','accent2','accent3','accent4','mono'];
+    function fail(s){throw new Error(s);}
+    function own(o,k){return Object.prototype.hasOwnProperty.call(o,k);}
+    function quote(s){return '"'+String(s).replace(/\\/g,'\\\\').replace(/"/g,'\\"').replace(/\r/g,'\\r').replace(/\n/g,'\\n').replace(/\t/g,'\\t').replace(/[\x00-\x1f]/g,function(c){return '\\u'+('0000'+c.charCodeAt(0).toString(16)).slice(-4);})+'"';}
+    function json(x){if(x===null)return 'null';if(typeof x==='string')return quote(x);if(typeof x==='number'||typeof x==='boolean')return String(x);var a=[],k;if(x instanceof Array){for(k=0;k<x.length;k++)a.push(json(x[k]));return '['+a.join(',')+']';}for(k in x)if(own(x,k))a.push(quote(k)+':'+json(x[k]));return '{'+a.join(',')+'}';}
+        function parseJSON(source) {
+        var at=0,depth=0;
+        function white(){while(at<source.length&&/[ \t\r\n]/.test(source.charAt(at)))at++;}
+        function string(){var out='',c,e,hex;if(source.charAt(at++)!=='"')fail('Expected a JSON string.');while(at<source.length){c=source.charAt(at++);if(c==='"')return out;if(c==='\\'){e=source.charAt(at++);if(e==='u'){hex=source.substr(at,4);if(!/^[0-9a-fA-F]{4}$/.test(hex))fail('Invalid JSON Unicode escape.');out+=String.fromCharCode(parseInt(hex,16));at+=4;}else if(e==='"'||e==='\\'||e==='/')out+=e;else if(e==='b')out+='\b';else if(e==='f')out+='\f';else if(e==='n')out+='\n';else if(e==='r')out+='\r';else if(e==='t')out+='\t';else fail('Invalid JSON escape.');}else{if(c.charCodeAt(0)<32)fail('Invalid JSON control character.');out+=c;}}fail('Unclosed JSON string.');}
+        function value(){white();if(++depth>64)fail('Manifest nesting is too deep.');var c=source.charAt(at),out,key,m;if(c==='"')out=string();else if(c==='{'||c==='['){at++;out=c==='{'?{}:[];white();if(source.charAt(at)===(c==='{'?'}':']'))at++;else while(true){if(c==='{'){white();key=string();if(key==='__proto__'||key==='constructor'||key==='prototype'||Object.prototype.hasOwnProperty.call(out,key))fail('Unsafe or duplicate manifest key.');white();if(source.charAt(at++)!==':')fail('Expected a JSON colon.');out[key]=value();}else out.push(value());white();if(source.charAt(at)===(c==='{'?'}':']')){at++;break;}if(source.charAt(at++)!==',')fail('Expected a JSON comma.');}}else if(source.substr(at,4)==='true'){out=true;at+=4;}else if(source.substr(at,5)==='false'){out=false;at+=5;}else if(source.substr(at,4)==='null'){out=null;at+=4;}else{m=/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/.exec(source.substr(at));if(!m)fail('Invalid JSON value.');out=Number(m[0]);if(!isFinite(out))fail('Invalid JSON number.');at+=m[0].length;}depth--;return out;}
+        var result=value();white();if(at!==source.length)fail('Unexpected content after manifest.');return result;
+    }
+
+    function rgb(hex){if(typeof hex!=='string'||!/^#[0-9a-f]{6}$/i.test(hex))fail('Invalid colour value: '+hex);return [parseInt(hex.substr(1,2),16),parseInt(hex.substr(3,2),16),parseInt(hex.substr(5,2),16)];}
+    function hex(v){var s='#';for(var i=0;i<3;i++)s+=('0'+Math.max(0,Math.min(255,Math.round(v[i]))).toString(16)).slice(-2);return s.toUpperCase();}
+    function luminance(h){var a=rgb(h),n;for(var i=0;i<3;i++){n=a[i]/255;a[i]=n<=0.04045?n/12.92:Math.pow((n+0.055)/1.055,2.4);}return a[0]*0.2126+a[1]*0.7152+a[2]*0.0722;}
+    function contrast(a,b){var x=luminance(a),y=luminance(b);return (Math.max(x,y)+0.05)/(Math.min(x,y)+0.05);}
+    function ink(fill){return contrast(fill,'#FFFFFF')>=contrast(fill,'#000000')?'#FFFFFF':'#000000';}
+    function read(file){file=File(file);if(!file.exists||file.length>4*1024*1024)fail('Colour library missing or too large: '+file.fsName);file.encoding='UTF-8';if(!file.open('r'))fail('Cannot read colour library.');var s;try{s=file.read();}finally{file.close();}return parseJSON(s);}
+    function library(){var l=read(File(here.fsName+'/pitchdog-colours-v1.json'));if(l.schema!=='pitchdog-colours/1'||!(l.families instanceof Array)||!(l.bases instanceof Array))fail('Unsupported colour library.');return l;}
+    function byID(list,id){for(var i=0;i<list.length;i++)if(list[i].id===id)return list[i];fail('Colour library has no '+id+'.');}
+    function pair(c,key,mode,value){if(!c[key])c[key]={};c[key][mode]=value;rgb(value);}
+    function resolve(l,s){
+        var base=byID(l.bases,s.base), c={},modes=['dark','light'],parts=['background','text','muted','raised','line'];
+        for(var m=0;m<2;m++)for(var p=0;p<parts.length;p++)pair(c,parts[p],modes[m],base[modes[m]][parts[p]]);
+        for(var i=0;i<5;i++){
+            var id=i===4?'gray':s.accents[i];if(s.mono)id='gray';
+            var family=byID(l.families,id),roles=['text','solid','onSolid','soft','onSoft','line'];
+            for(m=0;m<2;m++)for(p=0;p<roles.length;p++)pair(c,keys[i]+(p===0?'':'.'+roles[p]),modes[m],family[modes[m]][roles[p]]);
+        }
+        return {colors:c};
+    }
+    function selected(doc){try{var raw=doc.extractLabel(LABEL);if(raw)return parseJSON(raw);}catch(e){}return {version:'1.0.0',base:'studio',accents:['pink','purple','blue','teal'],mono:false};}
+    function validate(p){if(!p||!p.colors)fail('Missing resolved project colours.');var c=p.colors,k,modes=['dark','light'];for(k in c)if(own(c,k)){if(!/^(background|text|muted|raised|line|(?:accent[1-4]|mono)(?:\.(?:solid|onSolid|soft|onSoft|line))?)$/.test(k))fail('Unknown colour role '+k);for(var m=0;m<2;m++)rgb(c[k][modes[m]]);}if(!c.background||!c.text)fail('A palette needs background and text.');return p;}
+    function report(p){validate(p);var a=[],min=100,c=p.colors, modes=['dark','light'];function test(label,x,y,required){var r=contrast(x,y);min=Math.min(min,r);if(r+0.00001<required)a.push(label+' '+r.toFixed(2)+':1 (needs '+required+':1)');}
+        for(var m=0;m<2;m++){var mode=modes[m];test('Main text / '+mode,c.text[mode],c.background[mode],4.5);if(c.muted)test('Muted / '+mode,c.muted[mode],c.background[mode],4.5);if(c.raised)test('Text on raised / '+mode,c.text[mode],c.raised[mode],4.5);if(c.line)test('Divider / '+mode,c.line[mode],c.background[mode],3);
+            for(var i=0;i<5;i++){var k=keys[i];if(c[k])test(labels[i]+' text / '+mode,c[k][mode],c.background[mode],4.5);if(c[k+'.solid']&&c[k+'.onSolid'])test(labels[i]+' filled label / '+mode,c[k+'.onSolid'][mode],c[k+'.solid'][mode],4.5);if(c[k+'.soft']&&c[k+'.onSoft'])test(labels[i]+' soft label / '+mode,c[k+'.onSoft'][mode],c[k+'.soft'][mode],4.5);if(c[k+'.line'])test(labels[i]+' line / '+mode,c[k+'.line'][mode],c.background[mode],3);}
+        }return {ok:a.length===0,issues:a,minimum:min};
+    }
+    function colour(doc,name,value){var x=doc.colors.itemByName(name);if(!x.isValid)x=doc.colors.add({name:name,model:ColorModel.PROCESS,space:ColorSpace.RGB,colorValue:rgb(value)});else{x.model=ColorModel.PROCESS;x.space=ColorSpace.RGB;x.colorValue=rgb(value);}return x;}
+    function nameFor(role,mode){var ending=' (on '+mode+')',i,parts=role.split('.');for(i=0;i<5;i++)if(parts[0]===keys[i]){if(parts.length===1)return 'Accent - '+aliases[i]+ending;var words={solid:'Fill',onSolid:'Ink on fill',soft:'Soft fill',onSoft:'Ink on soft',line:'Line'};return 'PD '+labels[i]+' - '+words[parts[1]]+ending;}var names={text:'PD Ink - Main'+ending,muted:'Ink - Muted'+ending,raised:mode==='dark'?'Surface - Raised':'Surface - Raised (light)',line:'Rule - Divider'+ending,background:mode==='dark'?'warm-black':'warm-white'};return names[role];}
+    function group(doc,type){var gs=doc[type],g=gs.itemByName('Project Colours');return g.isValid?g:gs.add({name:'Project Colours'});}
+    function charStyle(g,name,c){var s=g.characterStyles.itemByName(name);if(!s.isValid)s=g.characterStyles.add({name:name});s.fillColor=c;s.fillTint=100;return s;}
+    function objectStyle(g,name,c,isLine){var s=g.objectStyles.itemByName(name);if(!s.isValid){s=g.objectStyles.add({name:name});var props=s.properties;for(var flag in props)if(own(props,flag)&&/^enable/.test(flag)&&typeof props[flag]==='boolean')s[flag]=false;}if(isLine){s.enableStroke=true;s.strokeColor=c;s.strokeTint=100;}else{s.enableFill=true;s.fillColor=c;s.fillTint=100;}return s;}
+    function swatches(doc,p){var result={},c=p.colors,modes=['dark','light'],k;for(k in c)if(own(c,k)){result[k]={};for(var m=0;m<2;m++)result[k][modes[m]]=colour(doc,nameFor(k,modes[m]),c[k][modes[m]]);}return result;}
+    function bindStyles(doc,s){
+        var cg=group(doc,'characterStyleGroups'),og=group(doc,'objectStyleGroups'),modes=['dark','light'];
+        for(var i=0;i<5;i++)for(var m=0;m<2;m++){
+            var role=keys[i],mode=modes[m],tail=' (on '+mode+')',prefix=labels[i];
+            if(s[role])charStyle(cg,prefix+' - Text'+tail,s[role][mode]);
+            if(s[role+'.onSolid'])charStyle(cg,prefix+' - Ink on fill'+tail,s[role+'.onSolid'][mode]);
+            if(s[role+'.onSoft'])charStyle(cg,prefix+' - Ink on soft'+tail,s[role+'.onSoft'][mode]);
+            if(s[role+'.solid'])objectStyle(og,prefix+' - Fill'+tail,s[role+'.solid'][mode],false);
+            if(s[role+'.soft'])objectStyle(og,prefix+' - Soft fill'+tail,s[role+'.soft'][mode],false);
+            if(s[role+'.line'])objectStyle(og,prefix+' - Line'+tail,s[role+'.line'][mode],true);
+        }
+        // Main ink is separate from the opposite page background. Preserve every
+        // paragraph's family, size, leading and hierarchy while changing colour.
+        var collections=[doc.allParagraphStyles,doc.allCharacterStyles];
+        for(var col=0;col<collections.length;col++)for(i=0;i<collections[col].length;i++){
+            var st=collections[col][i],n;try{n=st.fillColor.name;}catch(e){continue;}
+            if(n==='warm-black')st.fillColor=s.text.light;
+            else if(n==='warm-white')st.fillColor=s.text.dark;
+        }
+    }
+    function apply(doc,p,selection){
+        validate(p);var s=swatches(doc,p);bindStyles(doc,s);
+        // Imported slide palettes carry their frozen colour roles in names. An
+        // explicit project Apply changes those role swatches, too.
+        for(var i=0;i<doc.colors.length;i++){
+            var sw=doc.colors[i],match=/^PD Export [0-9]+ \| (.+) \(on (dark|light)\)$/.exec(sw.name);
+            if(match&&p.colors[match[1]])colour(doc,sw.name,p.colors[match[1]][match[2]]);
+        }
+        doc.insertLabel(FROZEN,json(p));if(selection)doc.insertLabel(LABEL,json(selection));doc.recompose();return s;
+    }
+    function existing(doc){var c={},modes=['dark','light'];function current(name){var col=doc.colors.itemByName(name);if(!col.isValid||col.space!==ColorSpace.RGB)fail('Use the RGB pitch.dog starter; missing '+name);return hex(col.colorValue);}
+        for(var m=0;m<2;m++){var mode=modes[m];pair(c,'background',mode,current(mode==='dark'?'warm-black':'warm-white'));pair(c,'text',mode,current(mode==='dark'?'warm-white':'warm-black'));pair(c,'muted',mode,current('Ink - Muted (on '+mode+')'));pair(c,'raised',mode,current(mode==='dark'?'Surface - Raised':'Surface - Raised (light)'));pair(c,'line',mode,current('Rule - Divider (on '+mode+')'));
+            for(var i=0;i<5;i++){var v=current('Accent - '+aliases[i]+' (on '+mode+')');pair(c,keys[i],mode,v);pair(c,keys[i]+'.solid',mode,v);pair(c,keys[i]+'.onSolid',mode,ink(v));pair(c,keys[i]+'.soft',mode,c.raised[mode]);pair(c,keys[i]+'.onSoft',mode,c.text[mode]);pair(c,keys[i]+'.line',mode,v);}
+        }return {colors:c};
+    }
+    function initialise(doc){var p;try{var raw=doc.extractLabel(FROZEN);if(raw)p=parseJSON(raw);}catch(e){}if(!p)p=existing(doc);return apply(doc,p,null);}
+    return {library:library,resolve:resolve,selected:selected,validate:validate,report:report,apply:apply,initialise:initialise,rgb:rgb,hex:hex,contrast:contrast,json:json,parse:parseJSON,names:labels,roles:keys,nameFor:nameFor};
+}());

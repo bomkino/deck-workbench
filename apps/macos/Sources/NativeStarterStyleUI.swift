@@ -5,12 +5,17 @@ struct NativeStarterStyleSheet: View {
   @ObservedObject var controller: NativeWorkbenchController
   @State private var type = NativeStarterType.standard
   @State private var palette = NativeStarterPalette.standard
+  @State private var library: NativeColourLibrary?
+  @State private var libraryError: String?
   @State private var tab = "type"
-  @State private var allSlides = false
-  @Environment(\.workbenchInterfaceScale) private var interfaceScale
-  private var roleLabelWidth: CGFloat { 95 * max(1, interfaceScale) }
+  @State private var typeAllSlides = false
+  @State private var colourAllSlides = true
+  private var allSlides: Bool { tab == "type" ? typeAllSlides : colourAllSlides }
+  private var scope: Binding<Bool> {
+    Binding(get: { allSlides }, set: { if tab == "type" { typeAllSlides = $0 } else { colourAllSlides = $0 } })
+  }
   private var validPalette: Bool {
-    palette.colors.values.allSatisfy { pair in [pair.dark, pair.light].allSatisfy { $0.range(of: "^#[0-9A-Fa-f]{6}$", options: .regularExpression) != nil } }
+    palette.colors.values.allSatisfy { pair in [pair.dark, pair.light].allSatisfy(NativeColourLibrary.validHex) }
   }
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
@@ -31,23 +36,12 @@ struct NativeStarterStyleSheet: View {
             Text("Step 0 is Head 48, Sub 40 and Body 32. The same sizes apply at both slide widths. Review wrapping after changing fonts; Fit copy can reduce the rendered size.").workbenchText(.caption).foregroundStyle(.secondary)
             if !type.unavailableFonts.isEmpty { Text("Choose installed replacements for: " + type.unavailableFonts.joined(separator: ", ")).foregroundStyle(.orange) }
           } else {
-            Text("Four accents and a monochrome option. Each role has a dark-slide and a light-slide colour. Set each slide’s appearance in the inspector.").foregroundStyle(.secondary)
-            HStack { Text("Role").frame(width: roleLabelWidth, alignment: .leading); Text("On dark slides").frame(maxWidth: .infinity); Text("On light slides").frame(maxWidth: .infinity) }.workbenchText(.caption)
-            ForEach(NativeStarterPalette.roles, id: \.self) { role in
-              HStack {
-                Text(NativeStarterPalette.label(role)).frame(width: roleLabelWidth, alignment: .leading)
-                colourField(role, light: false)
-                colourField(role, light: true)
-              }
-            }
-            if !validPalette { Text("Use # followed by six hex digits, for example #24171D.").foregroundStyle(.orange) }
-            Text("Colour changes apply to role-based text and slide backgrounds. Image contrast still needs a visual check.").workbenchText(.caption).foregroundStyle(.secondary)
-            Button("Restore starter palette") { palette = .standard }.controlSize(.small)
+            NativePaletteEditor(palette: $palette, library: library, libraryError: libraryError)
           }
         }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 4)
       }
       Divider()
-      Toggle("Apply to every slide", isOn: $allSlides)
+      Toggle(tab == "type" ? "Apply type to every slide" : "Apply colours to every slide", isOn: scope)
       Text(allSlides ? "One Undo restores the previous settings. Each slide keeps its dark or light appearance." : "Changes apply to the current slide. One Undo restores its previous settings.").workbenchText(.caption).foregroundStyle(.secondary)
       HStack {
         Button("Cancel") { controller.showStarterStyle = false }.keyboardShortcut(.cancelAction)
@@ -60,15 +54,133 @@ struct NativeStarterStyleSheet: View {
         }.buttonStyle(.borderedProminent).disabled(tab == "type" ? !type.unavailableFonts.isEmpty : !validPalette)
       }.workbenchText(.action)
     }.padding(24).nativeSheetFrame(width: 670, height: 770)
-      .onAppear { type = controller.selectedSlide?.settings.layout.starterType ?? .standard; palette = controller.selectedSlide?.settings.layout.palette ?? .standard }
+      .onAppear {
+        type = controller.selectedSlide?.settings.layout.starterType ?? .standard
+        palette = controller.selectedSlide?.settings.layout.palette ?? .standard
+        do { library = try NativeColourLibrary.bundled() }
+        catch { libraryError = "The colour library could not be loaded. Your saved colours and custom hex editing are available." }
+      }
+  }
+}
+
+private struct NativePaletteEditor: View {
+  @Binding var palette: NativeStarterPalette
+  let library: NativeColourLibrary?
+  let libraryError: String?
+  @Environment(\.workbenchInterfaceScale) private var interfaceScale
+  private var roleLabelWidth: CGFloat { 95 * max(1, interfaceScale) }
+  private var valid: Bool { palette.colors.values.allSatisfy { NativeColourLibrary.validHex($0.dark) && NativeColourLibrary.validHex($0.light) } }
+  var body: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      Text("Choose a neutral base and a main accent. Add secondary, third or fourth accents only if needed. Mono is always available; unused accents never appear automatically.").foregroundStyle(.secondary)
+      if let library {
+        Picker("Neutral base", selection: Binding(get: { library.bases.first(where: { $0.matches(palette) })?.id ?? "custom" }, set: { id in
+          if let base = library.bases.first(where: { $0.id == id }) { palette.use(base) }
+        })) {
+          Text("Current / custom").tag("custom")
+          ForEach(library.bases) { Text($0.label).tag($0.id) }
+        }
+        pairedSamples("text")
+        ForEach(["accent1", "accent2", "accent3", "accent4", "mono"], id: \.self) { role in familyPicker(role, library: library) }
+        Text("Text samples show contrast against this base. 4.5:1 is the normal-text target. Image backgrounds need a separate check.").workbenchText(.caption).foregroundStyle(.secondary)
+      }
+      if let libraryError { Text(libraryError).workbenchText(.caption).foregroundStyle(.secondary) }
+      DisclosureGroup("Custom hex colours") {
+        VStack(alignment: .leading, spacing: 10) {
+          HStack { Text("Role").frame(width: roleLabelWidth, alignment: .leading); Text("On dark slides").frame(maxWidth: .infinity); Text("On light slides").frame(maxWidth: .infinity) }.workbenchText(.caption)
+          ForEach(NativeStarterPalette.roles, id: \.self) { role in
+            HStack {
+              Text(NativeStarterPalette.label(role)).frame(width: roleLabelWidth, alignment: .leading)
+              colourField(role, light: false); colourField(role, light: true)
+            }
+          }
+          if palette.colors.keys.contains(where: { !NativeStarterPalette.roles.contains($0) }) {
+            DisclosureGroup("Fills, text on fills and lines") {
+              ForEach(palette.colors.keys.filter { !NativeStarterPalette.roles.contains($0) }.sorted(), id: \.self) { role in
+                VStack(alignment: .leading, spacing: 5) {
+                  Text(NativeStarterPalette.label(role)).workbenchText(.caption)
+                  HStack { colourField(role, light: false); colourField(role, light: true) }
+                  if role.hasSuffix(".onSolid") || role.hasSuffix(".onSoft") {
+                    let fillRole = role.replacingOccurrences(of: ".onSolid", with: ".solid").replacingOccurrences(of: ".onSoft", with: ".soft")
+                    HStack {
+                      NativeContrastLabel(foreground: palette.hex(role, appearance: "dark"), background: palette.hex(fillRole, appearance: "dark"), prefix: "Dark")
+                      NativeContrastLabel(foreground: palette.hex(role, appearance: "light"), background: palette.hex(fillRole, appearance: "light"), prefix: "Light")
+                    }
+                  }
+                }.padding(.vertical, 3)
+              }
+            }
+          }
+        }.padding(.top, 8)
+      }
+      if !valid { Text("Use # followed by six hex digits, for example #24171D.").foregroundStyle(.orange) }
+      Text("Nothing changes until Apply. Saved decks keep their exact colours, including custom edits, when the library is updated. Fill pairs travel with the production handoff.").workbenchText(.caption).foregroundStyle(.secondary)
+      Button("Restore starter palette") { palette = .standard }.controlSize(.small)
+    }
+  }
+  private func pairedSamples(_ role: String) -> some View {
+    HStack(spacing: 12) {
+      NativePaletteSample(palette: palette, role: role, appearance: "dark", label: "On dark")
+      NativePaletteSample(palette: palette, role: role, appearance: "light", label: "On light")
+    }
+  }
+  private func familyPicker(_ role: String, library: NativeColourLibrary) -> some View {
+    let families = role == "mono" ? library.families.filter(\.isNeutral) : library.families
+    let title = ["accent1": "Primary · main accent", "accent2": "Secondary · optional", "accent3": "Third · optional", "accent4": "Fourth · optional", "mono": "Monochrome"][role] ?? NativeStarterPalette.label(role)
+    return VStack(alignment: .leading, spacing: 7) {
+      Picker(title, selection: Binding(get: { families.first(where: { $0.matches(palette, role: role) })?.id ?? "custom" }, set: { id in
+        if let family = families.first(where: { $0.id == id }) { palette.use(family, role: role) }
+      })) {
+        Text("Current / custom").tag("custom")
+        ForEach(families) { Text($0.label).tag($0.id) }
+      }
+      pairedSamples(role)
+    }
   }
   private func colourField(_ role: String, light: Bool) -> some View {
-    let hex = light ? palette.colors[role]!.light : palette.colors[role]!.dark
+    let hex = palette.hex(role, appearance: light ? "light" : "dark")
     return HStack(spacing: 6) {
       RoundedRectangle(cornerRadius: 4).fill(Color(nsColor: NSColor(cgColor: NativeSlideRenderer.color(hex)) ?? .clear)).frame(width: 24, height: 24)
-      TextField(light ? "Light \(role)" : "Dark \(role)", text: Binding(get: { light ? palette.colors[role]!.light : palette.colors[role]!.dark }, set: { if light { palette.colors[role]!.light = $0.uppercased() } else { palette.colors[role]!.dark = $0.uppercased() } })).textFieldStyle(.roundedBorder)
+      TextField(light ? "Light \(role)" : "Dark \(role)", text: Binding(get: { palette.hex(role, appearance: light ? "light" : "dark") }, set: {
+        var pair = palette.colors[role] ?? NativeStarterPalette.standard.colors[role] ?? .init(dark: hex, light: hex)
+        if light { pair.light = $0.uppercased() } else { pair.dark = $0.uppercased() }
+        palette.colors[role] = pair
+      })).textFieldStyle(.roundedBorder)
         .accessibilityLabel("\(light ? "Light" : "Dark") slide \(NativeStarterPalette.label(role)) hex colour")
     }
+  }
+}
+
+private struct NativePaletteSample: View {
+  let palette: NativeStarterPalette
+  let role: String
+  let appearance: String
+  let label: String
+  private var foreground: String { palette.hex(role, appearance: appearance) }
+  private var background: String { palette.hex("background", appearance: appearance) }
+  var body: some View {
+    HStack(spacing: 9) {
+      Text("Aa").workbenchText(.panelTitle)
+        .foregroundStyle(Color(nsColor: NSColor(cgColor: NativeSlideRenderer.color(foreground)) ?? .clear))
+        .frame(width: 58, height: 38)
+        .background(Color(nsColor: NSColor(cgColor: NativeSlideRenderer.color(background)) ?? .clear), in: RoundedRectangle(cornerRadius: 6))
+      VStack(alignment: .leading, spacing: 2) {
+        Text(label).workbenchText(.caption)
+        NativeContrastLabel(foreground: foreground, background: background)
+      }
+      Spacer(minLength: 0)
+    }.frame(maxWidth: .infinity, alignment: .leading)
+  }
+}
+
+private struct NativeContrastLabel: View {
+  let foreground: String
+  let background: String
+  var prefix = ""
+  var body: some View {
+    let ratio = NativeColourLibrary.contrast(foreground, background)
+    Text((prefix.isEmpty ? "" : prefix + " · ") + (ratio.map { String(format: "%.2f:1 · %@", $0, $0 >= 4.5 ? "Pass" : "Below 4.5") } ?? "Check hex"))
+      .workbenchText(.caption).foregroundStyle((ratio ?? 0) >= 4.5 ? Color.secondary : Color.orange)
   }
 }
 

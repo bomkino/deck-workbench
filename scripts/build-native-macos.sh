@@ -18,7 +18,7 @@ cp build/generated/deck-kernel.js "$APP/Contents/Resources/Kernel/"
 cp build/generated/psd-encoder.js "$APP/Contents/Resources/Kernel/"
 cp apps/macos/Resources/Fonts/*.otf apps/macos/Resources/Fonts/*.ttf "$APP/Contents/Resources/Fonts/"
 cp LICENSE NOTICE THIRD_PARTY.md "$APP/Contents/Resources/Legal/"
-cp -R legal/fontblind-v13 legal/phosphor-icons legal/psd-encoder "$APP/Contents/Resources/Legal/"
+cp -R legal/fontblind-v13 legal/phosphor-icons legal/psd-encoder legal/radix-colors "$APP/Contents/Resources/Legal/"
 cp -R apps/macos/Resources/StarterKit "$APP/Contents/Resources/StarterKit"
 scripts/build-macos-icon.sh "$APP/Contents/Resources/DeckWorkbench.icns"
 swiftc -O -swift-version 5 -sdk "${SDKROOT:-$(xcrun --show-sdk-path)}" -target arm64-apple-macosx26.0 \

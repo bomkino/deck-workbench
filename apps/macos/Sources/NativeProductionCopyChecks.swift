@@ -6,7 +6,7 @@ enum NativeProductionCopyChecks {
   private static func require(_ condition: Bool, _ message: String) throws {
     if !condition { throw WorkbenchFailure(name: "AcceptanceFailure", message: message) }
   }
-  static func run() throws {
+  static func run(output: URL? = nil) throws {
     let exact = "\nFirst — ₹1,000.\nsoft return\n\nA paragraph.\n\n\nLast.\n"
     var structuralLines: [String] = []
     for prefix in NativeWorkbenchMarkdown.reserved {
@@ -46,14 +46,24 @@ enum NativeProductionCopyChecks {
       let manifest = try JSONDecoder().decode(WorkbenchProductionManifest.self, from: JSONEncoder().encode(result.manifest))
       try require(manifest.copySHA256 == NativeWorkbenchMarkdown.sha256(Data(result.markdown.utf8)), "Production copy digest did not survive manifest encoding")
       try require(manifest.slides.allSatisfy { $0.appearance == nil }, "Legacy slides gained an invented production appearance")
+      try require(manifest.slides.allSatisfy { $0.palette == nil && $0.colourRoles == nil }, "Untouched legacy slides gained a production palette")
       var mixed = snapshot
       var light = NativeSlideSettings.initial; light.layout.appearance = "light"
       var dark = NativeSlideSettings.initial; dark.layout.appearance = "dark"
+      light.layout.palette = .standard
+      light.layout.palette!.colors["accent1"] = .init(dark: "#ABCDEF", light: "#123456")
+      light.layout.palette!.colors["accent1.solid"] = .init(dark: "#2563EB", light: "#2563EB")
+      light.layout.starterType = .standard
+      light.layout.starterType!.head.colorRole = "accent1"
       mixed.deck.sections[0].slides[0].native = light
       mixed.deck.sections[0].slides[1].native = dark
       let mixedCopy = try NativeWorkbenchMarkdown.project(snapshot: mixed, slides: mixed.deck.slides)
       let mixedManifest = try JSONDecoder().decode(WorkbenchProductionManifest.self, from: JSONEncoder().encode(mixedCopy.manifest))
       try require(mixedManifest.slides.map(\.appearance) == ["light", "dark"], "Production appearance lost per-slide ownership")
+      try require(mixedManifest.slides[0].palette == light.layout.palette && mixedManifest.slides[1].palette == NativeStarterPalette.standard,
+        "Production dropped frozen custom or default colours")
+      try require(mixedManifest.slides[0].colourRoles == ["head": "accent1", "sub": "text", "body": "text"],
+        "Production dropped text colour roles")
       if width == 1920 {
         var combined = snapshot
         combined.deck.sections[0].slides[0].contentBlocks[1].setText(String(repeating: "a", count: 131_071))
@@ -93,9 +103,12 @@ enum NativeProductionCopyChecks {
       try require(reread.slides[0].blocks.map(\.text) == snapshot.deck.slides[0].copyBlocks.map(\.text), "Copy.md round trip changed literal fields or their boundary LFs")
       options.copy = false; options.productionCopy = true
       try require(NativeHandoffExporter.requiredAssetIDs(snapshot: snapshot, options: options).isEmpty, "Production writing alone requested artwork")
-      let writing = try NativeHandoffExporter.export(snapshot: snapshot, sources: [:], to: folder, options: options, progress: { _ in })
+      let writing = try NativeHandoffExporter.export(snapshot: mixed, sources: [:], to: folder, options: options, progress: { _ in })
       let writingDirectory = writing.url.appendingPathComponent("Production")
       let writingImport = try NativeCopyImport.read(writingDirectory.appendingPathComponent("workbench.md"))
+      let exportedManifest = try JSONDecoder().decode(WorkbenchProductionManifest.self, from: Data(contentsOf: writingDirectory.appendingPathComponent("workbench-production.json")))
+      try require(exportedManifest.slides[0].palette == light.layout.palette && exportedManifest.slides[0].colourRoles?["head"] == "accent1",
+        "The exported handoff lost its palette or headline colour")
       try require(writing.produced.contains("Production") && writingImport.slides.count == 2
         && !FileManager.default.fileExists(atPath: writingDirectory.appendingPathComponent("PSD").path), "Optional PSD export created artwork or omitted importable production writing")
       try require(writing.produced.contains("Starter Kit"), "Portable starter kit was omitted from production export")
@@ -104,10 +117,15 @@ enum NativeProductionCopyChecks {
         // Exercise the export boundary with only InDesign requested. Its writing,
         // PSDs and portable scripts must exist before an Adobe app is contacted.
         options.productionCopy = false; options.psd = false; options.inDesign = true
-        let automatic = try NativeHandoffExporter.export(snapshot: snapshot, sources: [:], to: folder, options: options, progress: { _ in })
+        let destination = output?.appendingPathComponent("colour-handoff-1920", isDirectory: true) ?? folder
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        let automatic = try NativeHandoffExporter.export(snapshot: mixed, sources: [:], to: destination, options: options, progress: { _ in })
         try require(automatic.produced.contains("Production") && automatic.produced.contains("Starter Kit"), "Automatic InDesign omitted its dependencies")
         try require(FileManager.default.fileExists(atPath: automatic.url.appendingPathComponent("Production/PSD/Slide 02.psd").path)
           && FileManager.default.fileExists(atPath: automatic.url.appendingPathComponent("Starter Kit/Automation/Photoshop/Export Slide PNGs.jsx").path), "The portable Adobe handoff is incomplete")
+        let automaticManifest = try JSONDecoder().decode(WorkbenchProductionManifest.self, from: Data(contentsOf: automatic.url.appendingPathComponent("Production/workbench-production.json")))
+        try require(automaticManifest.slides[0].palette == light.layout.palette && automaticManifest.slides[0].colourRoles?["head"] == "accent1",
+          "Automatic InDesign handoff lost the selected palette or headline colour")
       }
       var field = snapshot.deck.slides[0].copyBlocks[0]
       field.setText("")

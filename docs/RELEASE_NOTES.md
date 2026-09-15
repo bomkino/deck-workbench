@@ -1,3 +1,13 @@
+# v0.4.0 — project colours across Workbench and InDesign
+
+Choose a neutral base and independent Primary, Secondary, Third, Fourth and Mono families in **Type & colours → Colours**. The bundled library contains 31 Radix-based families and five bases, with dark/light text, solid-fill, foreground, soft-fill and line roles. Colour previews show contrast against the selected base. Custom hex editing remains available. Apply copies exact colour values into the chosen slides; later library updates do not recolour saved projects.
+
+Production handoffs carry each slide's resolved palette and Head/Sub/Body colour roles. The InDesign helper applies those values to the generated project while preserving paragraph-style identities and mixed dark/light pages. Old exports without palette data retain starter colours.
+
+**Deck Colour Controls.jsx** provides the corresponding project picker in InDesign, with paired previews, named colour styles and one Undo. Both starter sizes receive the additional colour roles without changing their existing artwork, text, fonts or initial colours. The portable kit also includes the separate **Figma Deck Colours** development plugin and its setup guide; existing account tools are unchanged.
+
+The master ramps are pinned to **Radix Colors 3.0.0**, with MIT attribution. Supplied opaque text/foreground pairs meet 4.5:1 and meaningful line pairs meet 3:1 on the documented surfaces. Custom colours, imagery, transparency and gradients require their own contrast check. This update introduces no new font dependency or document migration.
+
 # v0.3.0 — portable starter kit and automatic InDesign
 
 **Build InDesign automatically** is an optional handoff component. It includes production writing and numbered PSDs, then opens InDesign to create `InDesign/Deck.indd` with the correct Head/Sub/Body roles and two PSD placements per slide. Adobe runs after the handoff reaches its final path. Failure or cancellation preserves the completed handoff and reports the incomplete Adobe component.

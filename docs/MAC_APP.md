@@ -47,7 +47,9 @@ Open **Type & colours…** to choose installed Head, Sub and Body font families/
 
 The application interface uses pitch.dog Head/Body from the existing FontBlind v13.0.0 pin. **Settings → Interface size** scales the workspace, captions and dialogs without changing the canvas or exports. Native window/menu typography and monospace data remain system fonts. Existing decks keep their fonts; the Apple and pitch.dog canvas pairs are opt-in.
 
-In the Colours tab, edit the background, text, muted, four accent and monochrome roles for both dark and light slides. Set **Slide appearance → Dark/Light** separately for each slide; applying colours across the deck retains those choices. Check image contrast yourself. Older native layouts keep their existing type until you apply type settings; choosing an appearance or palette also recolours their text. Preserved legacy layouts require explicit conversion before these controls apply.
+In the Colours tab, choose one of five neutral bases and assign colour families to Primary, optional Secondary/Third/Fourth, and Mono. The bundled library has 31 families; Mono offers its six neutrals. Dark/light samples show text contrast on the selected base. **Custom hex colours** retains direct editing, including fill/text-on-fill pairs and lines after a family is selected. Choosing a family stages its exact hex values. **Apply colours to every slide** starts checked, so **Apply colours** sets the project palette together; turn it off for the current slide only. Type has its own scope and still starts on the current slide. Existing decks are never recoloured when the library changes. Unused accent roles do not appear automatically.
+
+Set **Slide appearance → Dark/Light** separately for each slide; applying colours across the deck retains those choices. The normal-text contrast target is 4.5:1; custom colours and image backgrounds still need review. Older native layouts keep their existing type until you apply type settings; choosing an appearance or palette also recolours their text. Preserved legacy layouts require explicit conversion before these controls apply.
 
 **Solid background** uses the text-only layout and keeps all chosen images and the shortlist. Switching off uses Text left and restores the primary image; select Moodboard or another layout to show additional retained images. Approved Media still carries those assigned originals.
 
@@ -70,7 +72,7 @@ Command-Shift-E selects complete handoff components and all/current/selected sli
 - Prototype with notes.pdf: slide preview, full copy, direction and source filenames; long copy continues onto labelled companion pages.
 - Copy.md: literal editable text in fenced blocks, organised by slide; notes separate.
 - Production/workbench.md: Workbench Markdown v1 writing for the existing InDesign/Figma import workflow.
-- Production/workbench-production.json: stable slide IDs, source/export order, complete copy fields, three-role projection, notes, warnings and copy/PSD hashes. Keep it beside workbench.md.
+- Production/workbench-production.json: stable slide IDs, source/export order, complete copy fields, three-role projection, notes, warnings, copy/PSD hashes, and each styled slide's frozen palette plus Head/Sub/Body colour roles. Keep it beside workbench.md. The bundled InDesign builder consumes these colours; a writing-only import does not carry them.
 - Production/PSD/Slide 01.psd, Slide 02.psd, …: numbered RGB/8-bit artwork files at 1920 × 1080 or 2576 × 1080. Selecting PSD also selects the production writing and manifest.
 - Starter Kit: both INDD sizes and layout kits, PSD starters, guides and all production helpers, including Text Scramble and Export Slide PNGs.
 - InDesign/Deck.indd: optional generated deck, with working PSDs in InDesign/Links/PSD. Edit these linked copies; Production/PSD remains the initial export.

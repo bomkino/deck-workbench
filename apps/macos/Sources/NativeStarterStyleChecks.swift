@@ -57,6 +57,24 @@ enum NativeStarterStyleChecks {
       "Visible size step does not match the stored role")
     let savedType = try JSONDecoder().decode(NativeStarterType.self, from: JSONEncoder().encode(type))
     try require(savedType == type, "Font pair or visible step did not survive saving")
+    let library = try NativeColourLibrary.bundled()
+    try require(library.families.count == 31 && library.bases.count == 5, "Packaged colour library lost a family or base")
+    var palette = NativeStarterPalette.standard
+    let untouched = palette
+    guard let base = library.bases.first(where: { $0.id == "sand" }),
+      let family = library.families.first(where: { $0.id == "blue" }) else {
+      throw WorkbenchFailure(name: "StarterStyleProof", message: "The supplied palette choices are missing")
+    }
+    palette.use(base); palette.use(family, role: "accent1")
+    try require(base.matches(palette) && family.matches(palette, role: "accent1"), "The selected family or base cannot be identified from its saved colours")
+    try require(palette.colors["accent2"] == untouched.colors["accent2"], "Choosing one accent changed a different accent")
+    try require(palette.colors["accent1.onSolid"]?.dark == family.dark.onSolid, "Fill text did not follow the chosen family")
+    palette.colors["accent1"]!.dark = "#ABCDEF"
+    let savedPalette = try JSONDecoder().decode(NativeStarterPalette.self, from: JSONEncoder().encode(palette))
+    try require(savedPalette == palette && savedPalette.colors["accent1"]?.dark == "#ABCDEF", "Saving resolved the palette against the library and lost a custom colour")
+    try require(!family.matches(savedPalette, role: "accent1"), "A customised accent was falsely presented as an unchanged library family")
+    try require(NativeColourLibrary.contrast("#000000", "#FFFFFF") == 21 && NativeColourLibrary.contrast("#ABCDEF", "#ABCDEF") == 1,
+      "Colour contrast did not use relative luminance")
     type.head.fontName = "WorkbenchProof-No-Such-Font-8764"
     try require(type.unavailableFonts == [type.head.fontName], "Missing project fonts were not surfaced")
   }

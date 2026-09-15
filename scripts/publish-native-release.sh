@@ -55,4 +55,4 @@ ditto -x -k "$ZIP" "$TEMP/extracted"
 APP="$TEMP/extracted/Deck Workbench.app"
 codesign --verify --deep --strict "$APP"
 test "$(/usr/libexec/PlistBuddy -c 'Print :DeckWorkbenchCommit' "$APP/Contents/Info.plist")" = "$SHA"
-gh release create "$TAG" "$ZIP" "$ZIP.sha256" "$RECEIPT"   --target "$SHA" --title "Deck Workbench $TAG — Starter layouts and Photoshop handoff"   --notes-file docs/RELEASE_NOTES.md --latest
+gh release create "$TAG" "$ZIP" "$ZIP.sha256" "$RECEIPT"   --target "$SHA" --title "Deck Workbench $TAG"   --notes-file docs/RELEASE_NOTES.md --latest

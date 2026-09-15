@@ -20,3 +20,7 @@ Development-only tools should be recorded when their licence or distribution ter
 Since v0.1.0, Linux/Electron and web distributions are retired. The Mac app uses Apple frameworks, a bundled local JavaScriptCore document kernel, and retained native font/icon assets. Historical web-font provenance remains under legal/; those WOFF2 assets are not shipped in the native app. Node.js is a build/development tool, not an application runtime.
 
 The portable starter kit includes the MIT-licensed Raycast text-scrambling algorithm pinned at `41aa46f190eeb9d414b342847000653f5759e49f`. The complete copyright and permission notice ships at `StarterKit/Notices/Raycast-MIT.txt`. Starter font references are retained; no Apple font binaries are bundled. Layout Kit PDFs are flattened previews; the original editable INDDs are included.
+
+## Radix Colors
+
+The optional deck colour library includes unmodified sRGB ramps from `@radix-ui/colors` 3.0.0 under MIT. pitch.dog selects role colours from those ramps for the supplied neutral bases and calculates foreground/background contrast. The pinned source receipt and licence are in `legal/radix-colors/`; the portable kit retains the notice in `Colour System/Radix-MIT.txt`. No runtime network dependency is introduced.

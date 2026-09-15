@@ -36,7 +36,7 @@ enum NativeAcceptance {
   static func run(output: URL) async throws {
     try await NativeAdobeAutomationChecks.run()
     try await NativeCompatibilityChecks.run()
-    try NativeProductionCopyChecks.run()
+    try NativeProductionCopyChecks.run(output: output)
     try NativeStarterStyleChecks.run()
     let manager = FileManager.default
     try manager.createDirectory(at: output, withIntermediateDirectories: true)

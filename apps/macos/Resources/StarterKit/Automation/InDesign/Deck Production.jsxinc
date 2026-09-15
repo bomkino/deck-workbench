@@ -1,4 +1,4 @@
-/* pitch.dog deck production 1.2.1. ES3; local files only. */
+/* pitch.dog deck production 1.3.0. ES3; local files only. */
 var PitchdogDeckProduction = (function () {
     var moduleFolder = File($.fileName).parent;
     $.evalFile(File(moduleFolder.fsName + '/WorkbenchImportCore.jsxinc'));
@@ -114,12 +114,42 @@ var PitchdogDeckProduction = (function () {
         }
         return {paragraphs:paragraphs,text:(function(){var values=[];for(var n=0;n<paragraphs.length;n++)values.push(paragraphs[n].text);return values.join('\r');})()};
     }
+    function palettePlan(row) {
+        if(row.palette===undefined||row.palette===null)return null;
+        var palette=row.palette,c=palette.colors,roles=row.colourRoles||{head:'text',sub:'text',body:'text'},k,fields=['head','sub','body'];
+        if(!c||typeof c!=='object'||c instanceof Array)fail('Invalid frozen slide palette.');
+        for(k in c)if(Object.prototype.hasOwnProperty.call(c,k)){
+            if(!/^(background|text|muted|raised|line|(?:accent[1-4]|mono)(?:\.(?:solid|onSolid|soft|onSoft|line))?)$/.test(k)||!c[k]||typeof c[k].dark!=='string'||typeof c[k].light!=='string'||!/^#[0-9a-f]{6}$/i.test(c[k].dark)||!/^#[0-9a-f]{6}$/i.test(c[k].light))fail('Invalid frozen colour role '+k+'.');
+        }
+        if(!c.background||!c.text)fail('A frozen palette needs background and text.');
+        for(var i=0;i<fields.length;i++){k=roles[fields[i]];if(typeof k!=='string'||!/^(text|muted|accent[1-4]|mono)$/.test(k)||!c[k])fail('Missing or invalid '+fields[i]+' colour role.');}
+        return {palette:palette,roles:roles};
+    }
+    function paletteScope(doc,plan,cache) {
+        var c=plan.palette.colors,keys=[],k,parts=[];for(k in c)if(Object.prototype.hasOwnProperty.call(c,k))keys.push(k);keys.sort();
+        for(var i=0;i<keys.length;i++)parts.push(keys[i]+':'+c[keys[i]].dark.toUpperCase()+':'+c[keys[i]].light.toUpperCase());var fingerprint=parts.join('|');
+        for(i=0;i<cache.length;i++)if(cache[i].fingerprint===fingerprint)return cache[i];
+        var next=cache.length+1,scope={fingerprint:fingerprint,palette:plan.palette,prefix:'PD Export '+pad(next)+' | '};cache.push(scope);return scope;
+    }
+    function exportColour(doc,scope,role,appearance) {
+        var name=scope.prefix+role+' (on '+appearance+')',value=scope.palette.colors[role][appearance],swatch=doc.colors.itemByName(name);
+        if(!swatch.isValid)swatch=doc.colors.add({name:name,model:ColorModel.PROCESS,space:ColorSpace.RGB,colorValue:[parseInt(value.substr(1,2),16),parseInt(value.substr(3,2),16),parseInt(value.substr(5,2),16)]});
+        return swatch;
+    }
+    function pagePaletteItems(page,doc,scope,appearance) {
+        var layer=doc.layers.itemByName('Solid Background'),wasLocked=layer.locked,items,found=null,i,oldLock;
+        function overrideNamed(name){var local=page.allPageItems,parents=page.masterPageItems,target=null,j;for(j=0;j<local.length;j++)if(local[j].name===name)target=local[j];if(target)return target;for(j=0;j<parents.length;j++)if(parents[j].name===name){oldLock=parents[j].locked;try{parents[j].locked=false;target=parents[j].override(page);}finally{parents[j].locked=oldLock;}return target;}return null;}
+        try{layer.locked=false;found=overrideNamed('BG');if(!found)fail('The parent is missing its BG solid background.');oldLock=found.locked;try{found.locked=false;found.fillColor=exportColour(doc,scope,'background',appearance);found.fillTint=100;}finally{found.locked=oldLock;}}
+        finally{layer.locked=wasLocked;}
+        // The native folio keeps its automatic page-number character and style.
+        var folio=overrideNamed('Page-Number-Text');if(folio){oldLock=folio.locked;try{folio.locked=false;folio.parentStory.texts[0].fillColor=exportColour(doc,scope,'text',appearance);folio.parentStory.texts[0].fillTint=100;}finally{folio.locked=oldLock;}}
+    }
     function preflightFormatting(manifest,doc) {
-        var rows=manifest.slides,plans=[],cache={},i,row,appearance,styles,light;
+        var rows=manifest.slides,plans=[],cache={},i,row,appearance,styles,light,colours;
         for(i=0;i<rows.length;i++){
-            row=rows[i];appearance=row.appearance;
+            row=rows[i];appearance=row.appearance;colours=palettePlan(row);
             if(appearance!==undefined&&appearance!==null&&appearance!=='dark'&&appearance!=='light')fail('Unknown slide appearance. Export a fresh bundle.');
-            if(row.intent!=='contents'&&!appearance){plans.push(null);continue;}
+            if(row.intent!=='contents'&&!appearance&&!colours){plans.push(null);continue;}
             if(!appearance)appearance=doc.pages[0].appliedMaster&&doc.pages[0].appliedMaster.name==='L-Light'?'light':'dark';
             styles=cache[appearance];
             if(!styles){styles=appearanceStyles(doc,appearance);cache[appearance]=styles;}
@@ -131,7 +161,7 @@ var PitchdogDeckProduction = (function () {
                 var prefs=styles.contents.frame.textFramePreferences;
                 if(prefs.textColumnCount!==2||!prefs.verticalBalanceColumns)fail('Contents - Two columns must retain two balanced columns.');
             }
-            plans.push({styles:styles,setAppearance:!!row.appearance,contents:row.intent==='contents'?contentsPlan(row,rows):null});
+            plans.push({styles:styles,setAppearance:!!row.appearance,appearance:appearance,colour:colours,contents:row.intent==='contents'?contentsPlan(row,rows):null});
         }
         return plans;
     }
@@ -148,12 +178,12 @@ var PitchdogDeckProduction = (function () {
         if(!found)fail('Cannot locate the verified copy frame on slide '+slide.title+'.');return found;
     }
     function applyBundleFormatting(doc,parsed,bundle) {
-        var contentsPages=[],appearancePages=[];
-        if(!bundle)return {contentsPages:contentsPages,appearancePages:appearancePages};
+        var contentsPages=[],appearancePages=[],palettePages=[],paletteCache=[];
+        if(!bundle)return {contentsPages:contentsPages,appearancePages:appearancePages,palettePages:palettePages};
         for(var i=0;i<bundle.formatting.length;i++){
             var plan=bundle.formatting[i];if(!plan)continue;
             var page=doc.pages[i],frame=importedCopyFrame(page,parsed.slides[i]),story=frame.parentStory;
-            var before=story.contents,locked=frame.locked,p,index,j,values,kind,numberEnd,numberStart;
+            var before=story.contents,locked=frame.locked,p,index,j,values,kind,numberEnd,numberStart,scope=plan.colour?paletteScope(doc,plan.colour,paletteCache):null;
             try{
                 frame.locked=false;
                 if(plan.setAppearance){page.appliedMaster=plan.styles.master;appearancePages.push(i+1);}
@@ -175,6 +205,7 @@ var PitchdogDeckProduction = (function () {
                         else if(kind==='sub')contentsStyle=plan.styles.sub;
                         else contentsStyle=plan.styles.body;
                         p.applyParagraphStyle(contentsStyle,true);
+                        if(scope){var colourRole='body';if(kind==='title')colourRole='head';else if(kind==='sub')colourRole='sub';p.fillColor=exportColour(doc,scope,plan.colour.roles[colourRole],plan.appearance);p.fillTint=100;}
                         if(kind==='title'||kind==='sub'){
                             p.spanColumnType=plan.styles.contents.title.spanColumnType;
                             p.spanSplitColumnCount=plan.styles.contents.title.spanSplitColumnCount;
@@ -198,7 +229,7 @@ var PitchdogDeckProduction = (function () {
                     }
                     frame.name='Workbench Contents';frame.insertLabel('pitchdog.workbench.contents','frozen-production/1');contentsPages.push(i+1);
                     if(frame.textFramePreferences.textColumnCount!==2||!frame.textFramePreferences.verticalBalanceColumns)fail('Contents columns did not retain the starter object style.');
-                }else if(plan.setAppearance){
+                }else if(plan.setAppearance||plan.colour){
                     values=[nativeCopyText(parsed.slides[i].headline),nativeCopyText(parsed.slides[i].subheadline),nativeCopyText(parsed.slides[i].body)];index=0;
                     for(var role=0;role<3;role++)for(j=0;j<values[role].split('\r').length;j++){
                         p=story.paragraphs.item(index++);if(!p.isValid&&role===2&&values[role]==='')p=story.insertionPoints[-1];
@@ -209,12 +240,14 @@ var PitchdogDeckProduction = (function () {
                         // Keep deliberate local font/size choices from the user's
                         // starter, while binding primary ink to its matching swatch.
                         p.applyParagraphStyle(appearanceStyle,false);p.fillColor=appearanceStyle.fillColor;p.fillTint=appearanceStyle.fillTint;
+                        if(scope){var field='body';if(role===0)field='head';else if(role===1)field='sub';p.fillColor=exportColour(doc,scope,plan.colour.roles[field],plan.appearance);p.fillTint=100;}
                     }
                     if(story.contents!==before)fail('Copy changed while matching the slide appearance.');
                 }
+                if(scope){pagePaletteItems(page,doc,scope,plan.appearance);page.insertLabel('pitchdog.colours.resolved',json(plan.colour.palette));page.insertLabel('pitchdog.colours.roles',json(plan.colour.roles));palettePages.push(i+1);}
             }finally{frame.locked=locked;}
         }
-        return {contentsPages:contentsPages,appearancePages:appearancePages};
+        return {contentsPages:contentsPages,appearancePages:appearancePages,palettePages:palettePages};
     }
     function overflowPages(doc) {
         var result=[];for(var i=0;i<doc.pages.length;i++){
@@ -272,7 +305,7 @@ var PitchdogDeckProduction = (function () {
     }
     function build(options) {
         options=options||{};var doc=options.document||app.activeDocument,oldUnits=app.scriptPreferences.measurementUnit,oldUI=app.scriptPreferences.userInteractionLevel,newDoc=null,ui=null,manifest=null,manifestFile=null,progressStep=0;
-        var advance=function(message){if(options.onProgress)options.onProgress(message);if(ui)ui.set(++progressStep,message);},pulse=function(message){if(options.onProgress)options.onProgress(message);if(ui)ui.message(message);};
+        var advance=function(message){if(ui)ui.set(++progressStep,message);},pulse=function(message){if(ui)ui.message(message);};
         try {
             app.scriptPreferences.measurementUnit=MeasurementUnits.POINTS;
             if(options.interactive===false)app.scriptPreferences.userInteractionLevel=UserInteractionLevels.NEVER_INTERACT;
@@ -300,7 +333,7 @@ var PitchdogDeckProduction = (function () {
             // Re-resolve document styles: preflight references belong to the
             // untouched starter, while formatting must target the saved copy.
             if(bundle)bundle.formatting=preflightFormatting(bundle.manifest,newDoc);
-            var formatted=applyBundleFormatting(newDoc,parsed,bundle);manifest.contentsPages=formatted.contentsPages;manifest.appearancePages=formatted.appearancePages;
+            var formatted=applyBundleFormatting(newDoc,parsed,bundle);manifest.contentsPages=formatted.contentsPages;manifest.appearancePages=formatted.appearancePages;manifest.palettePages=formatted.palettePages;
             var bg=newDoc.layers.itemByName('PSD - BACKGROUNDS'),ch=newDoc.layers.itemByName('PSD - CHARACTERS');bg.locked=false;ch.locked=false;
             var none=newDoc.swatches.itemByName('None');if(!none.isValid)none=newDoc.swatches[0];
             for(i=0;i<parsed.slides.length;i++){advance('Linking slide '+pad(i+1)+' of '+parsed.slides.length);var page=newDoc.pages[i],file=File(psdFolder.fsName+'/Slide '+pad(i+1)+'.psd');if(bundle)page.insertLabel('pitchdog.workbench.slideID',bundle.manifest.slides[i].slideID);makeFrame(page,file,'background',bg,none);makeFrame(page,file,'character',ch,none);}
@@ -446,5 +479,5 @@ var PitchdogDeckProduction = (function () {
         var folder=null;if(returned.value){folder=Folder.selectDialog('Choose the returned folder containing Slide 01.psd, etc.');if(!folder)return null;}
         return refresh({returnedFolder:folder?folder.fsName:null});
     }
-    return {build:build,chooseBuild:chooseBuild,refresh:refresh,chooseRefresh:chooseRefresh,getSlots:getSlots,setRole:setRole,psdHeader:psdHeader,sha256File:sha256File,parseJSON:parseJSON,productionBundle:productionBundle,contentsPlan:contentsPlan,preflightFormatting:preflightFormatting,version:'1.2.1'};
+    return {build:build,chooseBuild:chooseBuild,refresh:refresh,chooseRefresh:chooseRefresh,getSlots:getSlots,setRole:setRole,psdHeader:psdHeader,sha256File:sha256File,parseJSON:parseJSON,productionBundle:productionBundle,contentsPlan:contentsPlan,preflightFormatting:preflightFormatting,version:'1.3.0'};
 }());

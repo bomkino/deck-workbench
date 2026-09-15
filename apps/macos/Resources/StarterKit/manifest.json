@@ -1,10 +1,10 @@
 {
   "format": "pitchdog-starter-kit/1",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "files": [
     {
       "path": "1920x1080/Layout Kit 1920x1080 v0.03.indd",
-      "sha256": "ecc269275f9bf71b32a95ead997b3cf05d6ab13fbb5a2bfcb105cff7676a510a"
+      "sha256": "2be34743321029b3f9f0c953de4b4705f8b6ff17a7e85f4df894872503911fd6"
     },
     {
       "path": "1920x1080/Layout Kit 1920x1080 v0.03.pdf",
@@ -12,7 +12,7 @@
     },
     {
       "path": "1920x1080/[Starter File] [Pitch Deck] 1920x1080 v0.03 [pitch.dog].indd",
-      "sha256": "4c7b30fbd2b4adc2928dd26c868b8d2cd1b3d582d32c669b359e7f9eea349756"
+      "sha256": "bdea9c7a03dca2581c124db26ae4c9eb352a5c6f40268f3fcac7911d0b446fea"
     },
     {
       "path": "1920x1080/slide-00 - 1920x1080.psd",
@@ -28,7 +28,7 @@
     },
     {
       "path": "Automation/InDesign/Deck Production.jsxinc",
-      "sha256": "01393f59835402e34f204ab519690fcf547e861d964a35f341d11addb0a71eb8"
+      "sha256": "e8293db21d2d10d486f66200e734deff34b6b17f39d3b79f848b4fe46091575d"
     },
     {
       "path": "Automation/InDesign/Refresh PSD Links.jsx",
@@ -51,6 +51,58 @@
       "sha256": "e8341c0ce6ae59b29416b43ff9b0c56cedb9a35870fb9ae32e47b4847854f76b"
     },
     {
+      "path": "Colour System/Colour Core.jsxinc",
+      "sha256": "13114635e9d7c9429c790000ad87e358b0970fad9fb6598cb511740f56c93ef2"
+    },
+    {
+      "path": "Colour System/Figma Deck Colours/README.md",
+      "sha256": "303e9b42ef1653c8ce84d0394794439cfc48d149bcc7479ba95b46296a4c04bd"
+    },
+    {
+      "path": "Colour System/Figma Deck Colours/Radix-MIT.txt",
+      "sha256": "9c400881b9139571aa7acc3bd6e422a4f05223b4519169fb661298fb44bf228e"
+    },
+    {
+      "path": "Colour System/Figma Deck Colours/code.js",
+      "sha256": "c3fbab2f3b36fc5c15105f3e7c7943fe930f66024942b8f8bb7ccf433773cd32"
+    },
+    {
+      "path": "Colour System/Figma Deck Colours/manifest.json",
+      "sha256": "a9e7a18fb61036f7d83ceaa82545313bb86564550337c1db4f1742bcf9b7684b"
+    },
+    {
+      "path": "Colour System/Figma Deck Colours/ui.html",
+      "sha256": "0ebd867cf675769a17eeeb85e66c0a2f6314906e3ff90be003acdc3152621cdf"
+    },
+    {
+      "path": "Colour System/Radix-MIT.txt",
+      "sha256": "9c400881b9139571aa7acc3bd6e422a4f05223b4519169fb661298fb44bf228e"
+    },
+    {
+      "path": "Colour System/Read me.md",
+      "sha256": "0d1c96df68df74121b685982669f3da26931412a2d3a1368d23fd251c56b336a"
+    },
+    {
+      "path": "Colour System/Source.json",
+      "sha256": "acd6999b78d274948781ae3d18eb4a6cb97090155c27f3a0712ba2d493fa4be3"
+    },
+    {
+      "path": "Colour System/contrast-proof.json",
+      "sha256": "6fbcc7ee52a44894582ec71fdd5bba20e485a72d68b01ee255244da84a2fad7b"
+    },
+    {
+      "path": "Colour System/pitchdog-colours-v1.json",
+      "sha256": "08c4c0f496ca2d217eb0d583b1547a4bd226b28b713199f735fbf53d07d3a8a6"
+    },
+    {
+      "path": "Deck Colour Controls - Read me.md",
+      "sha256": "f66d56c8b9961317f98a973f85b0f09d1f12a97baad1c5f568d429f89010298d"
+    },
+    {
+      "path": "Deck Colour Controls.jsx",
+      "sha256": "45ccc4a5303bc7b7bd1a650b9442b88c9a844f7b962570edf42b81a8e7b23859"
+    },
+    {
       "path": "Deck Size Controls.jsx",
       "sha256": "babed120fb407485156ec9652b2cbdb47b14ee0c39e12da3e00adce97c7a39d0"
     },
@@ -60,7 +112,7 @@
     },
     {
       "path": "Layout Kit v0.03.indd",
-      "sha256": "2390a46748c37469a961d6332807f5bbe331b71fadd467240382e0bcb9a73da1"
+      "sha256": "2259834efea90b5d1d292d4647acee0b7551732d222abc2def99513aec3f014a"
     },
     {
       "path": "Layout Kit v0.03.pdf",
@@ -80,11 +132,11 @@
     },
     {
       "path": "Start Here - InDesign.md",
-      "sha256": "20b8343e98be0bd77ca652576c2d471ab756365bff65bdbfc775ba09b49fb353"
+      "sha256": "b063a62b6c6bddb1795cae23cc1e010706cc4eb35b886c373f0018cd5ebe7535"
     },
     {
       "path": "Start Here.md",
-      "sha256": "30db51ed9357fb51fba7b0a20a5a9307d943723ca2e4774aa02b9dde7282ea8b"
+      "sha256": "edc800585c27d468841e09ea43c1369c2fd812358aa35edd9ef5417f58e202ff"
     },
     {
       "path": "Text Scramble Head Sub Body - Read me.md",
@@ -96,7 +148,7 @@
     },
     {
       "path": "[Starter File] [Pitch Deck] 2576x1080 v0.03 [pitch.dog].indd",
-      "sha256": "a4b3c931f9eb5f535a466a679f4214066953ff7762e0df63f7c9e75c9e7cf69e"
+      "sha256": "2c2db38de78134d74f968654281d701c141ff9a2bf16eafb9aa4a965e51d5f48"
     },
     {
       "path": "slide-00 - 2576x1080.psd",

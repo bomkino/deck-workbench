@@ -4,7 +4,7 @@ Use **2576 × 1080** for cinemascope. Use the **1920x1080** folder for standard 
 
 ## Fastest start
 
-1. Finish the writing, image choices and slide order in Workbench.
+1. Finish the writing, image choices and slide order in Workbench. In **Type & colours → Colours**, choose the project palette. **Apply colours to every slide** keeps each slide’s dark/light appearance.
 2. Choose **Export Handoff**. Keep **PSDs**, **Approved Media** and **Shortlisted Media** selected when you need them.
 3. For InDesign, turn on **Build automatically**. For Figma, leave it off.
 4. Choose a folder. Review the export result.
@@ -17,6 +17,7 @@ Use **2576 × 1080** for cinemascope. Use the **1920x1080** folder for standard 
 - **Starter INDDs:** reusable one-page documents, with paragraph, character and object styles, colours, parent pages and guides. Duplicate one before editing it manually.
 - **Layout Kit INDDs:** editable examples you can borrow pages from. The PDFs are flattened visual previews; use the INDDs for editing.
 - **PSD templates:** shared Background and Character Smart Objects, in both sizes.
+- **Deck Colour Controls.jsx:** pick or revise the project base and accents in InDesign. Keep the adjacent **Colour System** folder with it. The colour guide explains matched text, fill and line styles.
 - **Deck Size Controls.jsx:** move Head, Sub and Body up or down their size scales without choosing a different font family.
 - **Text Scramble Head Sub Body.jsx:** scramble selected text roles for layout studies. Run on a copy if you need to retain the writing.
 - **Automation/InDesign:** Build, Refresh and their supporting files. Keep these files together.
@@ -36,6 +37,7 @@ To move computers, copy the whole handoff folder. Keep PSD names unchanged. In I
 
 ## Learn one task at a time
 
+- [Choose project colours](Colour%20System/Read%20me.md)
 - [Fonts, sizes, colours, layouts and dotted contents](Start%20Here%20-%20InDesign.md)
 - [Building and refreshing InDesign decks](Start%20Here%20-%20Deck%20Production.md)
 - [Preparing the two PNGs for Figma](Automation/Photoshop/Export%20Slide%20PNGs%20-%20Read%20me.md)

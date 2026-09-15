@@ -65,6 +65,10 @@ struct NativeStarterPalette: Codable, Equatable, Sendable {
   static let standard = NativeStarterPalette()
   static let roles = ["background", "text", "muted", "accent1", "accent2", "accent3", "accent4", "mono"]
   static func label(_ role: String) -> String {
+    if role.contains("."), let base = role.split(separator: ".").first, let detail = role.split(separator: ".").last {
+      let labels = ["solid": "Strong fill", "onSolid": "Text on strong fill", "soft": "Soft fill", "onSoft": "Text on soft fill", "line": "Line"]
+      return "\(label(String(base))) · \(labels[String(detail)] ?? String(detail))"
+    }
     if role == "mono" { return "Monochrome" }
     if role.hasPrefix("accent") { return "Accent \(role.suffix(1))" }
     return role.capitalized
