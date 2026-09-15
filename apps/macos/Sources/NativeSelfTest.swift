@@ -34,6 +34,7 @@ enum NativeAcceptance {
     if !condition { throw WorkbenchFailure(name: "AcceptanceFailure", message: message) }
   }
   static func run(output: URL) async throws {
+    try await NativeAdobeAutomationChecks.run()
     try await NativeCompatibilityChecks.run()
     try NativeProductionCopyChecks.run()
     try NativeStarterStyleChecks.run()

@@ -1,0 +1,7 @@
+The pitch.dog starter documents and Workbench integration are distributed with Deck Workbench under its AGPL-3.0-only licence. See the application's Legal folder or the source repository for the complete licence and source.
+
+Text Scramble Head Sub Body.jsx incorporates text-generation logic from Raycast extensions, pinned at 41aa46f190eeb9d414b342847000653f5759e49f. The complete upstream MIT copyright and permission notice is in Raycast-MIT.txt.
+
+The starter documents reference installed fonts. No Apple font binaries are included. Layout Kit PDFs are flattened image previews; editable layouts remain in the INDD documents. Use fonts for which you have the necessary rights.
+
+The starter's existing type-system reference is v13.1.1, commit 318e6ff4d4bf76be76f7ed5225aacf7517d2ee82. It is retained independently of the app interface's existing v13.0.0 font binary pin. Those pins do not license unrelated fonts.

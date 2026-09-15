@@ -1,3 +1,15 @@
+# v0.3.0 — portable starter kit and automatic InDesign
+
+**Build InDesign automatically** is an optional handoff component. It includes production writing and numbered PSDs, then opens InDesign to create `InDesign/Deck.indd` with the correct Head/Sub/Body roles and two PSD placements per slide. Adobe runs after the handoff reaches its final path. Failure or cancellation preserves the completed handoff and reports the incomplete Adobe component.
+
+Production handoffs include the complete starter kit: both canvas sizes, editable InDesign starters and layout kits, flattened PDF previews, PSD templates, size controls, role-based text scrambling, Build/Refresh helpers and the Photoshop-to-Figma PNG exporter. **Settings → Adobe setup & starter kit** connects the installed Adobe apps and can save the kit without a deck. No Adobe application is required for PSD creation or the Figma route.
+
+**Add Blank Slide** creates a movable, undoable slide with all three writing roles deliberately empty. **Solid background** switches to a text-only layout while retaining chosen images and the independent shortlist; switching off uses Text left and restores the primary image. Hidden assignments remain available in Approved Media.
+
+PSDs now carry a hidden **GUIDE - Text area (hide for export)** rectangle inside Shared Artwork: cyan, 50% opacity, following the actual text region. Turn it on while expanding artwork. The bundled PNG exporter cleans guides from a temporary copy, including saved Smart Object composites; original PSDs remain unchanged. Linked layered Smart Objects and unsupported nesting are reported instead of modified.
+
+The starter retains its existing font/style references. The app font pin and document schema are unchanged. Automatic builds require InDesign, installed starter fonts and macOS Automation permission; typography and final layout still need project review. Workbench's imported index is a snapshot, not an automatically regenerated InDesign Table of Contents.
+
 # v0.2.2 — studio type and editable PSD framing
 
 The interface uses bundled pitch.dog fonts, including the corrected welcome headline. Interface size now scales headings, captions and dialogs consistently; large-text settings, slide labels and colour controls remain readable in compact windows.

@@ -117,6 +117,7 @@ struct NativeWorkbenchCommands: Commands {
     CommandMenu("Slide") {
       Button("Add Slide") { controller.addSlide() }.keyboardShortcut("n", modifiers: [.command, .shift])
         .disabled(!controller.slideEditingAvailable)
+      Button("Add Blank Slide") { controller.addSpecialSlide("blank") }.disabled(!controller.slideEditingAvailable)
       Button("Add Contents / Index") { controller.addSpecialSlide("contents") }.disabled(!controller.slideEditingAvailable)
       Button("Add Moodboard…") { controller.showMoodboard = true }.disabled(!controller.slideEditingAvailable)
       Button("Move to Position…") { controller.moveSlideToPosition() }.disabled(!controller.slideEditingAvailable)

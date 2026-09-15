@@ -18,3 +18,5 @@ Record every production dependency and copied source fragment.
 Development-only tools should be recorded when their licence or distribution terms require it. Do not list operating-system frameworks as copied project code, but document platform requirements in the README.
 
 Since v0.1.0, Linux/Electron and web distributions are retired. The Mac app uses Apple frameworks, a bundled local JavaScriptCore document kernel, and retained native font/icon assets. Historical web-font provenance remains under legal/; those WOFF2 assets are not shipped in the native app. Node.js is a build/development tool, not an application runtime.
+
+The portable starter kit includes the MIT-licensed Raycast text-scrambling algorithm pinned at `41aa46f190eeb9d414b342847000653f5759e49f`. The complete copyright and permission notice ships at `StarterKit/Notices/Raycast-MIT.txt`. Starter font references are retained; no Apple font binaries are bundled. Layout Kit PDFs are flattened previews; the original editable INDDs are included.

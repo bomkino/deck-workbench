@@ -39,6 +39,7 @@ enum NativePSDChecks {
         "orientationFixture": orientationFixture,
         "embeddedOriginalVerification": "Encoder reads back and compares every embedded source byte.",
         "framingVerification": "Encoder reads back mask enablement and exact placement in both modes. Slide 01 is masked; Slide 05 uses the same full images with masks disabled.",
+        "textGuideVerification": "Slides 01 and 05 carry one hidden 50% vector guide at the resolved text region. Whitespace, image-only, empty and fully overset copy are checked to omit it. Native inspection must enable and save the guide, then verify bundled PNG export removes it without modifying the PSD.",
         "existingOutputProtected": outputProtected,
         "processLifetimePeakRSSBytesAtStart": initialRSS, "processLifetimePeakRSSBytesAtEnd": peakRSS(),
         "photoshopVisualInspection": "Pending: inspect cropping, colour, shared-content updates and guide visibility.",
@@ -83,7 +84,24 @@ enum NativePSDChecks {
       ]
       cropped.native!.layout.crops["primary"] = PrototypeCrop(x: 0.18, y: 0.1, width: 0.46, height: 0.7)
       cropped.native!.layout.imageFits["primary:2"] = "fit"
+      cropped.contentBlocks = [DeckCopyBlock(id: "guide-headline", semanticKey: "headline", role: "headline",
+        value: RichCopy("Text stays in InDesign. This area stays clear."))]
       let blank = slide(id: "blank", title: "Empty editable shared artwork", count: 0, preset: "text-only")
+      var hiddenCopy = blank
+      hiddenCopy.contentBlocks = [DeckCopyBlock(id: "guide-empty", semanticKey: "body", role: "body", value: RichCopy(" \n\t "))]
+      guard NativePSDExporter.textGuideFrame(scene: NativeSlideRenderer.resolve(slide: hiddenCopy, canvas: wide)) == nil else {
+        throw failure("Whitespace-only copy must not create a PSD text guide.")
+      }
+      hiddenCopy.contentBlocks[0].value = RichCopy("Copy retained but not drawn.")
+      hiddenCopy.native!.layout.preset = "image-only"
+      guard NativePSDExporter.textGuideFrame(scene: NativeSlideRenderer.resolve(slide: hiddenCopy, canvas: wide)) == nil else {
+        throw failure("Image-only copy must not create a PSD text guide.")
+      }
+      hiddenCopy.native!.layout.preset = "text-only"
+      hiddenCopy.native!.layout.textFrame = PrototypeFrame(x: 72, y: 64, width: 500, height: 1)
+      guard NativePSDExporter.textGuideFrame(scene: NativeSlideRenderer.resolve(slide: hiddenCopy, canvas: wide)) == nil else {
+        throw failure("Entirely overset copy must not create a PSD text guide.")
+      }
       var moodboard = slide(id: "moodboard", title: "Twelve numbered images", count: 12, preset: "moodboard")
       moodboard.native!.layout.imageCount = 12
       for index in 0..<12 {
@@ -112,6 +130,10 @@ enum NativePSDChecks {
         try Task.checkCancellation()
         let scene = NativeSlideRenderer.resolve(slide: slide, canvas: canvas)
         guard scene.imageLayers.count == expected else { throw failure("The proof scene did not resolve \(expected) image placements.") }
+        let guide = NativePSDExporter.textGuideFrame(scene: scene)
+        guard (guide != nil) == (filename == names[0] || filename == names[4]) else {
+          throw failure("The proof scene resolved an unexpected text guide.")
+        }
         let url = output.appendingPathComponent(filename)
         let warnings = try NativePSDExporter.write(slide: slide, canvas: canvas, staged: staged, cropToFrames: cropToFrames, to: url)
         var record: [String: Any] = [
@@ -121,6 +143,7 @@ enum NativePSDChecks {
           "layout": try nativeObject(slide.settings.layout), "warnings": warnings,
           "innerGuides": 72, "outerGuides": 72,
           "framing": cropToFrames ? "workbench-masks" : "full-images",
+          "textGuide": guide.map { ["x": $0.minX, "y": $0.minY, "width": $0.width, "height": $0.height] } as Any? ?? NSNull(),
         ]
         if filename == names[3] {
           record["expectedImageRects"] = scene.imageLayers.map { layer in

@@ -1,0 +1,450 @@
+/* pitch.dog deck production 1.2.1. ES3; local files only. */
+var PitchdogDeckProduction = (function () {
+    var moduleFolder = File($.fileName).parent;
+    $.evalFile(File(moduleFolder.fsName + '/WorkbenchImportCore.jsxinc'));
+    $.evalFile(File(moduleFolder.fsName + '/Starter Layers.jsxinc'));
+    var TITLE = 'pitch.dog Deck Production', ROLE_KEY = 'pitchdog.psd.role', FILE_KEY = 'pitchdog.psd.file';
+    function fail(message) { throw new Error(message); }
+    function pad(n) { return n < 10 ? '0' + n : String(n); }
+    function stamp() { var d = new Date(); return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) + '-' + pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds()); }
+    function quote(s) { return '"' + String(s).replace(/\\/g,'\\\\').replace(/"/g,'\\"').replace(/\r/g,'\\r').replace(/\n/g,'\\n').replace(/\t/g,'\\t') + '"'; }
+    function json(x) { if(x === null) return 'null'; if(typeof x === 'string') return quote(x); if(typeof x === 'number' || typeof x === 'boolean') return String(x); var a=[], k; if(x instanceof Array) { for(k=0;k<x.length;k++) a.push(json(x[k])); return '['+a.join(',')+']'; } for(k in x) if(x.hasOwnProperty(k)) a.push(quote(k)+':'+json(x[k])); return '{'+a.join(',')+'}'; }
+    function write(file, text) { file.encoding='UTF-8'; if(!file.open('w')) fail('Cannot write '+file.fsName); try { file.write(text); if(file.error) fail(file.error); } finally { file.close(); } }
+    function mkdir(folder) { if(!folder.exists && !folder.create()) fail('Cannot create '+folder.fsName); return folder; }
+    function copy(source, destination) { source=File(source.fsName);destination=File(destination.fsName);if(!source.exists || source.length===0) fail('Missing or empty source: '+source.fsName); if(destination.exists) fail('A file already exists: '+destination.fsName); if(!source.copy(destination.fsName))fail('File copy failed: '+destination.fsName);var check=File(destination.fsName);if(!check.exists||check.length!==source.length)fail('File copy failed: '+destination.fsName); }
+    function readMarkdown(file) { if(!file || !file.exists) fail('Choose a Workbench Markdown file.'); if(file.length>16*1024*1024) fail('Workbench file exceeds 16 MiB.'); file.encoding='UTF-8'; if(!file.open('r')) fail('Cannot read '+file.fsName); var s;try{s=file.read();}finally{file.close();} if(/[\u0000\uFFFD]/.test(s)) fail('Save the Workbench file as valid UTF-8 text.'); return s; }
+    // Hash every source and copied byte. On macOS, a built-in local hash process
+    // avoids millions of interpreted ES3 rounds; no cache or metadata shortcut.
+    // The file path is an escaped AppleScript string, then quoted form handles
+    // shell metacharacters. stdin avoids escaped-filename output conventions.
+    function sha256File(file,pulse) {
+        file=File(file.fsName);if(!file.exists)fail('Cannot hash missing file: '+file.fsName);
+        if(pulse)pulse('Hashing '+File.decode(file.name));
+        if(File.fs==='Macintosh'){
+            // InDesign injects global declarations when withArguments is used;
+            // that wrapper conflicts with a run handler. Pass no host arguments.
+            var script='do shell script ("/usr/bin/shasum -a 256 < " & quoted form of '+quote(file.fsName)+')';
+            var result;
+            try{result=String(app.doScript(script,ScriptLanguage.APPLESCRIPT_LANGUAGE)).replace(/^\s+|\s+$/g,'');}
+            catch(error){fail('Local SHA-256 could not finish for '+File.decode(file.name)+': '+(error.message||String(error))+'. No unchecked file was accepted.');}
+            var digest=/^([0-9a-f]{64})[ \t]+-$/.exec(result);
+            if(!digest)fail('The local SHA-256 result was invalid for '+File.decode(file.name)+'. No unchecked file was accepted.');
+            return digest[1];
+        }
+        // Portable fallback: 64 KiB streaming, one reusable schedule, and inline
+        // rotates. Avoid ~9 function calls per byte in the old script engine.
+        var h=[0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];
+        var k=[0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
+        var w=[];
+        function block(s,offset){var i,a,b,c,d,e,f,g,z,t1,t2,x,y;for(i=0;i<16;i++)w[i]=(s.charCodeAt(offset+i*4)<<24)|(s.charCodeAt(offset+i*4+1)<<16)|(s.charCodeAt(offset+i*4+2)<<8)|s.charCodeAt(offset+i*4+3);for(i=16;i<64;i++){x=w[i-2];y=w[i-15];w[i]=((((x>>>17)|(x<<15))^((x>>>19)|(x<<13))^(x>>>10))+w[i-7]+(((y>>>7)|(y<<25))^((y>>>18)|(y<<14))^(y>>>3))+w[i-16])|0;}a=h[0];b=h[1];c=h[2];d=h[3];e=h[4];f=h[5];g=h[6];z=h[7];for(i=0;i<64;i++){t1=(z+(((e>>>6)|(e<<26))^((e>>>11)|(e<<21))^((e>>>25)|(e<<7)))+((e&f)^(~e&g))+k[i]+w[i])|0;t2=((((a>>>2)|(a<<30))^((a>>>13)|(a<<19))^((a>>>22)|(a<<10)))+((a&b)^(a&c)^(b&c)))|0;z=g;g=f;f=e;e=(d+t1)|0;d=c;c=b;b=a;a=(t1+t2)|0;}h[0]=(h[0]+a)|0;h[1]=(h[1]+b)|0;h[2]=(h[2]+c)|0;h[3]=(h[3]+d)|0;h[4]=(h[4]+e)|0;h[5]=(h[5]+f)|0;h[6]=(h[6]+g)|0;h[7]=(h[7]+z)|0;}
+        var pending='',total=0,chunk,i,end,hi,lo,out='';file=File(file.fsName);file.encoding='BINARY';if(!file.open('r'))fail('Cannot hash '+file.fsName);
+        try{while(!file.eof){if(pulse)pulse('Hashing '+File.decode(file.name)+' — '+Math.floor(total/Math.max(1,file.length)*100)+'%');chunk=file.read(65536);if(file.error)fail(file.error);if(!chunk.length&&!file.eof)fail('Could not finish reading '+file.fsName);total+=chunk.length;pending+=chunk;end=pending.length-pending.length%64;for(i=0;i<end;i+=64)block(pending,i);pending=pending.substr(end);}}finally{file.close();}
+        pending+='\x80';while(pending.length%64!==56)pending+='\x00';hi=Math.floor(total/536870912);lo=(total*8)>>>0;for(i=3;i>=0;i--)pending+=String.fromCharCode((hi>>>(i*8))&255);for(i=3;i>=0;i--)pending+=String.fromCharCode((lo>>>(i*8))&255);for(i=0;i<pending.length;i+=64)block(pending,i);for(i=0;i<8;i++)out+=('00000000'+(h[i]>>>0).toString(16)).slice(-8);return out;
+    }
+    // ExtendScript may not provide JSON.parse. This bounded parser never evals
+    // document content and rejects duplicate/prototype keys.
+    function parseJSON(source) {
+        var at=0,depth=0;
+        function white(){while(at<source.length&&/[ \t\r\n]/.test(source.charAt(at)))at++;}
+        function string(){var out='',c,e,hex;if(source.charAt(at++)!=='"')fail('Expected a JSON string.');while(at<source.length){c=source.charAt(at++);if(c==='"')return out;if(c==='\\'){e=source.charAt(at++);if(e==='u'){hex=source.substr(at,4);if(!/^[0-9a-fA-F]{4}$/.test(hex))fail('Invalid JSON Unicode escape.');out+=String.fromCharCode(parseInt(hex,16));at+=4;}else if(e==='"'||e==='\\'||e==='/')out+=e;else if(e==='b')out+='\b';else if(e==='f')out+='\f';else if(e==='n')out+='\n';else if(e==='r')out+='\r';else if(e==='t')out+='\t';else fail('Invalid JSON escape.');}else{if(c.charCodeAt(0)<32)fail('Invalid JSON control character.');out+=c;}}fail('Unclosed JSON string.');}
+        function value(){white();if(++depth>64)fail('Manifest nesting is too deep.');var c=source.charAt(at),out,key,m;if(c==='"')out=string();else if(c==='{'||c==='['){at++;out=c==='{'?{}:[];white();if(source.charAt(at)===(c==='{'?'}':']'))at++;else while(true){if(c==='{'){white();key=string();if(key==='__proto__'||key==='constructor'||key==='prototype'||Object.prototype.hasOwnProperty.call(out,key))fail('Unsafe or duplicate manifest key.');white();if(source.charAt(at++)!==':')fail('Expected a JSON colon.');out[key]=value();}else out.push(value());white();if(source.charAt(at)===(c==='{'?'}':']')){at++;break;}if(source.charAt(at++)!==',')fail('Expected a JSON comma.');}}else if(source.substr(at,4)==='true'){out=true;at+=4;}else if(source.substr(at,5)==='false'){out=false;at+=5;}else if(source.substr(at,4)==='null'){out=null;at+=4;}else{m=/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/.exec(source.substr(at));if(!m)fail('Invalid JSON value.');out=Number(m[0]);if(!isFinite(out))fail('Invalid JSON number.');at+=m[0].length;}depth--;return out;}
+        var result=value();white();if(at!==source.length)fail('Unexpected content after manifest.');return result;
+    }
+    function productionBundle(input,parsed,size,doc,report,pulse) {
+        var file=File(input.parent.fsName+'/workbench-production.json');if(!file.exists)return null;
+        if(file.length>64*1024*1024)fail('Production manifest exceeds 64 MiB.');file.encoding='UTF-8';if(!file.open('r'))fail('Cannot read production manifest.');var raw;try{raw=file.read();}finally{file.close();}var m=parseJSON(raw),rows=m.slides,files=[],seen={},i,j,row,e,path,parts,f,projections,roles=['headline','subheadline','body'];
+        function integer(n){return typeof n==='number'&&isFinite(n)&&n>=0&&Math.floor(n)===n;}
+        if(m.format!=='pitchdog-workbench-production/1'||typeof m.deckID!=='string'||!m.deckID||!integer(m.revision)||m.title!==parsed.title||m.copyFile!=='workbench.md'||File.decode(input.name)!==m.copyFile||!m.canvas||m.canvas.id!==parsed.canvas||!integer(m.canvas.width)||!integer(m.canvas.height)||!(rows instanceof Array)||rows.length!==parsed.slides.length)fail('Production manifest does not match the copy or slide count.');
+        if(report)report('Checking production writing');
+        if(!/^[0-9a-f]{64}$/.test(m.copySHA256)||sha256File(input,pulse)!==m.copySHA256)fail('workbench.md changed after export. Export a fresh production bundle.');
+        for(i=0;i<rows.length;i++){
+            row=rows[i];if(!row||typeof row.slideID!=='string'||!row.slideID||Object.prototype.hasOwnProperty.call(seen,'id:'+row.slideID)||row.exportOrdinal!==i+1||!integer(row.sourceOrdinal)||row.sourceOrdinal<1||row.title!==parsed.slides[i].title)fail('Production slide identities or ordinals do not match the copy.');seen['id:'+row.slideID]=true;
+            projections=row.projection;if(!(projections instanceof Array)||projections.length!==3)fail('Missing production copy projection.');for(j=0;j<3;j++)if(projections[j].role!==roles[j]||projections[j].state!==parsed.slides[i][roles[j]].state||projections[j].text!==parsed.slides[i][roles[j]].text)fail('Production copy projection changed on slide '+(i+1)+'.');
+            e=row.psd;if(e===null||typeof e==='undefined')continue;if(typeof e.path!=='string'||!/^[A-Za-z0-9 _.\/-]+$/.test(e.path)||e.path.charAt(0)==='/'||!/^.+\.psd$/i.test(e.path)||!/^[0-9a-f]{64}$/.test(e.sha256)||e.width!==size.width||e.height!==size.height||e.depth!==8||e.colorMode!=='RGB')fail('Invalid PSD entry on slide '+(i+1)+'.');
+            path=e.path;parts=path.split('/');for(j=0;j<parts.length;j++){if(!parts[j]||parts[j]==='.'||parts[j]==='..')fail('PSD paths must stay inside the production bundle.');if(j<parts.length-1&&Folder(input.parent.fsName+'/'+parts.slice(0,j+1).join('/')).alias)fail('PSD bundle folders must not be aliases.');}
+            if(Object.prototype.hasOwnProperty.call(seen,'path:'+path.toLowerCase()))fail('Two slides refer to the same production PSD path.');seen['path:'+path.toLowerCase()]=true;
+            f=File(input.parent.fsName+'/'+path);if(!f.exists||f.alias)fail('Missing PSD or alias in production bundle: '+path);if(report)report('Checking PSD '+pad(i+1)+' of '+rows.length);assertPSD(f,size);if(sha256File(f,pulse)!==e.sha256)fail('PSD changed after export: '+path);files.push(f);
+        }
+        if(files.length&&files.length!==rows.length)fail('Production PSDs must cover every slide or be omitted for every slide. Export a complete bundle.');
+        if(files.length){if(m.canvas.width!==size.width||m.canvas.height!==size.height)fail('Use the matching starter canvas when reusing production PSDs.');checkPSDInInDesign(files,size,doc,report);}
+        var formatting=preflightFormatting(m,doc);
+        return {manifest:m,file:file,files:files.length?files:null,formatting:formatting};
+    }
+    function nativeCopyText(field) { if(field&&field.state==='intentionally-blank')return '';return field&&field.state==='present'&&/\S/.test(field.text)?field.text.replace(/\n\n/g,'\r'):'-'; }
+    function namedStyle(doc,collection,name) {
+        var styles=doc[collection],found=null;
+        for(var i=0;i<styles.length;i++)if(styles[i].name===name||styles[i].name.split(':').pop()===name){
+            if(found&&found.id!==styles[i].id)fail('More than one '+name+' style exists. Use the canonical starter.');found=styles[i];
+        }
+        if(!found||!found.isValid)fail('The starter is missing '+name+'. Use the current one-page starter.');
+        return found;
+    }
+    function appearanceStyles(doc,appearance) {
+        var light=appearance==='light',master=doc.masterSpreads.itemByName(light?'L-Light':'D-Dark');
+        if(!master.isValid)fail('The starter needs its '+(light?'L-Light':'D-Dark')+' parent.');
+        return {master:master,head:namedStyle(doc,'allParagraphStyles',light?'Head - Light':'Project | Head'),
+            sub:namedStyle(doc,'allParagraphStyles',light?'Sub - Light':'Project | Sub'),
+            body:namedStyle(doc,'allParagraphStyles',light?'Body - Light':'Project | Body')};
+    }
+    // Only the synthetic body is an index. Other authored fields remain copy,
+    // and the complete block projection must still agree with hashed Markdown.
+    function contentsPlan(row,rows) {
+        var blocks=row.blocks,body=[],synthetic=null,paragraphs=[],expected=[],i,b,text;
+        if(!(blocks instanceof Array))fail('Contents needs original copy blocks. Export a fresh production bundle.');
+        for(i=0;i<blocks.length;i++){
+            b=blocks[i];if(!b||typeof b.text!=='string'||typeof b.role!=='string')fail('Invalid Contents copy block.');
+            if(b.role!=='headline'&&b.role!=='subheadline'&&b.text!=='')body.push(b.text);
+            if(b.blockID===row.slideID+':contents'&&b.role==='body'){
+                if(synthetic)fail('Contents has more than one derived body.');synthetic=b;
+            }
+        }
+        if(!synthetic||body.join('\n\n')!==row.projection[2].text)fail('Contents copy blocks do not match the exported Markdown. Export a fresh bundle.');
+        for(i=0;i<rows.length;i++)if(rows[i].intent!=='contents')expected.push(rows[i].title+'\t'+pad(i+1));
+        if(synthetic.text!==expected.join('\n'))fail('Contents entries do not match the frozen slide order. Export a fresh bundle.');
+        function add(value,kind){if(value==='')return;var parts=value.split('\r');for(var n=0;n<parts.length;n++)paragraphs.push({text:parts[n],kind:kind});}
+        add(nativeCopyText(row.projection[0]),'title');add(nativeCopyText(row.projection[1]),'sub');
+        for(i=0;i<blocks.length;i++){
+            b=blocks[i];if(b.role==='headline'||b.role==='subheadline')continue;
+            if(b===synthetic){
+                if(b.text!=='')for(var j=0;j<expected.length;j++){
+                    text=expected[j];var tab=text.lastIndexOf('\t');
+                    paragraphs.push({text:text,kind:'entry',title:text.substr(0,tab),number:text.substr(tab+1)});
+                }
+            }else if(b.text!=='')add(b.text.replace(/\n\n/g,'\r'),'body');
+        }
+        return {paragraphs:paragraphs,text:(function(){var values=[];for(var n=0;n<paragraphs.length;n++)values.push(paragraphs[n].text);return values.join('\r');})()};
+    }
+    function preflightFormatting(manifest,doc) {
+        var rows=manifest.slides,plans=[],cache={},i,row,appearance,styles,light;
+        for(i=0;i<rows.length;i++){
+            row=rows[i];appearance=row.appearance;
+            if(appearance!==undefined&&appearance!==null&&appearance!=='dark'&&appearance!=='light')fail('Unknown slide appearance. Export a fresh bundle.');
+            if(row.intent!=='contents'&&!appearance){plans.push(null);continue;}
+            if(!appearance)appearance=doc.pages[0].appliedMaster&&doc.pages[0].appliedMaster.name==='L-Light'?'light':'dark';
+            styles=cache[appearance];
+            if(!styles){styles=appearanceStyles(doc,appearance);cache[appearance]=styles;}
+            if(row.intent==='contents'&&!styles.contents){
+                light=appearance==='light';styles.contents={frame:namedStyle(doc,'allObjectStyles','Contents - Two columns'),
+                    title:namedStyle(doc,'allParagraphStyles',light?'TOC - Title (light)':'TOC - Title'),
+                    entry:namedStyle(doc,'allParagraphStyles',light?'TOC - Entry (light)':'TOC - Entry'),
+                    number:namedStyle(doc,'allCharacterStyles','TOC - Page number')};
+                var prefs=styles.contents.frame.textFramePreferences;
+                if(prefs.textColumnCount!==2||!prefs.verticalBalanceColumns)fail('Contents - Two columns must retain two balanced columns.');
+            }
+            plans.push({styles:styles,setAppearance:!!row.appearance,contents:row.intent==='contents'?contentsPlan(row,rows):null});
+        }
+        return plans;
+    }
+    function importedCopyFrame(page,slide) {
+        var expected=[nativeCopyText(slide.headline),nativeCopyText(slide.subheadline),nativeCopyText(slide.body)].join('\r');
+        var items=page.allPageItems,found=null;
+        for(var i=0;i<items.length;i++)if(items[i].constructor.name==='TextFrame'){
+            var text=items[i].parentStory.contents;
+            if(text===expected||text===expected+'\r'){
+                if(found&&found.parentStory.id!==items[i].parentStory.id)fail('More than one imported copy story matched slide '+slide.title+'.');
+                found=items[i];
+            }
+        }
+        if(!found)fail('Cannot locate the verified copy frame on slide '+slide.title+'.');return found;
+    }
+    function applyBundleFormatting(doc,parsed,bundle) {
+        var contentsPages=[],appearancePages=[];
+        if(!bundle)return {contentsPages:contentsPages,appearancePages:appearancePages};
+        for(var i=0;i<bundle.formatting.length;i++){
+            var plan=bundle.formatting[i];if(!plan)continue;
+            var page=doc.pages[i],frame=importedCopyFrame(page,parsed.slides[i]),story=frame.parentStory;
+            var before=story.contents,locked=frame.locked,p,index,j,values,kind,numberEnd,numberStart;
+            try{
+                frame.locked=false;
+                if(plan.setAppearance){page.appliedMaster=plan.styles.master;appearancePages.push(i+1);}
+                if(plan.contents){
+                    frame.applyObjectStyle(plan.styles.contents.frame,true,true);
+                    var bounds=page.bounds,margins=page.marginPreferences;
+                    frame.geometricBounds=[bounds[0]+margins.top,bounds[1]+margins.left,bounds[2]-margins.bottom,bounds[3]-margins.right];
+                    story.contents=plan.contents.text;
+                    if(story.contents!==plan.contents.text)fail('Contents copy changed while applying its layout.');
+                    if(story.characters.length)story.texts[0].appliedCharacterStyle=doc.characterStyles[0];
+                    for(j=0;j<plan.contents.paragraphs.length;j++){
+                        var item=plan.contents.paragraphs[j];p=story.paragraphs.item(j);kind=item.kind;
+                        if(!p.isValid&&j===plan.contents.paragraphs.length-1&&item.text==='')p=story.insertionPoints[-1];
+                        // ExtendScript can associate chained conditionals to the
+                        // left. Explicit branches keep title/entry from selecting Sub.
+                        var contentsStyle;
+                        if(kind==='title')contentsStyle=plan.styles.contents.title;
+                        else if(kind==='entry')contentsStyle=plan.styles.contents.entry;
+                        else if(kind==='sub')contentsStyle=plan.styles.sub;
+                        else contentsStyle=plan.styles.body;
+                        p.applyParagraphStyle(contentsStyle,true);
+                        if(kind==='title'||kind==='sub'){
+                            p.spanColumnType=plan.styles.contents.title.spanColumnType;
+                            p.spanSplitColumnCount=plan.styles.contents.title.spanSplitColumnCount;
+                        }
+                        if(kind==='entry'){
+                            if(String(p.contents).replace(/\r$/,'')!==item.text)fail('A Contents entry changed while applying its style.');
+                            numberEnd=p.characters.length-1;if(p.characters[numberEnd].contents==='\r')numberEnd--;
+                            numberStart=numberEnd-item.number.length+1;
+                            if(p.characters[numberStart-1].contents!=='\t')fail('Contents page-number separator is missing.');
+                            p.characters[numberStart-1].contents=SpecialCharacters.RIGHT_INDENT_TAB;
+                            p.characters.itemByRange(numberStart,numberEnd).applyCharacterStyle(plan.styles.contents.number);
+                            // A Characters range returns an Array in ExtendScript,
+                            // even when its displayed contents look like a string.
+                            var numberText='',numberCodes=[];
+                            for(var digit=numberStart;digit<=numberEnd;digit++){
+                                var actualDigit=String(p.characters[digit].contents);numberText+=actualDigit;
+                                for(var code=0;code<actualDigit.length;code++)numberCodes.push(actualDigit.charCodeAt(code));
+                            }
+                            if(numberText!==item.number)fail('Contents page number changed: expected '+quote(item.number)+', read '+quote(numberText)+' (codes '+numberCodes.join(',')+'; characters '+numberStart+'–'+numberEnd+').');
+                        }
+                    }
+                    frame.name='Workbench Contents';frame.insertLabel('pitchdog.workbench.contents','frozen-production/1');contentsPages.push(i+1);
+                    if(frame.textFramePreferences.textColumnCount!==2||!frame.textFramePreferences.verticalBalanceColumns)fail('Contents columns did not retain the starter object style.');
+                }else if(plan.setAppearance){
+                    values=[nativeCopyText(parsed.slides[i].headline),nativeCopyText(parsed.slides[i].subheadline),nativeCopyText(parsed.slides[i].body)];index=0;
+                    for(var role=0;role<3;role++)for(j=0;j<values[role].split('\r').length;j++){
+                        p=story.paragraphs.item(index++);if(!p.isValid&&role===2&&values[role]==='')p=story.insertionPoints[-1];
+                        var appearanceStyle;
+                        if(role===0)appearanceStyle=plan.styles.head;
+                        else if(role===1)appearanceStyle=plan.styles.sub;
+                        else appearanceStyle=plan.styles.body;
+                        // Keep deliberate local font/size choices from the user's
+                        // starter, while binding primary ink to its matching swatch.
+                        p.applyParagraphStyle(appearanceStyle,false);p.fillColor=appearanceStyle.fillColor;p.fillTint=appearanceStyle.fillTint;
+                    }
+                    if(story.contents!==before)fail('Copy changed while matching the slide appearance.');
+                }
+            }finally{frame.locked=locked;}
+        }
+        return {contentsPages:contentsPages,appearancePages:appearancePages};
+    }
+    function overflowPages(doc) {
+        var result=[];for(var i=0;i<doc.pages.length;i++){
+            var items=doc.pages[i].allPageItems;for(var j=0;j<items.length;j++)if(items[j].constructor.name==='TextFrame'&&!items[j].nonprinting&&items[j].overflows){result.push(i+1);break;}
+        }return result;
+    }
+    function be16(s,n) { return s.charCodeAt(n)*256+s.charCodeAt(n+1); }
+    function be32(s,n) { return s.charCodeAt(n)*16777216+s.charCodeAt(n+1)*65536+s.charCodeAt(n+2)*256+s.charCodeAt(n+3); }
+    function psdHeader(file) { file.encoding='BINARY';if(!file.open('r')) fail('Cannot read PSD: '+file.fsName);var s;try{s=file.read(26);}finally{file.close();} if(s.length!==26 || s.substr(0,4)!=='8BPS' || be16(s,4)!==1)fail('Expected a PSD file: '+file.name);return {width:be32(s,18),height:be32(s,14),depth:be16(s,22),mode:be16(s,24)}; }
+    function dimensions(doc) { var p=doc.pages[0].bounds;return {width:Math.round((p[3]-p[1])*1000)/1000,height:Math.round((p[2]-p[0])*1000)/1000}; }
+    function assertCanvas(size) { if((size.width!==2576 && size.width!==1920) || size.height!==1080) fail('Use the 2576 x 1080 or 1920 x 1080 one-page starter.'); }
+    function assertPSD(file,size) { var h=psdHeader(file);if(h.width!==size.width || h.height!==size.height || h.depth!==8 || h.mode!==3)fail(File.decode(file.name)+' must be '+size.width+' x '+size.height+', 8-bit RGB.');return h; }
+    function getSlots(doc) { var slots=[], pages=doc.pages, i,j,items,role;for(i=0;i<pages.length;i++){items=pages[i].allPageItems;for(j=0;j<items.length;j++){role=items[j].extractLabel(ROLE_KEY);if(role==='background'||role==='character')slots.push({frame:items[j],role:role,file:items[j].extractLabel(FILE_KEY),page:pages[i].name});}}return slots; }
+    function setRole(image,role) {
+        var frame=image.parent, options=image.graphicLayerOptions, layers=options.graphicLayers, target=role==='background'?'00.Background':'01.Character', count=0, names=[], i;
+        for(i=0;i<layers.length;i++){names.push(layers[i].name);if(layers[i].name===target)count++;}
+        if(count!==1)fail('PSD needs exactly one '+target+' layer. Found: '+names.join(', '));
+        // InDesign replaces the Image object when a PSD visibility override changes.
+        // Resolve through the stable frame each time; cached graphic specifiers go stale.
+        for(i=0;i<names.length;i++){
+            var layer=frame.allGraphics[0].graphicLayerOptions.graphicLayers.itemByName(names[i]);
+            if(layer.currentVisibility!==(names[i]===target))layer.currentVisibility=names[i]===target;
+        }
+        image=frame.allGraphics[0];image.graphicLayerOptions.updateLinkOption=UpdateLinkOptions.KEEP_OVERRIDES;
+        layers=image.graphicLayerOptions.graphicLayers;
+        for(i=0;i<layers.length;i++)if(layers[i].currentVisibility!==(layers[i].name===target))fail('Photoshop visibility did not stick for '+target);
+        return image;
+    }
+    function makeFrame(page,file,role,layer,none) {
+        var frame=null,parents=page.masterPageItems,sourceName=role==='background'?'Base - PSD':'Characters - PSD';
+        for(var i=0;i<parents.length;i++)if(parents[i].name===sourceName){
+            if(frame)fail('The parent page contains more than one '+sourceName+' frame.');
+            var originalLock=parents[i].locked;try{parents[i].locked=false;frame=parents[i].override(page);}finally{parents[i].locked=originalLock;}
+        }
+        if(!frame)frame=page.rectangles.add();
+        frame.locked=false;frame.properties={geometricBounds:page.bounds,itemLayer:layer,fillColor:none,strokeColor:none,strokeWeight:0};
+        if(frame.allGraphics.length)fail('The starter PSD placeholder already contains an image. Use an empty starter.');
+        frame.name=role==='background'?'PSD Background':'PSD Character';frame.insertLabel(ROLE_KEY,role);frame.insertLabel(FILE_KEY,File.decode(file.name));
+        frame.textWrapPreferences.textWrapMode=TextWrapModes.NONE;frame.frameFittingOptions.autoFit=false;
+        var image=frame.place(file,false)[0];setRole(image,role);frame.fit(FitOptions.CONTENT_TO_FRAME);
+        return frame;
+    }
+    function findCopyLayer(doc) { var all=doc.pages[0].allPageItems,i;for(i=0;i<all.length;i++)if(all[i].constructor.name==='TextFrame'&&/^Head\.?\rSub\.?\rBody\.?\r?$/.test(all[i].parentStory.contents))return all[i].itemLayer;fail('The starter needs one text frame containing Head., Sub. and Body.'); }
+    function safeName(s) { s=String(s).replace(/[\x00-\x1f\/:*?"<>|]/g,'-').replace(/^\s+|\s+$/g,'').replace(/[. ]+$/g,'');if(!s || s==='.' || s==='..')s='Pitch Deck';return s.substr(0,120); }
+    function ensureFreshStarter(doc) { if(!doc||!doc.isValid||!doc.saved||doc.pages.length!==1||doc.extractLabel('pitchdog.workbench.import'))fail('Open a saved, unused one-page InDesign starter first. The original stays untouched.');if(doc.documentPreferences.facingPages)fail('Turn Facing Pages off in the starter.');findCopyLayer(doc); }
+    function progress(title,total) {
+        var w=new Window('palette',title),label=w.add('statictext',undefined,'Preparing…'),bar=w.add('progressbar',undefined,0,total);
+        var cancel=w.add('button',undefined,'Cancel'),cancelled=false,closing=false;
+        label.preferredSize.width=400;bar.preferredSize.width=400;
+        cancel.onClick=function(){cancelled=true;label.text='Stopping before the next step…';};
+        w.onClose=function(){if(closing)return true;cancelled=true;return false;};
+        function check(){if(cancelled)fail('Build cancelled. The original starter is unchanged; any new project remains marked incomplete.');}
+        function message(s){check();label.text=s;w.update();check();}
+        w.show();return {set:function(n,s){bar.value=n;message(s);},message:message,close:function(){closing=true;w.close();}};
+    }
+    function build(options) {
+        options=options||{};var doc=options.document||app.activeDocument,oldUnits=app.scriptPreferences.measurementUnit,oldUI=app.scriptPreferences.userInteractionLevel,newDoc=null,ui=null,manifest=null,manifestFile=null,progressStep=0;
+        var advance=function(message){if(options.onProgress)options.onProgress(message);if(ui)ui.set(++progressStep,message);},pulse=function(message){if(options.onProgress)options.onProgress(message);if(ui)ui.message(message);};
+        try {
+            app.scriptPreferences.measurementUnit=MeasurementUnits.POINTS;
+            if(options.interactive===false)app.scriptPreferences.userInteractionLevel=UserInteractionLevels.NEVER_INTERACT;
+            ensureFreshStarter(doc);var size=dimensions(doc);assertCanvas(size);
+            if(options.stack && options.stack!=='text-over-character')fail('New decks use TEXT above PSD - CHARACTERS. You can rearrange those layers after building.');
+            var input=options.markdownFile instanceof File?options.markdownFile:File(options.markdownFile),raw=readMarkdown(input),parsed=WorkbenchMarkdown.parse(raw);
+            if(parsed.canvas!=='cinemascope-2576x1080'&&parsed.canvas!=='widescreen-1920x1080')fail('Choose a cinemascope or widescreen Workbench export for this slide builder.');
+            if(!parsed.slides.length||parsed.slides.length>1000)fail('Use a Workbench file containing 1–1000 slides.');
+            var parent=options.outputParent instanceof Folder?options.outputParent:Folder(options.outputParent);if(!parent.exists)fail('Choose an existing parent folder.');
+            var folder=Folder(parent.fsName+'/'+safeName(options.projectName||parsed.title)),buildingFile=File(folder.fsName+'/Deck - BUILDING.indd'),finalFile=File(folder.fsName+'/Deck.indd');
+            if(folder.exists)fail('This project folder already exists. Choose a different name:\n'+folder.fsName);
+            if(options.interactive!==false){ui=progress('Building deck',parsed.slides.length*4+4);ui.set(0,'Checking the production bundle');}
+            var templateRoot=moduleFolder.parent.parent,psd=File(templateRoot.fsName+(size.width===1920?'/1920x1080':'')+'/slide-00 - '+size.width+'x1080.psd');
+            var bundle=productionBundle(input,parsed,size,doc,advance,pulse);if(!bundle||!bundle.files)assertPSD(psd,size);
+            mkdir(folder);var links=mkdir(Folder(folder.fsName+'/Links')),psdFolder=mkdir(Folder(links.fsName+'/PSD'));
+            manifest={format:'pitchdog-deck-production/1',status:'building',created:stamp(),title:parsed.title,width:size.width,height:size.height,sourceCanvas:parsed.canvas,slideCount:parsed.slides.length,stack:'text-over-character',files:[],sourceWorkbench:input.fsName,sourceStarter:doc.fullName.fsName,sourcePSD:psd.fsName};
+            manifestFile=File(folder.fsName+'/deck-production.json');write(manifestFile,json(manifest)+'\n');copy(input,File(folder.fsName+'/workbench.md'));
+            if(bundle){advance('Verifying copied writing');if(sha256File(File(folder.fsName+'/workbench.md'),pulse)!==bundle.manifest.copySHA256)fail('Workbench copy changed while the project was created.');copy(bundle.file,File(folder.fsName+'/source-workbench-production.json'));manifest.sourceProductionBundle=input.parent.fsName;manifest.sourceDeckID=bundle.manifest.deckID;manifest.sourceRevision=bundle.manifest.revision;}
+            for(var i=0;i<parsed.slides.length;i++){advance('Copying and verifying PSD '+pad(i+1)+' of '+parsed.slides.length);var name='Slide '+pad(i+1)+'.psd',targetPSD=File(psdFolder.fsName+'/'+name),sourcePSD=bundle&&bundle.files?bundle.files[i]:psd;copy(sourcePSD,targetPSD);if(bundle&&bundle.files&&sha256File(targetPSD,pulse)!==bundle.manifest.slides[i].psd.sha256)fail('PSD copy verification failed for '+name+'.');var record={slide:i+1,title:parsed.slides[i].title,psd:'Links/PSD/'+name};if(bundle){record.slideID=bundle.manifest.slides[i].slideID;record.sourceOrdinal=bundle.manifest.slides[i].sourceOrdinal;if(bundle.files)record.sha256=bundle.manifest.slides[i].psd.sha256;}manifest.files.push(record);}
+            advance('Placing writing and formatting Contents');
+            doc.saveACopy(buildingFile);newDoc=app.open(buildingFile);app.activeDocument=newDoc;
+            PitchdogStarterLayers.apply(newDoc);
+            var textLayer=findCopyLayer(newDoc),imported=WorkbenchInDesign.run();if(!imported.ok)fail(imported.message);
+            if(newDoc.pages.length!==parsed.slides.length)fail('Page count does not match Workbench.');
+            // Re-resolve document styles: preflight references belong to the
+            // untouched starter, while formatting must target the saved copy.
+            if(bundle)bundle.formatting=preflightFormatting(bundle.manifest,newDoc);
+            var formatted=applyBundleFormatting(newDoc,parsed,bundle);manifest.contentsPages=formatted.contentsPages;manifest.appearancePages=formatted.appearancePages;
+            var bg=newDoc.layers.itemByName('PSD - BACKGROUNDS'),ch=newDoc.layers.itemByName('PSD - CHARACTERS');bg.locked=false;ch.locked=false;
+            var none=newDoc.swatches.itemByName('None');if(!none.isValid)none=newDoc.swatches[0];
+            for(i=0;i<parsed.slides.length;i++){advance('Linking slide '+pad(i+1)+' of '+parsed.slides.length);var page=newDoc.pages[i],file=File(psdFolder.fsName+'/Slide '+pad(i+1)+'.psd');if(bundle)page.insertLabel('pitchdog.workbench.slideID',bundle.manifest.slides[i].slideID);makeFrame(page,file,'background',bg,none);makeFrame(page,file,'character',ch,none);}
+            bg.locked=true;ch.locked=true;newDoc.activeLayer=textLayer;newDoc.insertLabel('pitchdog.deck.production','1');newDoc.insertLabel('pitchdog.deck.stack',manifest.stack);newDoc.recompose();imported.overflow=overflowPages(newDoc);
+            var slots=getSlots(newDoc);if(slots.length!==parsed.slides.length*2)fail('Each page must contain two PSD placements.');
+            for(i=0;i<slots.length;i++){var g=setRole(slots[i].frame.allGraphics[0],slots[i].role);if(g.itemLink.status!==LinkStatus.NORMAL)fail('A placed PSD link is not current: '+slots[i].file);}
+            advance('Saving the completed deck');newDoc.save(finalFile);if(!finalFile.exists||finalFile.length===0)fail('The completed InDesign deck was not saved.');
+            manifest.status='ready';manifest.overflowPages=imported.overflow;manifest.completed=stamp();write(manifestFile,json(manifest)+'\n');
+            if(buildingFile.exists&&!buildingFile.remove()){manifest.cleanupWarning='The BUILDING copy remains; use Deck.indd.';write(manifestFile,json(manifest)+'\n');}
+            return {ok:true,folder:folder.fsName,document:finalFile.fsName,slides:parsed.slides.length,psds:manifest.files.length,placements:slots.length,overflow:imported.overflow,stack:manifest.stack};
+        } catch(e) {
+            if(manifest){manifest.status='incomplete';manifest.error=e.message||String(e);try{write(manifestFile,json(manifest)+'\n');}catch(_){} }
+            if(newDoc&&newDoc.isValid){try{newDoc.save();}catch(_){} }
+            throw e;
+        } finally { if(ui)ui.close();app.scriptPreferences.measurementUnit=oldUnits;app.scriptPreferences.userInteractionLevel=oldUI; }
+    }
+    function chooseBuild() {
+        if(!app.documents.length)fail('Open your unused one-page InDesign starter first.');ensureFreshStarter(app.activeDocument);
+        var input=File.openDialog('Choose the Workbench Markdown file');if(!input)return null;
+        var parsed=WorkbenchMarkdown.parse(readMarkdown(input)),parent=Folder.selectDialog('Choose where the new project folder should be created');if(!parent)return null;
+        var d=new Window('dialog','Build deck from Workbench');d.orientation='column';d.alignChildren='fill';d.add('statictext',undefined,parsed.slides.length+' slides. One numbered PSD per slide.');
+        d.add('statictext',undefined,'New project folder name');var name=d.add('edittext',undefined,safeName(parsed.title));name.characters=45;
+        d.add('statictext',undefined,'Five layers: TEXT → CHARACTERS → GRADIENT → BACKGROUNDS → Solid');
+        var group=d.add('group');group.alignment='right';group.add('button',undefined,'Cancel',{name:'cancel'});group.add('button',undefined,'Build',{name:'ok'});if(d.show()!==1)return null;
+        return build({markdownFile:input,outputParent:parent,projectName:name.text,stack:'text-over-character',interactive:true});
+    }
+    function fileKey(file) { return File(file).fsName.toLowerCase(); }
+    function fileMark(file) { var f=File(file.fsName);return f.exists?String(f.length)+'|'+String(f.modified.getTime()):'missing'; }
+    function nearBounds(a,b) { for(var i=0;i<4;i++)if(Math.abs(a[i]-b[i])>0.01)return false;return true; }
+    function checkPSDInInDesign(files,size,doc,report) {
+        var probe=null;
+        try {
+            probe=app.documents.add(false);probe.documentPreferences.properties={facingPages:false,pageWidth:size.width,pageHeight:size.height};
+            for(var i=0;i<files.length;i++){
+                if(report)report('Checking Photoshop layers '+pad(i+1)+' of '+files.length);
+                var frame=probe.pages[0].rectangles.add({geometricBounds:[0,0,size.height,size.width]});
+                frame.place(files[i],false);setRole(frame.allGraphics[0],'background');setRole(frame.allGraphics[0],'character');frame.remove();
+            }
+        } finally { if(probe&&probe.isValid)probe.close(SaveOptions.NO);app.activeDocument=doc; }
+    }
+    function refresh(options) {
+        options=options||{};
+        var doc=options.document||app.activeDocument,oldUnits=app.scriptPreferences.measurementUnit,oldUI=app.scriptPreferences.userInteractionLevel;
+        var slots=[],locks=[],promoted=[],backup=null,entered=false,saved=false,report=null,reportFile=null,runKey='pitchdog.psd.refresh.run',runID=stamp()+'-'+$.hiresTimer,previousRun='';
+        try {
+            app.scriptPreferences.measurementUnit=MeasurementUnits.POINTS;app.scriptPreferences.userInteractionLevel=UserInteractionLevels.NEVER_INTERACT;
+            if(!doc||!doc.isValid||!doc.saved||!doc.extractLabel('pitchdog.deck.production'))fail('Open a saved deck created with Build Deck from Workbench.');
+            previousRun=doc.extractLabel(runKey);
+            var size=dimensions(doc);assertCanvas(size);slots=getSlots(doc);if(!slots.length)fail('No tagged PSD placements were found.');
+            var project=doc.fullName.parent,canonical=Folder(project.fsName+'/Links/PSD'),source=options.returnedFolder?Folder(options.returnedFolder):null,byName={},order=[],i,j,name,k,s,g;
+            for(i=0;i<slots.length;i++){
+                s=slots[i];name=File.decode(s.file);if(!/^Slide (?:0[1-9]|[1-9]\d*)\.psd$/.test(name))fail('A PSD placement has an invalid slide filename: '+name);
+                s.file=name;k=name.toLowerCase();
+                if(!byName[k]){byName[k]={name:name,target:File(canonical.fsName+'/'+name),incoming:null,slots:[]};order.push(byName[k]);}
+                byName[k].slots.push(s);
+                if(s.frame.parent.constructor.name!=='Spread')fail('Keep the PSD placements directly on the page, outside groups.');
+                if(s.frame.allGraphics.length!==1)fail(name+' needs one graphic in each tagged frame.');
+                g=s.frame.allGraphics[0];
+                if(Math.abs(s.frame.absoluteRotationAngle)>0.001||Math.abs(s.frame.absoluteShearAngle)>0.001||Math.abs(g.absoluteRotationAngle)>0.001||Math.abs(g.absoluteShearAngle)>0.001)fail('Restore unrotated PSD placements before refreshing '+name+'.');
+                s.frameBounds=s.frame.geometricBounds.slice(0);s.imageBounds=g.geometricBounds.slice(0);s.originalLink=g.itemLink.filePath;s.frameLock=s.frame.locked;
+                var known=false;for(j=0;j<locks.length;j++)if(locks[j].layer.id===s.frame.itemLayer.id)known=true;
+                if(!known)locks.push({layer:s.frame.itemLayer,locked:s.frame.itemLayer.locked});
+            }
+            if(source&&fileKey(File(source.fsName))===fileKey(File(canonical.fsName)))source=null;
+            if(source){
+                if(!source.exists)fail('The returned PSD folder does not exist.');
+                var incoming=source.getFiles(),found=0;
+                for(i=0;i<incoming.length;i++)if(incoming[i] instanceof File&&!/^\./.test(File.decode(incoming[i].name))&&/\.(psd|psb)$/i.test(incoming[i].name)){
+                    name=File.decode(incoming[i].name);k=name.toLowerCase();
+                    if(!byName[k])fail('This returned PSD does not match a slide in this deck: '+name+'. Keep the original Slide 01.psd names.');
+                    if(byName[k].incoming)fail('Two returned PSDs match '+name+'.');byName[k].incoming=incoming[i];found++;
+                }
+                if(!found)fail('No matching numbered PSDs found in the returned folder.');
+            }
+            var inspect=[];
+            for(i=0;i<order.length;i++){var e=order[i],f=e.incoming||e.target;if(!f.exists)fail('Missing '+e.name+'. Choose the returned folder containing it.');assertPSD(f,size);e.mark=fileMark(f);inspect.push(f);}
+            // Check real layer names before backing up or replacing any project file.
+            checkPSDInInDesign(inspect,size,doc);
+            var backups=mkdir(Folder(project.fsName+'/Backups')),base='PSD Refresh '+stamp(),n=1;backup=Folder(backups.fsName+'/'+base);while(backup.exists)backup=Folder(backups.fsName+'/'+base+'-'+(++n));mkdir(backup);
+            var backupDoc=File(backup.fsName+'/'+doc.name);doc.saveACopy(backupDoc);if(!backupDoc.exists||!backupDoc.length)fail('The document backup was not saved.');
+            var incomingStage=mkdir(Folder(backup.fsName+'/Incoming')),originals=mkdir(Folder(backup.fsName+'/Previous PSDs'));
+            report={format:'pitchdog-psd-refresh/1',status:'preparing',created:stamp(),deck:doc.fullName.fsName,returnedFolder:source?source.fsName:null,files:[],placements:slots.length};reportFile=File(backup.fsName+'/refresh.json');write(reportFile,json(report)+'\n');
+            mkdir(Folder(project.fsName+'/Links'));mkdir(canonical);
+            for(i=0;i<order.length;i++){
+                e=order[i];if(fileMark(e.incoming||e.target)!==e.mark)fail(e.name+' changed during preflight. Finish saving it and run again.');
+                if(e.incoming){
+                    e.stage=File(incomingStage.fsName+'/'+e.name);copy(e.incoming,e.stage);if(fileMark(e.incoming)!==e.mark)fail(e.name+' changed while it was copied.');assertPSD(e.stage,size);
+                    e.targetMark=fileMark(e.target);e.hadOriginal=e.target.exists;e.previous=File(originals.fsName+'/'+e.name);if(e.hadOriginal)copy(e.target,e.previous);
+                    if(fileMark(e.target)!==e.targetMark)fail(e.name+' was saved in this project during backup. Close it in Photoshop and run again.');
+                }
+            }
+            for(i=0;i<order.length;i++)if(order[i].incoming){
+                e=order[i];if(fileMark(e.target)!==e.targetMark)fail(e.name+' changed before replacement. Close it in Photoshop and run again.');
+                promoted.push(e);if(e.target.exists&&!e.target.remove())fail('Cannot replace '+e.name+'. Close it in Photoshop, then run again.');copy(e.stage,e.target);assertPSD(e.target,size);report.files.push(e.name);
+            }
+            app.doScript(function(){
+                doc.insertLabel(runKey,runID);entered=true;
+                try {
+                for(var z=0;z<locks.length;z++)locks[z].layer.locked=false;for(z=0;z<slots.length;z++)slots[z].frame.locked=false;
+                for(z=0;z<slots.length;z++){
+                    var slot=slots[z],frame=slot.frame,target=byName[slot.file.toLowerCase()].target;
+                    frame.allGraphics[0].itemLink.relink(target);g=frame.allGraphics[0];if(g.itemLink.status!==LinkStatus.NORMAL)g.itemLink.update();
+                    g=setRole(frame.allGraphics[0],slot.role);
+                    frame.geometricBounds=slot.frameBounds;g.geometricBounds=slot.imageBounds;
+                    if(!nearBounds(frame.geometricBounds,slot.frameBounds)||!nearBounds(g.geometricBounds,slot.imageBounds))fail('Position verification failed for '+slot.file+'.');
+                    // relink() receives the canonical File directly. macOS can report that
+                    // same resource through a symlink (for example /tmp and /private/tmp).
+                    var linkedFile=File(g.itemLink.filePath),targetNow=File(target.fsName);
+                    if(g.itemLink.status!==LinkStatus.NORMAL||File.decode(g.itemLink.name)!==slot.file||!linkedFile.exists||linkedFile.length!==targetNow.length)fail('Link verification failed for '+slot.file+'.');
+                }
+                doc.recompose();
+                } finally {
+                    for(z=0;z<slots.length;z++)slots[z].frame.locked=slots[z].frameLock;for(z=0;z<locks.length;z++)locks[z].layer.locked=locks[z].locked;
+                }
+            },ScriptLanguage.JAVASCRIPT,undefined,UndoModes.ENTIRE_SCRIPT,'Refresh pitch.dog PSD links');
+            doc.save();saved=true;report.status='complete';report.completed=stamp();
+            try{write(reportFile,json(report)+'\n');}catch(writeError){report.warning='Deck saved, but the refresh report could not be updated.';}
+            return {ok:true,replacedPSDs:promoted.length,refreshedPlacements:slots.length,backup:backup.fsName,document:doc.fullName.fsName,warning:report.warning||''};
+        } catch(error) {
+            var failure=new Error(error.message||String(error));
+            if(!saved){
+                var recovery=[];
+                for(var p=promoted.length-1;p>=0;p--){var old=promoted[p];try{if(old.target.exists&&!old.target.remove())fail('Cannot remove incomplete replacement');if(old.hadOriginal)copy(old.previous,old.target);}catch(restoreError){recovery.push(old.name+': '+restoreError.message);}}
+                if(entered&&doc.extractLabel(runKey)===runID)try{doc.undo();if(doc.extractLabel(runKey)!==previousRun)fail('Refresh transaction was not fully undone.');}catch(undoError){recovery.push('Document Undo: '+undoError.message);}
+                if(report){report.status='failed';report.error=failure.message;report.recoveryErrors=recovery;try{write(reportFile,json(report)+'\n');}catch(_){} }
+                if(backup)failure.message+='\n\nBackup: '+backup.fsName;
+                if(recovery.length)failure.message+='\nRestore from the backup before continuing: '+recovery.join('; ');
+            }
+            throw failure;
+        } finally {
+            for(var a=0;a<slots.length;a++)try{if(typeof slots[a].frameLock==='boolean'&&slots[a].frame.locked!==slots[a].frameLock)slots[a].frame.locked=slots[a].frameLock;}catch(_){}
+            for(a=0;a<locks.length;a++)try{if(locks[a].layer.locked!==locks[a].locked)locks[a].layer.locked=locks[a].locked;}catch(_){}
+            app.scriptPreferences.measurementUnit=oldUnits;app.scriptPreferences.userInteractionLevel=oldUI;
+        }
+    }
+    function chooseRefresh() {
+        if(!app.documents.length)fail('Open the generated InDesign deck first.');
+        var d=new Window('dialog','Refresh PSD links');d.orientation='column';d.alignChildren='fill';
+        d.add('statictext',undefined,'Open deck: '+app.activeDocument.name);
+        var current=d.add('radiobutton',undefined,'Refresh files already in this project'),returned=d.add('radiobutton',undefined,'Bring in a returned PSD folder');returned.value=true;
+        d.add('statictext',undefined,'Keeps text and image positions. Makes a backup. Saves the deck.');
+        var group=d.add('group');group.alignment='right';group.add('button',undefined,'Cancel',{name:'cancel'});group.add('button',undefined,'Continue',{name:'ok'});if(d.show()!==1)return null;
+        var folder=null;if(returned.value){folder=Folder.selectDialog('Choose the returned folder containing Slide 01.psd, etc.');if(!folder)return null;}
+        return refresh({returnedFolder:folder?folder.fsName:null});
+    }
+    return {build:build,chooseBuild:chooseBuild,refresh:refresh,chooseRefresh:chooseRefresh,getSlots:getSlots,setRole:setRole,psdHeader:psdHeader,sha256File:sha256File,parseJSON:parseJSON,productionBundle:productionBundle,contentsPlan:contentsPlan,preflightFormatting:preflightFormatting,version:'1.2.1'};
+}());

@@ -574,6 +574,13 @@ struct NativeAssemblyInspector: View {
     VStack(alignment: .leading, spacing: 12) {
       Text("Prototype layout").workbenchText(.panelTitle)
       NativeLayoutPicker(controller: controller, slide: slide)
+      Toggle("Solid background", isOn: Binding(
+        get: { NativeSlideRenderer.resolvedPreset(slide: slide) == "text-only" },
+        set: { controller.patchLayout(["preset": $0 ? "text-only" : "left"], id: slide.id) }))
+        .disabled(!controller.slideEditingAvailable || slide.settings.layout.preset == "legacy")
+        .accessibilityIdentifier("slide-solid-background")
+      Text("Hides artwork while keeping chosen images and shortlist. Turning off uses Text left with the first chosen image.")
+        .workbenchText(.caption).foregroundStyle(.secondary)
       if NativeSlideRenderer.resolvedPreset(slide: slide) == "moodboard" {
         Picker("Image slots", selection: Binding(get: { slide.settings.layout.imageCount ?? 6 }, set: { controller.patchLayout(["imageCount": $0, "frames": NSNull()]) })) {
           ForEach(1...12, id: \.self) { Text(String($0)).tag($0) }
@@ -732,6 +739,7 @@ struct NativeExportSheet: View {
   @AppStorage("native.export.shortlisted") private var shortlisted = true
   @AppStorage("native.export.productionCopy") private var productionCopy = true
   @AppStorage("native.export.psd") private var psd = true
+  @AppStorage("native.export.inDesign") private var inDesign = false
   @AppStorage("native.export.psdCropToFrames") private var psdCropToFrames = true
   @State private var acceptChanged = false
   @State private var scope = "all"
@@ -739,7 +747,8 @@ struct NativeExportSheet: View {
   private var supportsPSD: Bool {
     controller.document.map { NativePSDExporter.supports($0.deck.canvasPreset) } ?? false
   }
-  private var includePSD: Bool { psd && supportsPSD }
+  private var includeInDesign: Bool { inDesign && supportsPSD }
+  private var includePSD: Bool { (psd || includeInDesign) && supportsPSD }
   private var includeProductionCopy: Bool { productionCopy || includePSD }
   private var exportCount: Int {
     let ids = scope == "current" ? Set([controller.selectedSlideID ?? ""]) : scope == "selected" ? selectedIDs : Set(controller.slides.map(\.id))
@@ -759,7 +768,14 @@ struct NativeExportSheet: View {
       )).disabled(includePSD)
       Toggle("Production / PSD · numbered Photoshop slides", isOn: Binding(
         get: { includePSD }, set: { psd = $0 }
+      )).disabled(!supportsPSD || includeInDesign)
+      Toggle("InDesign / Deck.indd · build automatically", isOn: Binding(
+        get: { includeInDesign }, set: { inDesign = $0 }
       )).disabled(!supportsPSD)
+      if includeInDesign {
+        Text("Includes PSDs, writing and the complete starter kit. InDesign opens to build your deck after the handoff is saved. macOS may ask for Automation permission.")
+          .workbenchText(.caption).foregroundStyle(.secondary)
+      }
       if includePSD {
         Picker("PSD artwork", selection: $psdCropToFrames) {
           Text("Match Workbench · editable masks").tag(true)
@@ -769,9 +785,13 @@ struct NativeExportSheet: View {
           ? "Keeps the Workbench framing with editable layer masks. Full original images remain inside Smart Objects; disable a mask in Photoshop to reveal them."
           : "Keeps image position and scale, with framing masks disabled. Images may extend beyond their Workbench frames. The full originals remain editable inside Smart Objects.")
           .workbenchText(.caption).foregroundStyle(.secondary)
-        Text("Includes workbench.md for Figma or InDesign. PSDs are created one at a time; Adobe apps can stay closed.").workbenchText(.caption).foregroundStyle(.secondary)
+        Text(includeInDesign ? "PSDs are created one at a time before InDesign starts." : "Includes workbench.md for Figma or InDesign. PSDs are created one at a time; Adobe apps can stay closed.").workbenchText(.caption).foregroundStyle(.secondary)
       } else if !supportsPSD {
         Text("PSDs need 1920 × 1080 or 2576 × 1080. Writing, PDFs and original media are available for this canvas.").workbenchText(.caption).foregroundStyle(.secondary)
+      }
+      if includeProductionCopy {
+        Text("Starter Kit · both sizes, layout kits, colour/type controls, text scrambling and the Photoshop → Figma PNG exporter. Included in this folder.")
+          .workbenchText(.caption).foregroundStyle(.secondary)
       }
       Toggle("Approved Media · original files per slide", isOn: $approved)
       Toggle("Shortlisted Media · candidates per slide", isOn: $shortlisted)
@@ -808,6 +828,7 @@ struct NativeExportSheet: View {
           options.shortlisted = shortlisted
           options.productionCopy = includeProductionCopy
           options.psd = includePSD
+          options.inDesign = includeInDesign
           options.psdCropToFrames = psdCropToFrames
           options.acceptChangedSources = acceptChanged
           options.selectedSlideIDs = scope == "current" ? Set([controller.selectedSlideID ?? ""]) : scope == "selected" ? selectedIDs : nil
@@ -880,7 +901,22 @@ struct NativeSettingsView: View {
       Toggle("Advance after choosing, shortlisting or rejecting", isOn: $controller.autoAdvance)
       Text("Interface size does not change the canvas or exported deck.").workbenchText(.caption)
         .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+      Divider()
+      Text("Adobe setup & starter kit").workbenchText(.label)
+      Text("Connect the apps you use before a handoff. Each button may open that app and ask for macOS permission. File access comes from the folders you choose.")
+        .workbenchText(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+      ForEach([(NativeAdobeAutomation.inDesignID, "Connect InDesign"), (NativeAdobeAutomation.photoshopID, "Connect Photoshop")], id: \.0) { id, title in
+        Button(title) { controller.setUpAdobe(id) }.disabled(controller.adobeSetupBusy || controller.exportRunning)
+        if let status = controller.adobeStatus[id] {
+          Text(status).workbenchText(.caption).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+        }
+      }
+      Button("Open Automation permissions") {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation") { NSWorkspace.shared.open(url) }
+      }
+      Button("Save complete starter kit…") { controller.saveStarterKit() }.disabled(controller.adobeSetupBusy || controller.exportRunning)
+      if let status = controller.adobeStatus["kit"] { Text(status).workbenchText(.caption) }
       Button("Done") { controller.showSettings = false }
-    }.padding(28).frame(width: 450)
+    }.padding(28).nativeSheetFrame(width: 540, height: 620)
   }
 }

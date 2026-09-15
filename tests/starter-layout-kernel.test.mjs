@@ -68,3 +68,51 @@ test('contents can move through the deck without changing authored writing or id
   assert.deepEqual(slides(s)[1].contentBlocks, original)
   history(s); assert.deepEqual(slides(s).map(x => x.id), ['one', 'toc'])
 })
+
+test('blank slide keeps three intentionally blank roles through reopen, undo and moving', () => {
+  const s = session(), original = slides(s)[0]
+  send(s, 'native.slide.add', { slideId: 'blank', sectionId: 'part', afterSlideId: 'one', title: 'Blank', kind: 'blank', assets: [] })
+  const blank = slides(s)[1]
+  assert.equal(blank.intent, 'text-only')
+  assert.equal(blank.native.layout.preset, 'text-only')
+  assert.equal(blank.native.layout.fitCopy, false)
+  assert.equal(blank.native.included, true)
+  assert.deepEqual(blank.contentBlocks.map(b => [b.role, b.state, b.value]), ['headline', 'subheadline', 'body'].map(role =>
+    [role, 'intentionally-blank', { type: 'doc', content: [{ type: 'paragraph', content: [] }] }]))
+  assert.deepEqual(slides(s)[0], original)
+  const reopened = k.open(plain(k.serializeSession(s)))
+  assert.deepEqual(slides(reopened), [original, blank])
+  history(reopened); assert.deepEqual(slides(reopened), [original])
+  history(reopened, true); assert.deepEqual(slides(reopened), [original, blank])
+  send(reopened, 'slide.move', { slideId: 'blank', targetSectionId: 'part', afterSlideId: null })
+  assert.deepEqual(slides(reopened), [blank, original])
+  history(reopened); assert.deepEqual(slides(reopened), [original, blank])
+})
+
+test('solid layout keeps chosen images and independent shortlist through artwork mode and undo', () => {
+  const s = session()
+  send(s, 'native.slide.patch', { slideId: 'one', patch: { layout: { preset: 'three-images', crops: { primary: { x: .1, y: .2, width: .6, height: .7 } } } } })
+  for (let i = 0; i < 3; i++) {
+    const id = `chosen-${i}`, asset = { id, label: `${id}.png`, mediaKind: 'image', availability: 'available' }
+    send(s, 'native.curate.set', { slideId: 'one', asset, action: 'use', role: i ? `primary:${i + 1}` : 'primary', assignmentId: `assignment-${id}` })
+    send(s, 'native.curate.set', { slideId: 'one', asset, action: 'remove-shortlist' })
+  }
+  send(s, 'native.curate.set', { slideId: 'one', asset: { id: 'spare', label: 'Spare.png', mediaKind: 'image', availability: 'available' }, action: 'shortlist' })
+  const original = slides(s)[0], assets = plain(k.query(s, 'native.document').deck.assetReferences)
+  const choose = (target, preset) => send(target, 'native.slide.patch', { slideId: 'one', patch: { layout: { preset } } })
+  choose(s, 'text-only')
+  const solid = slides(s)[0]
+  assert.deepEqual(solid.mediaAssignments, original.mediaAssignments)
+  assert.deepEqual(solid.native.shortlist, ['spare'])
+  assert.deepEqual(solid.contentBlocks, original.contentBlocks)
+  assert.deepEqual(solid.native.layout.crops, original.native.layout.crops)
+  assert.deepEqual(plain(k.query(s, 'native.document').deck.assetReferences), assets)
+  const reopened = k.open(plain(k.serializeSession(s)))
+  assert.deepEqual(slides(reopened)[0], solid)
+  choose(reopened, 'left')
+  assert.equal(slides(reopened)[0].native.layout.preset, 'left')
+  assert.deepEqual(slides(reopened)[0].mediaAssignments, original.mediaAssignments)
+  assert.deepEqual(slides(reopened)[0].native.shortlist, ['spare'])
+  history(reopened); assert.deepEqual(slides(reopened)[0], solid)
+  history(reopened); assert.deepEqual(slides(reopened)[0], original)
+})

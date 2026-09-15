@@ -68,6 +68,8 @@ final class NativeWorkbenchController: ObservableObject {
   @Published private(set) var slideActionBusy = false
   private(set) var slideOrdinals: [String: Int] = [:]
   @Published var showSettings = false
+  @Published var adobeSetupBusy = false
+  @Published var adobeStatus: [String: String] = [:]
   @Published var showApplyLayout = false
   @Published var showStarterStyle = false
   @Published var showMoodboard = false
@@ -695,10 +697,11 @@ final class NativeWorkbenchController: ObservableObject {
       label: "Add Slide", selectedAfter: id, openCopy: openCopy)
   }
   func addSpecialSlide(_ kind: String, assetIDs: [String] = [], after requestedID: String? = nil) {
-    guard let deck = document?.deck else { return }
+    guard ["blank", "contents", "moodboard"].contains(kind), let deck = document?.deck else { return }
     let anchor = requestedID ?? selectedSlideID
     guard let section = deck.sections.first(where: { $0.slides.contains(where: { $0.id == anchor }) }) ?? deck.sections.first else { return }
     let id = UUID().uuidString.lowercased()
+    let title = kind == "blank" ? "Blank" : kind == "contents" ? "Contents" : "Moodboard"
     do {
       let images: [[String: Any]] = try assetIDs.map { id in
         guard let asset = assetIndex[id] else { throw WorkbenchFailure(name: "MissingMedia", message: "A chosen image is no longer available. Choose it again.") }
@@ -706,8 +709,8 @@ final class NativeWorkbenchController: ObservableObject {
       }
       showMoodboard = false
       queueSlideEdit(type: "native.slide.add", payload: ["slideId": id, "sectionId": section.id,
-        "afterSlideId": anchor.map { $0 as Any } ?? NSNull(), "title": kind == "contents" ? "Contents" : "Moodboard", "kind": kind, "assets": images],
-        label: kind == "contents" ? "Add Contents" : "Add Moodboard", selectedAfter: id)
+        "afterSlideId": anchor.map { $0 as Any } ?? NSNull(), "title": title, "kind": kind, "assets": images],
+        label: kind == "blank" ? "Add Blank Slide" : "Add \(title)", selectedAfter: id)
     } catch { failure = error.localizedDescription }
   }
   func moveSlideToPosition(_ requestedID: String? = nil) {
@@ -1178,6 +1181,7 @@ final class NativeWorkbenchController: ObservableObject {
     }
   }
   func performExport(parent: URL, options: HandoffOptions, expectedDeckID: String) async {
+    let options = options.resolved
     guard canExport, document?.deck.deckId == expectedDeckID else { return }
     exportRunning = true; exportProgress = 0; exportGeneration += 1
     let generation = exportGeneration
@@ -1202,13 +1206,35 @@ final class NativeWorkbenchController: ObservableObject {
         ) { [weak self] event in
           Task { @MainActor in
             guard let self, self.exportGeneration == generation, self.exportRunning else { return }
-            self.exportProgress = max(self.exportProgress, Double(event.completed) / Double(max(1, event.total)))
+            self.exportProgress = max(self.exportProgress, Double(event.completed) / Double(max(1, event.total)) * (options.inDesign ? 0.9 : 1))
             self.status = event.message
           }
         }
       }
-      let result = try await withTaskCancellationHandler(
+      var result = try await withTaskCancellationHandler(
         operation: { try await work.value }, onCancel: { work.cancel() })
+      if options.inDesign {
+        if !result.produced.contains("Production") || !result.produced.contains("Starter Kit") {
+          result = NativeAdobeAutomation.withIssue(result, "InDesign was not built because its production files or starter kit could not be exported.")
+        } else {
+          status = "Building InDesign · macOS may ask for Automation permission…"
+          let handoff = result.url, width = Int(frozen.deck.canvasPreset.width), count = result.slideCount
+          let cancellation = handoff.appendingPathComponent("Automation/cancel")
+          do {
+            try FileManager.default.createDirectory(at: cancellation.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let overflow = try await NativeAdobeAutomation.waitForBuild(cancellation: cancellation) {
+              try NativeAdobeAutomation.build(in: handoff, width: width, slideCount: count, cancellation: cancellation)
+            }
+            result.produced.append("InDesign/Deck.indd")
+            if !overflow.isEmpty {
+              result = NativeAdobeAutomation.withIssue(result, "Deck saved, but copy overflows on pages \(overflow.map(String.init).joined(separator: ", ")). Adjust those text frames before delivery.")
+            }
+          } catch {
+            result = NativeAdobeAutomation.withIssue(result, error is CancellationError
+              ? "Build cancelled. Your completed PSDs, writing and media are safe." : error.localizedDescription)
+          }
+        }
+      }
       exportProgress = 1
       exportResult = result
       showExportResult = true
@@ -1222,4 +1248,43 @@ final class NativeWorkbenchController: ObservableObject {
     } catch { failure = error.localizedDescription }
   }
   func cancelExport() { exportTask?.cancel() }
+
+  func setUpAdobe(_ id: String) {
+    guard !adobeSetupBusy && !exportRunning else { return }
+    adobeSetupBusy = true
+    adobeStatus[id] = "Connecting… macOS may ask for permission."
+    Task {
+      defer { adobeSetupBusy = false }
+      do {
+        adobeStatus[id] = try await Task.detached(priority: .userInitiated) { try NativeAdobeAutomation.setUp(id) }.value
+      } catch { adobeStatus[id] = error.localizedDescription }
+    }
+  }
+
+  func saveStarterKit() {
+    guard !adobeSetupBusy && !exportRunning else { return }
+    let panel = NSOpenPanel()
+    panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.canCreateDirectories = true
+    panel.title = "Save a copy of the complete starter kit"
+    panel.begin { [weak self] response in
+      guard let self, response == .OK, let parent = panel.url else { return }
+      self.adobeSetupBusy = true
+      Task {
+        defer { self.adobeSetupBusy = false }
+        do {
+          let target = try await Task.detached(priority: .userInitiated) {
+            var target = parent.appendingPathComponent("Workbench Starter Kit")
+            var number = 2
+            while FileManager.default.fileExists(atPath: target.path) {
+              target = parent.appendingPathComponent("Workbench Starter Kit \(number)"); number += 1
+            }
+            try NativeStarterKit.copy(to: target)
+            return target
+          }.value
+          NSWorkspace.shared.activateFileViewerSelecting([target])
+          self.adobeStatus["kit"] = "Complete starter kit saved."
+        } catch { self.adobeStatus["kit"] = error.localizedDescription }
+      }
+    }
+  }
 }

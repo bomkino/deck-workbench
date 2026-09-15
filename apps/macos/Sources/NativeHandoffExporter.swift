@@ -14,9 +14,17 @@ struct HandoffOptions: Codable, Sendable {
   var shortlisted = true
   var productionCopy = false
   var psd = false
+  var inDesign = false
   var psdCropToFrames = true
   var acceptChangedSources = false
   var selectedSlideIDs: Set<String>?
+
+  var resolved: HandoffOptions {
+    var value = self
+    if value.inDesign { value.psd = true }
+    if value.psd { value.productionCopy = true }
+    return value
+  }
 }
 struct HandoffProgress: Sendable {
   let completed: Int
@@ -36,9 +44,11 @@ enum NativeHandoffExporter {
     NativeContents.resolve(slides: snapshot.deck.includedSlides.filter { options.selectedSlideIDs == nil || options.selectedSlideIDs!.contains($0.id) })
   }
   static func requiredAssetIDs(snapshot: DeckDocumentSnapshot, options: HandoffOptions) -> Set<String> {
+    let options = options.resolved
     var ids = Set<String>()
     for slide in exportSlides(snapshot: snapshot, options: options) {
-      if options.prototypePDF || options.notesPDF || options.approved || options.psd { ids.formUnion(slide.chosenIDs) }
+      if options.prototypePDF || options.notesPDF || options.psd { ids.formUnion(slide.chosenIDs) }
+      if options.approved { ids.formUnion(assignedIDs(slide)) }
       if options.shortlisted { ids.formUnion(slide.settings.shortlist) }
     }
     return ids
@@ -47,6 +57,7 @@ enum NativeHandoffExporter {
     snapshot: DeckDocumentSnapshot, sources: [String: NativeMediaSource], to parent: URL,
     options: HandoffOptions, progress: @Sendable (HandoffProgress) -> Void
   ) throws -> HandoffResult {
+    let options = options.resolved
     let slides = exportSlides(snapshot: snapshot, options: options)
     guard !slides.isEmpty else { throw WorkbenchFailure(name: "ExportEmpty", message: "Choose at least one included slide to export.") }
     guard options.prototypePDF || options.notesPDF || options.copy || options.approved || options.shortlisted || options.productionCopy || options.psd else {
@@ -107,7 +118,7 @@ enum NativeHandoffExporter {
     var expectations: [String: Set<String>] = [:]
     let labels = Dictionary(uniqueKeysWithValues: (snapshot.deck.assetReferences ?? []).map { ($0.id, $0.label) })
     for slide in slides {
-      for id in slide.chosenIDs.union(slide.settings.shortlist).intersection(wanted) {
+      for id in assignedIDs(slide).union(slide.settings.shortlist).intersection(wanted) {
         if let fingerprint = slide.settings.sourceFingerprints[id] { expectations[id, default: []].insert(fingerprint) }
       }
     }
@@ -149,11 +160,14 @@ enum NativeHandoffExporter {
       }
     }
     for (index, slide) in slides.enumerated() {
-      for id in slide.chosenIDs.union(slide.settings.shortlist).intersection(wanted) {
+      for id in assignedIDs(slide).union(slide.settings.shortlist).intersection(wanted) {
         if let problem = unavailable[id] { issues.append("Slide \(index + 1) — \(slide.title): \(sources[id]?.filename ?? labels[id] ?? id): \(problem)") }
       }
     }
     if options.productionCopy || options.psd {
+      try component("Starter Kit") {
+        try NativeStarterKit.copy(to: staging.appendingPathComponent("Starter Kit", isDirectory: true))
+      }
       try component("Production") {
         var production = try NativeWorkbenchMarkdown.project(snapshot: snapshot, slides: slides)
         let directory = staging.appendingPathComponent("Production", isDirectory: true)
@@ -194,7 +208,7 @@ enum NativeHandoffExporter {
           let folder = "\(String(format: "%02d", index + 1)) — \(safeName(slide.title, maximumBytes: 120))"
           let directory = target.appendingPathComponent(folder, isDirectory: true)
           try manager.createDirectory(at: directory, withIntermediateDirectories: false)
-          let ids = collection == "Approved Media" ? Array(slide.chosenIDs).sorted() : slide.settings.shortlist
+          let ids = collection == "Approved Media" ? Array(assignedIDs(slide)).sorted() : slide.settings.shortlist
           var used = Set<String>()
           for id in ids {
             let originalName = sources[id]?.filename ?? labels[id] ?? "media"
@@ -254,11 +268,38 @@ enum NativeHandoffExporter {
       try Data(report.utf8).write(to: staging.appendingPathComponent("Export issues.txt"), options: .atomic)
       produced.append("Export issues.txt")
     }
+    if produced.contains("Production") {
+      let guide = """
+      YOUR DECK HANDOFF
+
+      InDesign: \(options.inDesign ? "Workbench will build InDesign/Deck.indd after this folder is saved. Check the export result for success or exceptions." : "Automatic building was not selected. Use Starter Kit/Start Here - Deck Production.md to build manually.")
+
+      Figma: import Production/workbench.md with your existing Workbench importer. Edit Production/PSD, then run Starter Kit/Automation/Photoshop/Export Slide PNGs.jsx to make the background and transparent-character PNGs.
+
+      InDesign artwork: once Deck.indd exists, edit or share InDesign/Links/PSD. These are the files linked to the document. Production/PSD remains the original export; the two folders do not sync each other.
+
+      Returned artwork: keep PSD names such as Slide 01.psd. Open Deck.indd and run Starter Kit/Automation/InDesign/Refresh PSD Links.jsx; it backs up old artwork and restores layer visibility and links. Use the same helper after moving this entire folder to another computer.
+
+      Starter Kit contains both sizes, layout kits, colour/type controls, text scrambling, Photoshop templates and the PNG exporter. Originals are in Approved Media and Shortlisted Media when those components were selected. Media index.csv records the copies.
+
+      Keep this whole folder together. Your editable .pitchdeck is separate: copy it too if the next person needs to change the Workbench assembly. A handoff does not replace that document.
+
+      Text-area guides inside PSD Smart Objects are hidden by default. Switch them on while expanding artwork, then hide them before saving finished artwork. The bundled PNG exporter excludes these guides.
+
+      Review Export issues.txt when present. Any incomplete InDesign folder must not be treated as a finished deck.
+      """
+      try Data(guide.utf8).write(to: staging.appendingPathComponent("START HERE.txt"), options: .atomic)
+      produced.append("START HERE.txt")
+    }
     try Task.checkCancellation()
     try manager.moveItem(at: staging, to: final)
     finished = true
     progress(HandoffProgress(completed: total, total: total, message: failed.isEmpty ? "Handoff complete" : "Partial handoff saved"))
     return HandoffResult(url: final, slideCount: slides.count, originalCopies: copies, issues: Array(Set(issues)).sorted(), produced: produced)
+  }
+
+  private static func assignedIDs(_ slide: DeckSlide) -> Set<String> {
+    Set((slide.mediaAssignments ?? []).map(\.assetReferenceId))
   }
 
   private static func images(

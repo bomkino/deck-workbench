@@ -1,0 +1,363 @@
+// Workbench to InDesign 1.0.0 — portable, local-only importer.
+// Reads workbench.md beside the saved active one-page document.
+// Creates a starter backup; one Undo step; no automatic document save.
+
+/* Workbench Markdown v1. ES3-compatible; no host APIs or source evaluation. */
+var WorkbenchMarkdown = (function () {
+    var RESERVED = [
+        "# Deck", "Format:", "Title:", "Canvas:", "## Part:", "Purpose:",
+        "### Slide:", "Style:", "Content pattern:", "#### Headline",
+        "#### Subheadline", "#### Body", "State:"
+    ];
+    var CANVASES = [
+        "cinemascope-2576x1080", "widescreen-1920x1080", "square-2160x2160",
+        "standard-1920x1440", "a4-portrait", "letter-portrait"
+    ];
+    var ROLES = ["headline", "subheadline", "body"];
+    var HEADINGS = ["#### Headline", "#### Subheadline", "#### Body"];
+    var STATES = ["present", "intentionally-blank", "unreviewed"];
+
+    function contains(values, value) {
+        var n;
+        for (n = 0; n < values.length; n += 1) {
+            if (values[n] === value) { return true; }
+        }
+        return false;
+    }
+
+    function reservedPrefix(line) {
+        var n;
+        for (n = 0; n < RESERVED.length; n += 1) {
+            if (line.indexOf(RESERVED[n]) === 0) { return RESERVED[n]; }
+        }
+        return "";
+    }
+
+    function decodeCopyLine(line) {
+        var n = 0;
+        while (line.charAt(n) === "\\") { n += 1; }
+        if (n > 0 && reservedPrefix(line.substring(n)) !== "") {
+            return line.substring(1);
+        }
+        return line;
+    }
+
+    function headingIndex(line) {
+        var n;
+        for (n = 0; n < HEADINGS.length; n += 1) {
+            if (line === HEADINGS[n]) { return n; }
+        }
+        return -1;
+    }
+
+    function parse(source) {
+        var lines, cursor = 0, deck, partSlides, partCount = 0, text, n, code, next;
+
+        function fail(message, at) {
+            var error = new Error("Workbench Markdown, line " +
+                ((typeof at === "number" ? at : cursor) + 1) + ": " + message);
+            error.name = "WorkbenchMarkdownError";
+            error.line = (typeof at === "number" ? at : cursor) + 1;
+            throw error;
+        }
+
+        function exact(expected) {
+            if (lines[cursor] !== expected) { fail("Expected " + expected + "."); }
+            cursor += 1;
+        }
+
+        function blank() {
+            if (lines[cursor] !== "") { fail("Expected one structural blank separator line."); }
+            cursor += 1;
+        }
+
+        function metadata(prefix) {
+            var value;
+            if (cursor >= lines.length || lines[cursor].indexOf(prefix + " ") !== 0) {
+                fail("Expected " + prefix + " followed by one space and a value.");
+            }
+            value = lines[cursor].substring(prefix.length + 1);
+            if (value === "" || value.replace(/^\s+|\s+$/g, "") !== value ||
+                    /[\x00-\x1f\x7f-\x9f\u2028\u2029]/.test(value)) {
+                fail(prefix + " requires nonblank single-line metadata without surrounding whitespace.");
+            }
+            cursor += 1;
+            return value;
+        }
+
+        function parseField(roleIndex) {
+            var state, raw = [], fieldText, boundary, line, start, j;
+            exact(HEADINGS[roleIndex]);
+            blank();
+            state = metadata("State:");
+            if (!contains(STATES, state)) { fail("Unknown copy State: " + state + ".", cursor - 1); }
+            start = cursor;
+            while (cursor < lines.length) {
+                line = lines[cursor];
+                boundary = reservedPrefix(line);
+                if (boundary !== "") {
+                    if (headingIndex(line) >= 0 || line.indexOf("### Slide:") === 0 ||
+                            line.indexOf("## Part:") === 0) {
+                        break;
+                    }
+                    if (boundary === "State:") { fail("Duplicate State field."); }
+                    fail("Unexpected or malformed structural marker " + boundary +
+                        "; visible structural-looking copy must be escaped.");
+                }
+                raw.push(line);
+                cursor += 1;
+            }
+            if (cursor < lines.length) {
+                if (raw.length === 0 || raw[raw.length - 1] !== "") {
+                    fail("Missing structural blank separator after " + HEADINGS[roleIndex] + ".");
+                }
+                // Remove exactly one separator, retaining all authored trailing LFs.
+                raw.pop();
+            }
+            for (j = 0; j < raw.length; j += 1) { raw[j] = decodeCopyLine(raw[j]); }
+            fieldText = raw.join("\n");
+            if (state === "present" && !/[^\s\uFEFF]/.test(fieldText)) {
+                fail("State: present requires non-whitespace copy.", start);
+            }
+            if (state !== "present" && raw.length !== 0) {
+                fail("State: " + state + " requires empty copy, including no spaces or line breaks.", start);
+            }
+            return { state: state, text: fieldText };
+        }
+
+        function parseSlide() {
+            var slide, index, lastIndex = -1, seen = [false, false, false], j;
+            slide = {
+                title: metadata("### Slide:"),
+                purpose: "",
+                contentPattern: "",
+                headline: { state: "unreviewed", text: "" },
+                subheadline: { state: "unreviewed", text: "" },
+                body: { state: "unreviewed", text: "" }
+            };
+            blank();
+            slide.purpose = metadata("Purpose:");
+            exact("Style: undecided");
+            slide.contentPattern = metadata("Content pattern:");
+            if (!contains(["simple-copy", "no-on-slide-text"], slide.contentPattern)) {
+                fail("Unsupported Content pattern: " + slide.contentPattern + ".", cursor - 1);
+            }
+            if (cursor < lines.length) { blank(); }
+            while (cursor < lines.length && (index = headingIndex(lines[cursor])) >= 0) {
+                if (seen[index]) { fail("Duplicate " + HEADINGS[index] + " field."); }
+                if (index < lastIndex) { fail("Copy fields must be ordered Headline, Subheadline, Body."); }
+                seen[index] = true;
+                lastIndex = index;
+                slide[ROLES[index]] = parseField(index);
+            }
+            if (cursor < lines.length && lines[cursor].indexOf("### Slide:") !== 0 &&
+                    lines[cursor].indexOf("## Part:") !== 0) {
+                fail("Unexpected structural field or content outside a copy field.");
+            }
+            if (slide.contentPattern === "no-on-slide-text") {
+                for (j = 0; j < ROLES.length; j += 1) {
+                    if (!seen[j] || slide[ROLES[j]].state !== "intentionally-blank") {
+                        fail("no-on-slide-text requires all three fields explicitly intentionally-blank.");
+                    }
+                }
+            }
+            return slide;
+        }
+
+        if (typeof source !== "string") { fail("Input must be a string.", 0); }
+        text = source.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n");
+        if (text.indexOf("\x00") >= 0) { fail("NUL is not supported in plain-text copy.", 0); }
+        // Reject broken UTF-16 instead of silently importing a replacement character.
+        for (n = 0; n < text.length; n += 1) {
+            code = text.charCodeAt(n);
+            if (code >= 0xD800 && code <= 0xDBFF) {
+                next = text.charCodeAt(n + 1);
+                if (!(next >= 0xDC00 && next <= 0xDFFF)) { fail("Invalid Unicode surrogate pair.", 0); }
+                n += 1;
+            } else if (code >= 0xDC00 && code <= 0xDFFF) {
+                fail("Invalid Unicode surrogate pair.", 0);
+            }
+        }
+        lines = text.split("\n");
+        // The exporter appends one transport LF. Any preceding LFs belong to copy.
+        // A file with no transport LF is also accepted; no copy is trimmed at EOF.
+        if (text.charAt(text.length - 1) === "\n") { lines.pop(); }
+        exact("# Deck");
+        blank();
+        exact("Format: workbench-markdown/1");
+        deck = { title: metadata("Title:"), canvas: metadata("Canvas:"), slides: [] };
+        if (!contains(CANVASES, deck.canvas)) { fail("Unsupported Canvas: " + deck.canvas + ".", cursor - 1); }
+        if (cursor < lines.length) { blank(); }
+        while (cursor < lines.length) {
+            metadata("## Part:");
+            partCount += 1;
+            blank();
+            metadata("Purpose:");
+            partSlides = 0;
+            if (cursor < lines.length) { blank(); }
+            while (cursor < lines.length && lines[cursor].indexOf("### Slide:") === 0) {
+                deck.slides.push(parseSlide());
+                partSlides += 1;
+            }
+            if (partSlides === 0) { fail("Each Part must contain at least one Slide."); }
+            if (cursor < lines.length && lines[cursor].indexOf("## Part:") !== 0) {
+                fail("Expected the next Part or Slide.");
+            }
+        }
+        if (partCount === 0 || deck.slides.length === 0) { fail("Deck must contain at least one Slide."); }
+        return deck;
+    }
+
+    return { parse: parse };
+}());
+
+/* InDesign host. The Workbench parser is bundled above this module. */
+var WorkbenchInDesign = (function () {
+    var VERSION = "1.0.0", RUN_KEY = "pitchdog.workbench.import", TITLE = "Workbench to InDesign";
+    function fail(message) { throw new Error(message); }
+    function pad(n) { return n < 10 ? "0" + n : String(n); }
+    function stamp() { var d = new Date(); return d.getFullYear() + pad(d.getMonth()+1) + pad(d.getDate()) + "-" + pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds()); }
+    // Production adapter: an intentionally blank field must not print a placeholder.
+    function nativeText(field) { if(field && field.state === "intentionally-blank")return "";return field && field.state === "present" && /\S/.test(field.text) ? field.text.replace(/\n\n/g, "\r") : "-"; }
+    function assertEditable(frame) {
+        var item = frame;
+        while (item && item.isValid && (item.constructor.name === "TextFrame" || item.constructor.name === "Group")) {
+            if (item.locked === true) fail("The text-box or its group is locked. Unlock that text object and run again.");
+            if (item.visible === false) fail("The text-box or its group is hidden. Show it and run again.");
+            item = item.parent;
+        }
+        if (frame.itemLayer.locked || !frame.itemLayer.visible) fail("Show and unlock the layer containing the text-box. Background layers may stay locked or hidden.");
+    }
+    function placeholders(frame) {
+        var story = frame.parentStory, p = story.paragraphs, expected = ["Head", "Sub", "Body"], slots = [], i, text, q;
+        if (story.textContainers.length !== 1 || frame.parentPage === null) return null;
+        if (p.length !== 3 && p.length !== 4) return null;
+        if (p.length === 4 && p[3].contents !== "") return null;
+        for (i = 0; i < 3; i++) {
+            q = p[i]; text = q.contents.replace(/\r$/, "");
+            if (text !== expected[i] && text !== expected[i] + ".") return null;
+            if (q.textStyleRanges.length !== 1) fail("The " + expected[i] + " placeholder has mixed character formatting. Give each placeholder one consistent style, then run again.");
+            slots.push({start:q.insertionPoints[0].index, length:text.length, style:q.appliedParagraphStyle, font:q.appliedFont.name, size:q.pointSize, leading:String(q.leading), tracking:q.tracking, characterStyle:q.appliedCharacterStyle.id});
+        }
+        return {frame:frame, slots:slots, trailingReturn:/\r$/.test(story.contents), original:story.contents};
+    }
+    function inspectPage(page) {
+        var items = page.allPageItems, found = [], i, match;
+        for (i = 0; i < items.length; i++) if (items[i].constructor.name === "TextFrame") {
+            match = placeholders(items[i]); if (match) found.push(match);
+        }
+        if (found.length !== 1) fail(found.length ? "More than one text frame has Head./Sub./Body. Keep exactly one target frame on page 1." : "Page 1 needs one unthreaded text frame with exactly three styled paragraphs: Head. then Sub. then Body. Use paragraph returns, not Shift+Return. Keep it on the page, not only on a parent page.");
+        assertEditable(found[0].frame);
+        return found[0];
+    }
+    function readMarkdown(file) {
+        if (!file.exists) fail("Cannot find workbench.md beside this InDesign document:\n" + file.parent.fsName);
+        if (file.length > 16 * 1024 * 1024) fail("workbench.md is larger than 16 MB. Check that it is a plain-text Workbench export.");
+        file.encoding = "UTF-8";
+        if (!file.open("r")) fail("Cannot read workbench.md: " + file.error);
+        var text;
+        try { text = file.read(); if (file.error) fail("Could not finish reading workbench.md: " + file.error); }
+        finally { file.close(); }
+        if (/\u0000|\uFFFD/.test(text)) fail("workbench.md contains a NUL or replacement character. Save a valid UTF-8 plain-text export and run again.");
+        return text;
+    }
+    function backupDocument(doc) {
+        var folder = Folder(doc.fullName.parent.fsName + "/Workbench-Backups");
+        if (!folder.exists && !folder.create()) fail("Cannot create the starter backup folder. Check folder write permissions.");
+        var base = doc.name.replace(/\.indd$/i, "") + " - Starter - " + stamp(), n = 1;
+        var f = File(folder.fsName + "/" + base + ".indd");
+        while (f.exists) { n++; f = File(folder.fsName + "/" + base + "-" + n + ".indd"); }
+        doc.saveACopy(f);
+        if (!f.exists || f.length === 0) fail("The starter backup could not be verified. No pages were imported.");
+        return f;
+    }
+    function roundedBounds(bounds) { var a=[]; for(var n=0;n<bounds.length;n++) a.push(Math.round(bounds[n]*1000)/1000); return a.join(","); }
+    function pageSignature(page) {
+        var all = page.allPageItems, out = [], i, x;
+        for (i = 0; i < all.length; i++) { x=all[i]; out.push([x.constructor.name,x.name,x.itemLayer.name,x.locked,x.visible,roundedBounds(x.geometricBounds)].join("|")); }
+        out.sort(); return out.join("\n");
+    }
+    function layerSignature(doc) {
+        var out = [], i, l; for (i=0;i<doc.layers.length;i++) { l=doc.layers[i];out.push([l.id,l.name,l.locked,l.visible].join("|")); } return out.join("\n");
+    }
+    function fill(info, slide) {
+        var values = [nativeText(slide.headline),nativeText(slide.subheadline),nativeText(slide.body)], story=info.frame.parentStory, i, slot, j, paragraphIndex=0, q;
+        // Replace from the end so earlier character indices and their formatting stay intact.
+        for (i=2;i>=0;i--) { slot=info.slots[i];story.characters.itemByRange(slot.start,slot.start+slot.length-1).contents=values[i]; }
+        var expected=values.join("\r")+(info.trailingReturn?"\r":"");
+        if (story.contents !== expected) fail("Copy verification failed on slide " + slide.title + ".");
+        // Direct replacement inherits local formatting too; verify every resulting paragraph.
+        for (i=0;i<3;i++) {
+            for (j=0;j<values[i].split("\r").length;j++) {
+                q=story.paragraphs.item(paragraphIndex++);slot=info.slots[i];
+                // An empty final paragraph has no native Paragraph object. Its
+                // insertion point still carries the intended body formatting.
+                if(!q.isValid && i===2 && values[i]==='')q=story.insertionPoints[-1];
+                if (q.appliedParagraphStyle.id!==slot.style.id || q.appliedFont.name!==slot.font || q.pointSize!==slot.size || String(q.leading)!==slot.leading || q.tracking!==slot.tracking || q.appliedCharacterStyle.id!==slot.characterStyle) fail("Style verification failed on slide " + slide.title + ". The starter has a style rule that changes newly inserted paragraphs.");
+            }
+        }
+        return values;
+    }
+    function run() {
+        var doc, backup, raw, parsed, template, layersBefore, pageBefore, originalReflow, originalRedraw, runId=stamp(), entered=false, imported=false, report=[], overflow=[], missingFonts=[], i, page, info, error=null;
+        try {
+            if (!app.documents.length) fail("Open your one-page InDesign starter first.");
+            doc=app.activeDocument;
+            if (!doc.saved) fail("Save the starter as an .indd file first. Put workbench.md in the same folder.");
+            if (doc.pages.length!==1 || doc.extractLabel(RUN_KEY)) fail("This is not an untouched one-page starter. To import again, use Edit > Undo immediately after the import, or open the saved starter backup. Existing pages are never replaced or deleted.");
+            if (doc.documentPreferences.facingPages) fail("This importer expects a deck with Facing Pages turned off. Turn it off in File > Document Setup, then run again.");
+            raw=readMarkdown(File(doc.fullName.parent.fsName+"/workbench.md"));
+            parsed=WorkbenchMarkdown.parse(raw);
+            if (parsed.slides.length>1000) fail("This file contains more than 1,000 slides. Split the export into smaller decks.");
+            template=inspectPage(doc.pages[0]);
+            if (template.frame.overflows) fail("The starter placeholders already overflow the frame. Enlarge the starter text frame before importing.");
+            if (template.frame.textFramePreferences.autoSizingType !== AutoSizingTypeEnum.OFF) fail("Turn Auto-Size off for the starter text frame. The importer preserves its dimensions.");
+            for(i=0;i<doc.fonts.length;i++) if(doc.fonts[i].status!==FontStatus.INSTALLED) missingFonts.push(doc.fonts[i].name);
+            if(missingFonts.length) fail("Resolve these missing or substituted fonts before importing:\n"+missingFonts.join("\n"));
+            layersBefore=layerSignature(doc); pageBefore=pageSignature(doc.pages[0]);
+            backup=backupDocument(doc);
+            originalReflow=doc.textPreferences.smartTextReflow; originalRedraw=app.scriptPreferences.enableRedraw;
+            app.doScript(function () {
+                doc.insertLabel(RUN_KEY,runId); entered=true;
+                try {
+                    doc.textPreferences.smartTextReflow=false;app.scriptPreferences.enableRedraw=false;
+                    // Duplicate the untouched template before filling any page.
+                    for(i=1;i<parsed.slides.length;i++) doc.pages[0].duplicate(LocationOptions.AFTER,doc.pages[-1]);
+                    for(i=0;i<parsed.slides.length;i++) {
+                        page=doc.pages[i];info=inspectPage(page);fill(info,parsed.slides[i]);
+                        page.insertLabel("pitchdog.workbench.slide",String(i+1));page.insertLabel("pitchdog.workbench.title",parsed.slides[i].title);
+                        if(pageSignature(page)!==pageBefore) fail("Page objects changed unexpectedly on slide "+(i+1)+".");
+                    }
+                    doc.recompose();
+                    if(doc.pages.length!==parsed.slides.length) fail("Page count verification failed.");
+                    if(layerSignature(doc)!==layersBefore) fail("Layer state verification failed.");
+                    for(i=0;i<doc.pages.length;i++) {
+                        var all=doc.pages[i].allPageItems, any=false;
+                        for(var k=0;k<all.length;k++) if(all[k].constructor.name==="TextFrame" && all[k].overflows) any=true;
+                        if(any) overflow.push(i+1);
+                    }
+                } finally { doc.textPreferences.smartTextReflow=originalReflow;app.scriptPreferences.enableRedraw=originalRedraw; }
+            },ScriptLanguage.JAVASCRIPT,undefined,UndoModes.ENTIRE_SCRIPT,"Import Workbench copy");
+            imported=true;
+            report.push("Imported "+parsed.slides.length+" pages from workbench.md.");
+            if(overflow.length) report.push("\nTEXT OVERFLOW on pages: "+overflow.join(", ")+".\nAll copy is retained, including overset text. Adjust these text frames or styles before exporting.");
+            else report.push("Copy, paragraph styles and page count verified. No overflowing text frames.");
+            report.push("\nUnreviewed copy became -. Intentionally blank copy stayed empty. Layout, layers and backgrounds retained.");
+            report.push("\nThe populated document is not saved yet. Review it, then Save or Save As.\nUndo: Edit > Undo Import Workbench copy.");
+            report.push("\nStarter backup:\n"+backup.fsName);
+            return {ok:true,message:report.join("\n"),pages:parsed.slides.length,overflow:overflow,backup:backup.fsName};
+        } catch(e) {
+            error=e.message||String(e);
+            if(entered && !imported && doc && doc.isValid && doc.extractLabel(RUN_KEY)===runId) {
+                try { doc.undo(); if(doc.pages.length!==1 || inspectPage(doc.pages[0]).original!==template.original) throw new Error("Starter restore check failed");error+="\n\nThe import was undone. Your starter remains available in the backup."; }
+                catch(undoError) { error+="\n\nAutomatic Undo failed. Do not save this document; reopen the starter backup."; }
+            }
+            if(backup && !imported && doc && doc.isValid && !doc.extractLabel(RUN_KEY)) {
+                try { if(doc.pages.length===1 && inspectPage(doc.pages[0]).original===template.original && layerSignature(doc)===layersBefore && pageSignature(doc.pages[0])===pageBefore) error+="\n\nNo import changes remain in the starter."; } catch(restoreCheck) {}
+            }
+            if(backup) error+="\n\nStarter backup:\n"+backup.fsName;
+            return {ok:false,message:error};
+        }
+    }
+    return {run:run,version:VERSION};
+}());
