@@ -1,4 +1,4 @@
-# Known boundaries — v0.2.0 implementation
+# Known boundaries — v0.4.0 implementation
 
 Apple Silicon and macOS 26+ only. Ad-hoc signed, not notarized. The application is a prototype/intent tool, not final production design software.
 

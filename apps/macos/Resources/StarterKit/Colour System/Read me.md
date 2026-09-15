@@ -31,7 +31,7 @@ The existing **D-Dark** and **L-Light** parents still let you mix appearances in
 
 Workbench's **Type & colours** controls use the same library. Apply chosen colours to the intended slides and save. Production exports include resolved values; automatic InDesign builds can use those values. Older handoffs without palette data keep their starter colours.
 
-Figma uses project colour aliases over the same library. Each slide keeps its own appearance. Its separate **Deck Colours** helper and installation instructions are in the **Figma Deck Colours** folder. The existing Workbench importer and Text Scramble tools are unchanged. Palette selection is explicit; changes made independently in InDesign and Figma do not synchronize automatically.
+Figma uses project colour aliases over the same library. Each slide keeps its own appearance. Open **Tools → Deck Colours → Created by you → Run** for the visual colour picker. It lives in the shared account, so there is no local plugin installation. The **Figma Deck Colours** folder contains its guide and the master starter link. The existing Workbench importer and Text Scramble tools are unchanged. Palette selection is explicit; changes made independently in InDesign and Figma do not synchronize automatically.
 
 ## Keep colour readable
 

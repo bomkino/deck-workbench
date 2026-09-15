@@ -17,6 +17,7 @@ Use **2576 × 1080** for cinemascope. Use the **1920x1080** folder for standard 
 - **Starter INDDs:** reusable one-page documents, with paragraph, character and object styles, colours, parent pages and guides. Duplicate one before editing it manually.
 - **Layout Kit INDDs:** editable examples you can borrow pages from. The PDFs are flattened visual previews; use the INDDs for editing.
 - **PSD templates:** shared Background and Character Smart Objects, in both sizes.
+- **Figma Deck Colours:** a shared-account Tool with visual colour choices. The colour guide links the one master starter. **Fonts/PD House** contains the three CC0 fonts for Figma’s separate House styles; InDesign’s Apple fonts are still installed separately.
 - **Deck Colour Controls.jsx:** pick or revise the project base and accents in InDesign. Keep the adjacent **Colour System** folder with it. The colour guide explains matched text, fill and line styles.
 - **Deck Size Controls.jsx:** move Head, Sub and Body up or down their size scales without choosing a different font family.
 - **Text Scramble Head Sub Body.jsx:** scramble selected text roles for layout studies. Run on a copy if you need to retain the writing.

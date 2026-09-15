@@ -1,0 +1,23 @@
+{
+  "version": "13.1.1",
+  "commit": "318e6ff4d4bf76be76f7ed5225aacf7517d2ee82",
+  "source": "https://github.com/bomkino/pitchdog-type-system",
+  "fontLicense": "CC0-1.0",
+  "files": [
+    {
+      "file": "pd-head.ttf",
+      "bytes": 936368,
+      "sha256": "6edc10d6e1bab8ac85bcfc2510a92791c6face6f8341f5d7c6ccfea937b20a11"
+    },
+    {
+      "file": "pd-body-roman.ttf",
+      "bytes": 549368,
+      "sha256": "99806fcae8dba5155d58da9a86fc8d6ee141a48806eca70ef111e1632030d2f2"
+    },
+    {
+      "file": "pd-body-alt-roman.ttf",
+      "bytes": 549316,
+      "sha256": "00cc35007ee15d9c15de5e231ad60fab9d60163a5a628c9ce2e551d7ca653b01"
+    }
+  ]
+}

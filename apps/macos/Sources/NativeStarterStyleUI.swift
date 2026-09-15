@@ -78,7 +78,9 @@ private struct NativePaletteEditor: View {
           if let base = library.bases.first(where: { $0.id == id }) { palette.use(base) }
         })) {
           Text("Current / custom").tag("custom")
-          ForEach(library.bases) { Text($0.label).tag($0.id) }
+          ForEach(library.bases) { base in
+            Label { Text(base.label) } icon: { Image(nsImage: menuSwatch(base.dark.background)) }.tag(base.id)
+          }
         }
         pairedSamples("text")
         ForEach(["accent1", "accent2", "accent3", "accent4", "mono"], id: \.self) { role in familyPicker(role, library: library) }
@@ -132,10 +134,25 @@ private struct NativePaletteEditor: View {
         if let family = families.first(where: { $0.id == id }) { palette.use(family, role: role) }
       })) {
         Text("Current / custom").tag("custom")
-        ForEach(families) { Text($0.label).tag($0.id) }
+        ForEach(families) { family in
+          Label { Text(family.label) } icon: { Image(nsImage: menuSwatch(family.dark.solid)) }.tag(family.id)
+        }
       }
       pairedSamples(role)
     }
+  }
+  private func menuSwatch(_ hex: String) -> NSImage {
+    let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { bounds in
+      let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 4, yRadius: 4)
+      (NSColor(cgColor: NativeSlideRenderer.color(hex)) ?? .clear).setFill()
+      path.fill()
+      NSColor.separatorColor.setStroke()
+      path.lineWidth = 1
+      path.stroke()
+      return true
+    }
+    image.isTemplate = false
+    return image
   }
   private func colourField(_ role: String, light: Bool) -> some View {
     let hex = palette.hex(role, appearance: light ? "light" : "dark")

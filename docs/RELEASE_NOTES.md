@@ -4,9 +4,11 @@ Choose a neutral base and independent Primary, Secondary, Third, Fourth and Mono
 
 Production handoffs carry each slide's resolved palette and Head/Sub/Body colour roles. The InDesign helper applies those values to the generated project while preserving paragraph-style identities and mixed dark/light pages. Old exports without palette data retain starter colours.
 
-**Deck Colour Controls.jsx** provides the corresponding project picker in InDesign, with paired previews, named colour styles and one Undo. Both starter sizes receive the additional colour roles without changing their existing artwork, text, fonts or initial colours. The portable kit also includes the separate **Figma Deck Colours** development plugin and its setup guide; existing account tools are unchanged.
+**Deck Colour Controls.jsx** provides the corresponding project picker in InDesign, with paired previews, named colour styles and one Undo. Both starter sizes receive the additional colour roles without changing their existing artwork, text, fonts or initial colours. **Figma Deck Colours** is a shared-account Tool with a labelled swatch grid and an optional separate PD House setup. The kit includes its guide and the three CC0 house fonts; existing importer and Scramble tools are unchanged.
 
-The master ramps are pinned to **Radix Colors 3.0.0**, with MIT attribution. Supplied opaque text/foreground pairs meet 4.5:1 and meaningful line pairs meet 3:1 on the documented surfaces. Custom colours, imagery, transparency and gradients require their own contrast check. This update introduces no new font dependency or document migration.
+The master ramps are pinned to **Radix Colors 3.0.0**, with MIT attribution. Supplied opaque text/foreground pairs meet 4.5:1 and meaningful line pairs meet 3:1 on the documented surfaces. Custom colours, imagery, transparency and gradients require their own contrast check. Existing project fonts and document schemas are unchanged. The supplied PD House fonts are only needed for Figma’s optional house styles.
+
+An existing Adobe completion/cancellation race is also fixed: successful requests no longer write a cancellation marker when their result stream closes. Actual caller cancellation still returns control promptly.
 
 # v0.3.0 — portable starter kit and automatic InDesign
 
