@@ -6,9 +6,25 @@ enum NativeAdobeAutomationChecks {
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
     defer { try? FileManager.default.removeItem(at: root) }
     let marker = root.appendingPathComponent("cancel")
-    let normal = try await NativeAdobeAutomation.waitForBuild(cancellation: marker) { [2, 4] }
-    guard normal == [2, 4], !FileManager.default.fileExists(atPath: marker.path) else {
-      throw WorkbenchFailure(name: "AcceptanceFailure", message: "A completed Adobe build was cancelled or lost its result")
+    // Repeat the quick completion boundary because yield and finish run on the
+    // worker while the consumer resumes independently. Empty overflow is valid.
+    for index in 0..<64 {
+      let expected = index.isMultiple(of: 2) ? [Int]() : [2, 4]
+      let normal = try await NativeAdobeAutomation.waitForBuild(cancellation: marker) { expected }
+      await Task.yield()
+      guard normal == expected, !FileManager.default.fileExists(atPath: marker.path) else {
+        throw WorkbenchFailure(name: "AcceptanceFailure", message: "A completed Adobe build was cancelled or lost its result")
+      }
+    }
+    do {
+      _ = try await NativeAdobeAutomation.waitForBuild(cancellation: marker) {
+        throw WorkbenchFailure(name: "AdobeProbe", message: "Expected worker failure")
+      }
+      throw WorkbenchFailure(name: "AcceptanceFailure", message: "An Adobe worker error was swallowed")
+    } catch let error as WorkbenchFailure where error.name == "AdobeProbe" {
+      guard !FileManager.default.fileExists(atPath: marker.path) else {
+        throw WorkbenchFailure(name: "AcceptanceFailure", message: "An Adobe worker error was mislabeled as cancellation")
+      }
     }
     let entered = DispatchSemaphore(value: 0), release = DispatchSemaphore(value: 0), finished = DispatchSemaphore(value: 0)
     // A zero-time probe never blocks the async executor.

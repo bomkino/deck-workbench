@@ -98,23 +98,30 @@ enum NativeAdobeAutomation {
   /// Stop waiting immediately on cancellation, even while AppleScript is blocked
   /// by a macOS prompt. The worker still owns its safe cleanup and reads the marker.
   static func waitForBuild(cancellation: URL, operation: @escaping @Sendable () throws -> [Int]) async throws -> [Int] {
-    let stream = AsyncThrowingStream<[Int], Error> { continuation in
-      let worker = Task.detached(priority: .userInitiated) {
-        do {
-          try Task.checkCancellation()
-          continuation.yield(try operation())
-          continuation.finish()
-        } catch { continuation.finish(throwing: error) }
-      }
-      continuation.onTermination = { termination in
-        if case .cancelled = termination {
-          try? Data("cancel\n".utf8).write(to: cancellation, options: .atomic)
-          worker.cancel()
+    try await withTaskCancellationHandler {
+      try Task.checkCancellation()
+      let stream = AsyncThrowingStream<[Int], Error> { continuation in
+        let worker = Task.detached(priority: .userInitiated) {
+          do {
+            try Task.checkCancellation()
+            continuation.yield(try operation())
+            continuation.finish()
+          } catch { continuation.finish(throwing: error) }
+        }
+        continuation.onTermination = { termination in
+          if case .cancelled = termination { worker.cancel() }
         }
       }
+      // Consume completion before returning. Stream teardown is not evidence
+      // of user cancellation; only the caller's cancellation handler marks it.
+      var result: [Int]?
+      for try await overflow in stream { result = overflow }
+      try Task.checkCancellation()
+      guard let result else { throw CancellationError() }
+      return result
+    } onCancel: {
+      try? Data("cancel\n".utf8).write(to: cancellation, options: .atomic)
     }
-    for try await overflow in stream { return overflow }
-    throw CancellationError()
   }
 
   static func build(in handoff: URL, width: Int, slideCount: Int, cancellation: URL) throws -> [Int] {
