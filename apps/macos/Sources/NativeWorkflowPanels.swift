@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 extension View {
-  func nativeSheetFrame(width: CGFloat, height: CGFloat) -> some View {
+  @MainActor func nativeSheetFrame(width: CGFloat, height: CGFloat) -> some View {
     let screen = NativeSheetMetrics.screenSize ?? (NSApp.keyWindow?.screen ?? NSScreen.main)?.visibleFrame.size ?? CGSize(width: 1280, height: 800)
     return frame(width: min(width, max(360, screen.width - 100)), height: min(height, max(340, screen.height - 140)))
   }

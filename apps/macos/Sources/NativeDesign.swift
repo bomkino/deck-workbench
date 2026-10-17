@@ -240,6 +240,17 @@ final class NativeSlideThumbnails: ObservableObject {
       signatures = signatures.filter { live.contains($0.key) }
     }
     if !overflowing.isSubset(of: live) { overflowing = overflowing.intersection(live) }
+    // Finished thumbnails are published in small batches: every row observes
+    // this store, so one publish per slide would redraw the list per slide.
+    var batch: [String: NSImage] = [:]
+    var overflow = overflowing
+    var lastFlush = Date()
+    func flush() {
+      if !batch.isEmpty { images.merge(batch) { $1 }; batch = [:] }
+      if overflow != overflowing { overflowing = overflow }
+      lastFlush = Date()
+    }
+    defer { flush() }
     for slide in slides {
       guard !Task.isCancelled else { return }
       let key = signature(slide, canvas: canvas, controller: controller)
@@ -258,17 +269,16 @@ final class NativeSlideThumbnails: ObservableObject {
         signature(current, canvas: canvas, controller: controller) == key else { continue }
       // Typesetting shares Core Text state that is used on the main actor.
       let scene = NativeSlideRenderer.resolve(slide: current, canvas: canvas)
-      if (scene.overflowCharacters > 0) != overflowing.contains(slide.id) {
-        if scene.overflowCharacters > 0 { overflowing.insert(slide.id) } else { overflowing.remove(slide.id) }
-      }
+      if scene.overflowCharacters > 0 { overflow.insert(slide.id) } else { overflow.remove(slide.id) }
       let width = Self.pixelWidth, height = max(1, (width * canvas.height / canvas.width).rounded())
       guard let context = CGContext(data: nil, width: Int(width), height: Int(height), bitsPerComponent: 8, bytesPerRow: 0,
         space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { continue }
       NativeSlideRenderer.draw(scene, in: context, rect: CGRect(x: 0, y: 0, width: width, height: height),
         images: decoded, sourceSizes: sizes, rasterizeGradient: false)
       guard let image = context.makeImage() else { continue }
-      images[slide.id] = NSImage(cgImage: image, size: NSSize(width: width / 2, height: height / 2))
+      batch[slide.id] = NSImage(cgImage: image, size: NSSize(width: width / 2, height: height / 2))
       signatures[slide.id] = key
+      if Date().timeIntervalSince(lastFlush) > 0.15 { flush() }
       await Task.yield()
     }
   }

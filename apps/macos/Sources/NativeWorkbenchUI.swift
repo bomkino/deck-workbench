@@ -24,23 +24,27 @@ struct NativeWorkbenchRoot: View {
           // The inspector keeps the width the person gives it; the work area
           // takes the rest, so a wide window never inflates the inspector or
           // stops the window from shrinking again.
-          HStack(spacing: 0) {
-            Group {
-              if controller.compareOpen {
-                NativeCompareView(controller: controller)
-              } else if controller.previewOpen {
-                NativePreviewView(controller: controller)
-              } else if controller.phase == "curate" {
-                NativeCurateView(controller: controller)
-              } else {
-                NativeAssembleView(controller: controller)
+          // In a narrow window the inspector gives way first (down to 240 pt),
+          // so its chosen width never forces the window wider than the screen.
+          GeometryReader { geometry in
+            HStack(spacing: 0) {
+              Group {
+                if controller.compareOpen {
+                  NativeCompareView(controller: controller)
+                } else if controller.previewOpen {
+                  NativePreviewView(controller: controller)
+                } else if controller.phase == "curate" {
+                  NativeCurateView(controller: controller)
+                } else {
+                  NativeAssembleView(controller: controller)
+                }
+              }.frame(maxWidth: .infinity, maxHeight: .infinity)
+              if controller.showContext && !controller.cleanPreview {
+                NativePanelResizeHandle(width: $controller.contextWidth, range: NativeWorkbenchRoot.inspectorWidths)
+                NativeContextPanel(controller: controller)
+                  .frame(width: inspectorWidth(available: geometry.size.width))
+                  .frame(maxHeight: .infinity)
               }
-            }.frame(minWidth: 420, maxWidth: .infinity, maxHeight: .infinity)
-            if controller.showContext && !controller.cleanPreview {
-              NativePanelResizeHandle(width: $controller.contextWidth, range: NativeWorkbenchRoot.inspectorWidths)
-              NativeContextPanel(controller: controller)
-                .frame(width: min(NativeWorkbenchRoot.inspectorWidths.upperBound, max(NativeWorkbenchRoot.inspectorWidths.lowerBound, controller.contextWidth)))
-                .frame(maxHeight: .infinity)
             }
           }.disabled(controller.lifecycleBusy)
         }
@@ -140,6 +144,10 @@ struct NativeWorkbenchRoot: View {
     .frame(minWidth: 900, minHeight: 600)
   }
   static let inspectorWidths: ClosedRange<Double> = 280...440
+  private func inspectorWidth(available: CGFloat) -> CGFloat {
+    let chosen = min(Self.inspectorWidths.upperBound, max(Self.inspectorWidths.lowerBound, controller.contextWidth))
+    return max(240, min(chosen, available - 421))
+  }
   private var subtitle: String {
     guard let deck = controller.document?.deck else { return "" }
     let count = controller.slides.count
@@ -384,7 +392,8 @@ struct NativeRecentRow: View {
   let url: URL
   let action: () -> Void
   @State private var hovering = false
-  private var detail: String {
+  @State private var detail = ""
+  private func describe() -> String {
     let folder = (url.deletingLastPathComponent().path as NSString).abbreviatingWithTildeInPath
     guard FileManager.default.fileExists(atPath: url.path) else { return "Not found in " + folder }
     guard let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate else { return folder }
@@ -405,6 +414,7 @@ struct NativeRecentRow: View {
         Spacer(minLength: 8)
         Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(.tertiary)
       }.padding(.horizontal, 12).padding(.vertical, 10)
+        .task(id: url) { detail = describe() }
         .background(hovering ? Color.primary.opacity(0.04) : Color.clear)
         .contentShape(Rectangle())
     }.buttonStyle(.plain).onHover { hovering = $0 }
@@ -593,9 +603,10 @@ struct NativeCurateView: View {
           sortMenu
           foldersMenu
         }
+        // Every variant keeps the count and Clear filters; the size slider goes first.
         ViewThatFits(in: .horizontal) {
           HStack(spacing: 10) { collectionPicker.pickerStyle(.segmented); scope; Spacer(minLength: 4); compareButton; thumbnailSize }
-          HStack(spacing: 10) { collectionPicker.pickerStyle(.segmented); Spacer(minLength: 4); compareButton; thumbnailSize }
+          HStack(spacing: 10) { collectionPicker.pickerStyle(.segmented); scope; Spacer(minLength: 4); compareButton }
           HStack(spacing: 10) { collectionPicker.pickerStyle(.menu); scope; Spacer(minLength: 4); compareButton }
         }
       }.padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 10)
@@ -1024,12 +1035,15 @@ struct NativeAssembleView: View {
       NativeCanvas(controller: controller)
         .overlay(alignment: .topTrailing) { reviewNotes }
       if controller.cleanPreview {
-        reviewBar.padding(.bottom, 18)
+        VStack(spacing: 8) {
+          reviewBar
+          Text("← → Browse slides · Home / End Jump · N Notes · Escape Return to editing")
+            .workbenchText(.caption).foregroundStyle(Color.white.opacity(0.5))
+        }.padding(.bottom, 12)
       } else {
         VStack {
           Text("Drag text to move · Drag image to crop · Command-drag moves its frame · Space-drag pans · Escape cancels")
             .workbenchText(.caption).foregroundStyle(.secondary).lineLimit(1).padding(.top, 10).padding(.horizontal, 16)
-            .accessibilityHidden(true)
           Spacer()
           canvasBar.padding(.bottom, 14)
         }
@@ -1082,6 +1096,14 @@ struct NativeAssembleView: View {
       Divider().frame(height: 18)
       Text(controller.selectedSlide?.title ?? "").workbenchText(.label).lineLimit(1).frame(maxWidth: 320)
       Divider().frame(height: 18)
+      // Work started before reviewing stays visible and stoppable.
+      if controller.exportRunning {
+        ProgressView(value: controller.exportProgress).frame(width: 80)
+        Button("Cancel Export") { controller.cancelExport() }.controlSize(.small)
+      } else if controller.scanRunning {
+        ProgressView().controlSize(.small)
+        Button("Cancel Scan") { controller.cancelScan() }.controlSize(.small)
+      }
       Toggle(isOn: $controller.reviewNotes) { HStack(spacing: 6) { Text("Notes"); NativeKeycap("N") } }
         .toggleStyle(.button).accessibilityLabel("Show designer notes")
       Button { controller.endCleanPreview() } label: { HStack(spacing: 6) { Text("Back to editing"); NativeKeycap("Esc") } }
@@ -1109,6 +1131,7 @@ struct NativeAssemblyInspector: View {
           .disabled(!controller.slideEditingAvailable || legacy)
           .accessibilityIdentifier("slide-solid-background")
           .help("Hides artwork while keeping chosen images and shortlist. Turning off uses Text left with the first chosen image.")
+        note("Solid background hides artwork but keeps chosen images and the shortlist; turning it off uses Text left with the first chosen image.")
         if preset == "moodboard" {
           Picker("Image slots", selection: Binding(get: { slide.settings.layout.imageCount ?? 6 }, set: { controller.patchLayout(["imageCount": $0, "frames": NSNull()]) })) {
             ForEach(1...12, id: \.self) { Text(String($0)).tag($0) }
@@ -1235,12 +1258,12 @@ struct NativeAssemblyInspector: View {
           }.disabled(controller.selectionTarget == "gradient" || scene.legacy)
         }
       }
-      if !legacy {
-        Section("Arrangement") {
+      Section("Arrangement") {
+        if !legacy {
           Button("Reset placement") { controller.resetPlacement() }
             .help("Restore this layout’s text region, image frames and gradient. Keep copy, crops, notes and candidates.")
-          Button("Apply arrangement…") { controller.showApplyLayout = true }.help("Apply this layout to selected slides without changing their copy or image crops")
         }
+        Button("Apply arrangement…") { controller.showApplyLayout = true }.help("Apply this layout to selected slides without changing their copy or image crops")
       }
     }.onAppear { synchronize() }
       .onChange(of: slide.id) { _, _ in synchronize() }
@@ -1292,6 +1315,7 @@ struct NativeLayoutTiles: View {
       }
     }.disabled(!controller.slideEditingAvailable)
       .accessibilityIdentifier("slide-layout-tiles")
+      .help("Change this slide’s prototype layout. Displaced images stay shortlisted. Undo restores the arrangement.")
   }
 }
 struct NativeExportSheet: View {
@@ -1524,7 +1548,8 @@ struct NativeImportSheet: View {
       Text("No text is rewritten. Slide boundaries and optional copy fields come from the file.")
         .workbenchText(.caption).foregroundStyle(.secondary).lineLimit(2)
       Spacer()
-      Button("Create New Deck…") { controller.createImported() }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
+      Button("Create New Deck…") { controller.createImported() }.buttonStyle(.borderedProminent)
+        .keyboardShortcut(matching ? nil : KeyboardShortcut.defaultAction)
     }.nativeSheetFrame(width: 820, height: 680)
       .disabled(controller.replacementSaving || controller.lifecycleBusy)
       .interactiveDismissDisabled(controller.replacementSaving || controller.lifecycleBusy)

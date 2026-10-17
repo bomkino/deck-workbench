@@ -300,7 +300,8 @@ final class NativeWorkbenchController: ObservableObject {
   /// The next included slide, after the selected one and wrapping round, that
   /// still has an empty image slot.
   func nextSlideNeedingImage() {
-    guard document != nil, !slides.isEmpty, !lifecycleBusy else { return }
+    // A sheet works on the slide it opened with; never retarget it.
+    guard document != nil, !slides.isEmpty, !lifecycleBusy, !modalOpen else { return }
     let start = slideOrdinals[selectedSlideID ?? ""] ?? 0
     let ordered = Array(slides[min(start, slides.count)...]) + Array(slides[..<min(start, slides.count)])
     guard let next = ordered.first(where: { NativeSlideReadiness($0).needsImage }) else {
@@ -908,7 +909,9 @@ final class NativeWorkbenchController: ObservableObject {
       beginImport { try NativeCopyImport.read(url) }
     default:
       guard exists, directory.boolValue, document != nil, !scanRunning else {
-        status = document == nil ? "Drop final copy (.md or .txt) or a .pitchdeck to begin." : "Drop a folder of media, final copy or a deck."
+        status = document == nil ? "Drop final copy (.md or .txt) or a .pitchdeck to begin."
+          : scanRunning ? "A media scan is running. Drop the folder again when it finishes."
+          : "Drop a folder of media, final copy or a deck."
         return false
       }
       startScan(url: url, rootID: nil)
