@@ -49,6 +49,7 @@ jobs:
             artifacts/*.sha256
             artifacts/evidence/native-acceptance.json
             artifacts/evidence/psd/PSD proof.json
+            artifacts/evidence/psd/*.png
             artifacts/evidence/*.png
             artifacts/ui/*.png
             artifacts/ui/gallery.json

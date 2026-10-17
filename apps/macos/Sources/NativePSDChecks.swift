@@ -136,6 +136,9 @@ enum NativePSDChecks {
         }
         let url = output.appendingPathComponent(filename)
         let warnings = try NativePSDExporter.write(slide: slide, canvas: canvas, staged: staged, cropToFrames: cropToFrames, to: url)
+        if filename == names[0], let preview = try NativePSDExporter.textGuidePreview(scene: scene) {
+          try preview.write(to: output.appendingPathComponent("Slide 01 text guide.png"), options: .withoutOverwriting)
+        }
         var record: [String: Any] = [
           "file": filename, "width": canvas.width, "height": canvas.height,
           "chosenPlacements": expected, "sha256": try sha256(url),

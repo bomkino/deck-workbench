@@ -242,6 +242,11 @@ enum NativeUIGallery {
     controller.phase = "curate"
     try await shot("03-curate-no-media", settle: .milliseconds(1800))
     captured["03-thumbnails-rendered"] = "\(controller.thumbnails.images.count) of \(controller.slides.count)"
+    if let thumb = controller.thumbnails.images[controller.slides[1].id], let data = thumb.tiffRepresentation,
+      let png = NSBitmapImageRep(data: data)?.representation(using: .png, properties: [:]) {
+      try png.write(to: output.appendingPathComponent("03-thumbnail-slide-02.png"))
+      captured["03-thumbnail-size"] = "\(thumb.size.width)x\(thumb.size.height)"
+    }
 
     let media = try await controller.session.mediaSession()
     _ = try await media.authorizeRootJSON(mediaURL)

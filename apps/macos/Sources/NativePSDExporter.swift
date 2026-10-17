@@ -167,25 +167,47 @@ enum NativePSDExporter {
     let frames = scene.texts.map(\.frame).filter { $0.intersects(canvas) }
     let covered = frames.reduce(region) { $0.union($1) }.insetBy(dx: -3, dy: -3).intersection(canvas).integral
     guard !covered.isNull, covered.width >= 1, covered.height >= 1 else { throw failure("The text guide has no area on the canvas.") }
-    let cyan = CGColor(srgbRed: 64 / 255, green: 184 / 255, blue: 1, alpha: 1)
     let boxes = try Bitmap(width: Int(covered.width), height: Int(covered.height), colorSpace: colorSpace)
     boxes.context.translateBy(x: -covered.minX, y: -covered.minY)
-    boxes.context.setStrokeColor(cyan.copy(alpha: 0.85) ?? cyan)
-    boxes.context.setLineWidth(1.5)
-    boxes.context.setLineDash(phase: 0, lengths: [8, 6])
-    boxes.context.stroke(region.insetBy(dx: 0.75, dy: 0.75))
-    boxes.context.setLineDash(phase: 0, lengths: [])
-    for frame in frames {
-      boxes.context.setFillColor(cyan.copy(alpha: 0.14) ?? cyan)
-      boxes.context.fill(frame)
-      boxes.context.setStrokeColor(cyan)
-      boxes.context.setLineWidth(2)
-      boxes.context.stroke(frame.insetBy(dx: 1, dy: 1))
-    }
+    drawTextBoxes(region: region, frames: frames, in: boxes.context)
     let copy = try Bitmap(width: Int(covered.width), height: Int(covered.height), colorSpace: colorSpace)
     copy.context.translateBy(x: -covered.minX, y: -covered.minY)
     NativeSlideRenderer.drawCopy(scene, in: copy.context)
     return (covered, boxes.straightRGBA(), copy.straightRGBA())
+  }
+  /// Each text box outlined and lightly filled; the whole text region dashed.
+  private static func drawTextBoxes(region: CGRect, frames: [CGRect], in context: CGContext) {
+    let cyan = CGColor(srgbRed: 64 / 255, green: 184 / 255, blue: 1, alpha: 1)
+    context.saveGState()
+    defer { context.restoreGState() }
+    context.setStrokeColor(cyan.copy(alpha: 0.85) ?? cyan)
+    context.setLineWidth(1.5)
+    context.setLineDash(phase: 0, lengths: [8, 6])
+    context.stroke(region.insetBy(dx: 0.75, dy: 0.75))
+    context.setLineDash(phase: 0, lengths: [])
+    for frame in frames {
+      context.setFillColor(cyan.copy(alpha: 0.14) ?? cyan)
+      context.fill(frame)
+      context.setStrokeColor(cyan)
+      context.setLineWidth(2)
+      context.stroke(frame.insetBy(dx: 1, dy: 1))
+    }
+  }
+  /// The guide group as it looks with its eye on, over a grey stand-in for
+  /// the artwork, for proof receipts. Nil when the slide has no guide.
+  static func textGuidePreview(scene: ResolvedPrototype) throws -> Data? {
+    guard let region = textGuideFrame(scene: scene), let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
+    let canvas = CGRect(x: 0, y: 0, width: scene.canvas.width, height: scene.canvas.height)
+    let bitmap = try Bitmap(width: Int(canvas.width), height: Int(canvas.height), colorSpace: colorSpace)
+    bitmap.context.setFillColor(CGColor(gray: 0.32, alpha: 1))
+    bitmap.context.fill(canvas)
+    drawTextBoxes(region: region, frames: scene.texts.map(\.frame).filter { $0.intersects(canvas) }, in: bitmap.context)
+    NativeSlideRenderer.drawCopy(scene, in: bitmap.context)
+    guard let image = bitmap.context.makeImage() else { return nil }
+    let data = NSMutableData()
+    guard let destination = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil) else { return nil }
+    CGImageDestinationAddImage(destination, image, nil)
+    return CGImageDestinationFinalize(destination) ? data as Data : nil
   }
 
   private struct Artwork {

@@ -1062,7 +1062,7 @@ struct NativeAssembleView: View {
           Text(notes.isEmpty ? "No notes for this slide." : notes)
             .workbenchText(.bodyCompact).foregroundStyle(notes.isEmpty ? Color.secondary : Color.primary)
             .frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
-        }.frame(maxHeight: 260)
+        }.frame(maxHeight: 260).fixedSize(horizontal: false, vertical: true)
       }.padding(16).frame(width: 340)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: NativeDesign.radiusLarge, style: .continuous))
         .environment(\.colorScheme, .dark)
