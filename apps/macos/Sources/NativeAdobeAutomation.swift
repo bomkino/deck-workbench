@@ -91,7 +91,8 @@ enum NativeAdobeAutomation {
       if code == -1743 {
         throw WorkbenchFailure(name: "AdobePermissionDenied", message: "Allow Deck Workbench to control Adobe in System Settings → Privacy & Security → Automation, then export again. The completed handoff is safe.\n\(detail)")
       }
-      throw WorkbenchFailure(name: "AdobeAutomationFailed", message: "Adobe connection (\(code)): \(detail)")
+      // Only this side stopped waiting for the reply; Adobe goes on with the request.
+      throw WorkbenchFailure(name: code == -1712 ? "AdobeTimedOut" : "AdobeAutomationFailed", message: "Adobe connection (\(code)): \(detail)")
     }
     return value.stringValue ?? ""
   }
@@ -161,13 +162,20 @@ enum NativeAdobeAutomation {
     try JSONSerialization.data(withJSONObject: job, options: [.prettyPrinted, .sortedKeys])
       .write(to: logs.appendingPathComponent("job.json"), options: .atomic)
     try Task.checkCancellation()
+    let started = Date()
+    let resultURL = logs.appendingPathComponent("result.json")
     // The production folder has already reached its final path. Adobe links must
     // never point into the exporter's temporary staging directory.
-    try execute("with timeout of 3600 seconds\n tell application id \(quoted(inDesignID))\n do script (POSIX file \(quoted(runner.path))) language javascript\n end tell\nend timeout")
-    let resultURL = logs.appendingPathComponent("result.json")
-    guard let receipt = try? Data(contentsOf: resultURL),
-      let result = try? JSONSerialization.jsonObject(with: receipt) as? [String: Any],
-      result["runID"] as? String == runID else {
+    do {
+      try execute("with timeout of 3600 seconds\n tell application id \(quoted(inDesignID))\n do script (POSIX file \(quoted(runner.path))) language javascript\n end tell\nend timeout")
+    } catch let failure as WorkbenchFailure where failure.name == "AdobeTimedOut" {
+      // A long deck outlasts the reply timeout while InDesign keeps building.
+      // Its runner always writes this run's receipt; keep waiting for it (and
+      // keep the Adobe lock held, so no other request interleaves).
+      try awaitReceipt(at: resultURL, runID: runID, cancellation: cancellation,
+        started: started, wait: receiptWait(slideCount: slideCount))
+    }
+    guard let result = receipt(at: resultURL, runID: runID) else {
       throw WorkbenchFailure(name: "InDesignReceiptMissing", message: "InDesign did not return a matching build receipt. Review the Automation folder before retrying.")
     }
     guard result["ok"] as? Bool == true else {
@@ -184,6 +192,46 @@ enum NativeAdobeAutomation {
       throw WorkbenchFailure(name: "InDesignVerificationFailed", message: "InDesign's saved deck did not match the expected pages and PSD links. Review the Automation receipt; the original handoff is safe.")
     }
     return result["overflow"] as? [Int] ?? []
+  }
+
+  /// How long a build may run in all before Workbench stops waiting for its
+  /// receipt: at least two hours, and an hour plus a minute per slide.
+  static func receiptWait(slideCount: Int) -> TimeInterval {
+    TimeInterval(max(2 * 3600, 3600 + 60 * max(0, slideCount)))
+  }
+
+  private static func receipt(at url: URL, runID: String) -> [String: Any]? {
+    guard let data = try? Data(contentsOf: url),
+      let result = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+      result["runID"] as? String == runID else { return nil }
+    return result
+  }
+
+  /// Polls for this run's receipt after the reply timed out. Cancellation has
+  /// already left the stop marker the runner checks between steps, so it gets
+  /// a short grace to stop and answer; a quit InDesign never answers.
+  private static func awaitReceipt(at url: URL, runID: String, cancellation: URL, started: Date, wait: TimeInterval) throws {
+    let deadline = started.addingTimeInterval(wait)
+    var cancelled: Date?
+    var absent: Date?
+    while receipt(at: url, runID: runID) == nil {
+      let now = Date()
+      if cancelled == nil && (Task.isCancelled || FileManager.default.fileExists(atPath: cancellation.path)) { cancelled = now }
+      if let cancelled, now.timeIntervalSince(cancelled) > 300 { throw CancellationError() }
+      guard now < deadline else {
+        throw WorkbenchFailure(name: "InDesignTimedOut", message: "InDesign did not return a build receipt within \(Int((wait / 3600).rounded(.up))) hours. It may still be working: let it finish or quit it, then review the Automation folder before retrying. The completed handoff is safe.")
+      }
+      if NSRunningApplication.runningApplications(withBundleIdentifier: inDesignID).isEmpty {
+        // Allow a receipt written just before quitting to be read.
+        if let absent, now.timeIntervalSince(absent) > 30 {
+          throw WorkbenchFailure(name: "InDesignReceiptMissing", message: "InDesign quit before returning a build receipt. Review the Automation folder before retrying; the completed handoff is safe.")
+        }
+        if absent == nil { absent = now }
+      } else {
+        absent = nil
+      }
+      Thread.sleep(forTimeInterval: 2)
+    }
   }
 
   static func withIssue(_ result: HandoffResult, _ issue: String) -> HandoffResult {

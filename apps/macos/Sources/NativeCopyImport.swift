@@ -288,11 +288,26 @@ enum NativeCopyImport {
       throw WorkbenchFailure(
         name: "ImportFormat", message: "Choose a UTF-8 Markdown or text file no larger than 1 MiB.")
     }
-    var source = input.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(
-      of: "\r", with: "\n")
+    var source = input
     if source.hasPrefix("\u{FEFF}") { source.removeFirst() }
-    var sourceLines = source.components(separatedBy: "\n")
-    let copyMarkdown = sourceLines.first?.trimmingCharacters(in: .whitespaces) == NativeCopyMarkdown.marker
+    // Copy.md fields are literal and may themselves contain CR. Its lines are
+    // split on LF alone (as UTF-8 bytes, so CRLF is never one character), and
+    // one transport CR per line is removed only when the marker line shows the
+    // file was saved with CRLF line endings.
+    func withoutCR(_ line: String) -> String { line.utf8.last == 13 ? String(line.dropLast()) : line }
+    var sourceLines = Array(source.utf8).split(separator: 10, omittingEmptySubsequences: false)
+      .map { String(decoding: $0, as: UTF8.self) }
+    let crlf = sourceLines.first?.utf8.last == 13
+    var copyMarkdown = sourceLines.first.map { withoutCR($0).trimmingCharacters(in: .whitespaces) } == NativeCopyMarkdown.marker
+    if copyMarkdown {
+      if crlf { sourceLines = sourceLines.map(withoutCR) }
+    } else {
+      source = source.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(
+        of: "\r", with: "\n")
+      sourceLines = source.components(separatedBy: "\n")
+      // A Copy.md whose line breaks were all converted to CR imports as before.
+      copyMarkdown = sourceLines.first?.trimmingCharacters(in: .whitespaces) == NativeCopyMarkdown.marker
+    }
     if copyMarkdown { sourceLines.removeFirst() }
     // Production files declare their format in the header, before any slide.
     // Fence contents and later copy are never document structure.

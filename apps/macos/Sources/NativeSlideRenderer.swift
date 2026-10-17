@@ -377,7 +377,13 @@ enum NativeSlideRenderer {
   static func textPlacement(_ text: NSAttributedString, range: CFRange, rect: CGRect)
     -> PrototypeTextPlacement
   {
-    let setter = CTFramesetterCreateWithAttributedString(text)
+    textPlacement(text, setter: CTFramesetterCreateWithAttributedString(text), range: range, rect: rect)
+  }
+  /// Successive frames of one long text (notes pages) share its framesetter,
+  /// so each frame lays out only its own lines, not the whole text again.
+  static func textPlacement(_ text: NSAttributedString, setter: CTFramesetter, range: CFRange, rect: CGRect)
+    -> PrototypeTextPlacement
+  {
     let path = CGPath(
       rect: CGRect(x: 0, y: 0, width: max(1, rect.width), height: max(1, rect.height)),
       transform: nil)

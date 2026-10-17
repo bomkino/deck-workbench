@@ -11,24 +11,70 @@ import UniformTypeIdentifiers
 enum NativePSDExporter {
   private static let lock = NSLock()
   private static let maximumEmbeddedBytes = 128 * 1024 * 1024
-  private static let maximumWorkingBytes = 768 * 1024 * 1024
+  static let maximumWorkingBytes = 768 * 1024 * 1024
+  /// Single-image sources of these types are embedded byte for byte.
+  private static let embeddedTypes = [UTType.jpeg.identifier: "JPEG", UTType.png.identifier: "PNGf", UTType.tiff.identifier: "TIFF"]
 
   static func supports(_ canvas: DeckCanvas) -> Bool {
     [1920.0, 2576.0].contains(canvas.width) && canvas.height == 1080
   }
 
-  static func write(slide: DeckSlide, canvas: DeckCanvas, staged: [String: URL], cropToFrames: Bool = true, to output: URL)
+  /// `scene` is the slide already resolved by the caller on this thread, and
+  /// `sides` its decode plan (see `artworkSides`); `filenames` are the
+  /// originals' names for layers and Smart Objects, by asset ID. A handoff
+  /// passes its shared `artwork` cache so PDFs and PSDs decode each asset once.
+  static func write(slide: DeckSlide, canvas: DeckCanvas, staged: [String: URL], cropToFrames: Bool = true, to output: URL,
+    scene: ResolvedPrototype? = nil, sides: [String: Int]? = nil, filenames: [String: String] = [:],
+    artwork: NativeHandoffArtwork? = nil)
     throws -> [String]
   {
     try Task.checkCancellation()
     lock.lock()
     defer { lock.unlock() }
     return try autoreleasepool {
-      try writeSlide(slide: slide, canvas: canvas, staged: staged, cropToFrames: cropToFrames, to: output)
+      try writeSlide(slide: slide, canvas: canvas, staged: staged, cropToFrames: cropToFrames, to: output,
+        scene: scene, sides: sides, filenames: filenames, cache: artwork ?? NativeHandoffArtwork(staged: staged))
     }
   }
 
-  private static func writeSlide(slide: DeckSlide, canvas: DeckCanvas, staged: [String: URL], cropToFrames: Bool, to output: URL)
+  /// Whether this original is embedded unchanged (otherwise a PNG still is).
+  static func embedsOriginal(_ original: NativeHandoffArtwork.Original) -> Bool {
+    embeddedTypes[original.type] != nil && original.count == 1
+  }
+
+  /// Bytes the PSD working budget leaves for this slide's decoded artwork.
+  static func artworkBudget(scene: ResolvedPrototype, staged: [String: URL]) -> Int {
+    var embedded = 0
+    var seen = Set<String>()
+    for layer in scene.imageLayers {
+      guard let id = layer.assetID, seen.insert(id).inserted, let url = staged[id] else { continue }
+      embedded += (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+    }
+    return maximumWorkingBytes - workingBytes(scene: scene, embeddedBytes: embedded)
+  }
+
+  /// Decode sizes for a slide's artwork: each placement's own pixels × `scale`
+  /// (the embedded JPEG/PNG/TIFF original stays complete regardless). A still
+  /// (PDF page, video frame, other format) is itself the embedded source, so it
+  /// keeps the 3072 px earlier exports embedded, and the PSD keeps its size.
+  static func artworkSides(scene: ResolvedPrototype, artwork: NativeHandoffArtwork, scale: Double = 1, budget: Int)
+    -> (sides: [String: Int], reduced: Bool)
+  {
+    var sides = artwork.plan(scene, scale: scale)
+    for id in sides.keys where !embedsOriginal(artwork.original(id)) {
+      sides[id] = artwork.effectiveSide(id, NativeHandoffArtwork.minimumStillSide)
+    }
+    return artwork.fit(sides, budget: budget)
+  }
+
+  /// The slide's working set apart from decoded artwork.
+  private static func workingBytes(scene: ResolvedPrototype, embeddedBytes: Int) -> Int {
+    Int(scene.canvas.width) * Int(scene.canvas.height) * 4
+      * (scene.imageLayers.count * 2 + (textGuideFrame(scene: scene) == nil ? 8 : 12)) + embeddedBytes * 4
+  }
+
+  private static func writeSlide(slide: DeckSlide, canvas: DeckCanvas, staged: [String: URL], cropToFrames: Bool, to output: URL,
+    scene resolved: ResolvedPrototype?, sides planned: [String: Int]?, filenames: [String: String], cache: NativeHandoffArtwork)
     throws -> [String]
   {
     guard supports(canvas) else {
@@ -38,7 +84,7 @@ enum NativePSDExporter {
       throw failure("The PSD already exists. Choose a new handoff folder; existing artwork was not replaced.")
     }
     let width = Int(canvas.width), height = Int(canvas.height)
-    let scene = NativeSlideRenderer.resolve(slide: slide, canvas: canvas)
+    let scene = resolved ?? NativeSlideRenderer.resolve(slide: slide, canvas: canvas)
     let textGuide = textGuideFrame(scene: scene)
     guard scene.imageLayers.count <= 12 else {
       throw failure("This slide has more than twelve image placements. Its originals remain available for manual assembly.")
@@ -51,11 +97,15 @@ enum NativePSDExporter {
       let values = try url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey, .isSymbolicLinkKey])
       guard values.isRegularFile == true, values.isSymbolicLink != true, let size = values.fileSize,
         size > 0, size <= maximumEmbeddedBytes else {
-        throw failure("\(url.lastPathComponent) is not a regular image within the 128 MB PSD source budget.")
+        throw failure("\(filenames[id] ?? url.lastPathComponent) is not a regular image within the 128 MB PSD source budget.")
       }
       embeddedBytes += size
     }
-    let estimated = width * height * 4 * (scene.imageLayers.count * 2 + (textGuide == nil ? 8 : 12)) + embeddedBytes * 4
+    // Decoded artwork counts too: each asset at the size it is decoded for.
+    let base = workingBytes(scene: scene, embeddedBytes: embeddedBytes)
+    let sides = planned ?? artworkSides(scene: scene, artwork: cache, budget: maximumWorkingBytes - base).sides
+    func side(_ id: String) -> Int { sides[id] ?? NativeHandoffArtwork.minimumStillSide }
+    let estimated = base + seen.reduce(0) { $0 + cache.estimatedBytes($1, side: side($1)) }
     guard embeddedBytes <= maximumEmbeddedBytes, estimated <= maximumWorkingBytes else {
       throw failure("This slide exceeds the PSD export memory budget. Export its originals and assemble this slide manually.")
     }
@@ -80,6 +130,7 @@ enum NativePSDExporter {
     _ = try host.call("start", arguments: startPrefix + startArguments)
     let composite = try Bitmap(width: width, height: height, colorSpace: colorSpace)
     var sourceIDs: [String: String] = [:]
+    var prepared: [String: Artwork] = [:]
     var issues: [String] = []
     for (index, layer) in scene.imageLayers.enumerated() {
       try Task.checkCancellation()
@@ -89,9 +140,14 @@ enum NativePSDExporter {
       }
       guard let url = staged[assetID] else { throw failure("Chosen artwork for \(layer.role) is unavailable.") }
       try autoreleasepool {
-        // Decode one role at a time; the encoder deduplicates embedded bytes by
-        // asset ID without retaining twelve large native decoded images.
-        let source = try artwork(url: url, colorSpace: colorSpace)
+        // Each asset is prepared once per slide; its decode comes from the
+        // export's shared cache, at the size this slide's placements need.
+        let source: Artwork
+        if let ready = prepared[assetID] { source = ready } else {
+          source = try loadArtwork(id: assetID, url: url, side: side(assetID),
+            filename: filenames[assetID] ?? url.lastPathComponent, cache: cache)
+          prepared[assetID] = source
+        }
         let sourceID = sourceIDs[assetID] ?? uuid()
         sourceIDs[assetID] = sourceID
         if let warning = source.warning { issues.append("\(slide.title): \(warning)") }
@@ -220,58 +276,34 @@ enum NativePSDExporter {
     let warning: String?
   }
 
-  private static func artwork(url: URL, colorSpace: CGColorSpace) throws -> Artwork {
+  /// `filename` is the original's own name (not its staged, hash-suffixed one),
+  /// as the layer, Smart Object and warnings show it.
+  private static func loadArtwork(id: String, url: URL, side: Int, filename: String, cache: NativeHandoffArtwork) throws -> Artwork {
     try Task.checkCancellation()
-    if let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
-      let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-        kCGImageSourceCreateThumbnailFromImageAlways: true,
-        kCGImageSourceCreateThumbnailWithTransform: true,
-        kCGImageSourceThumbnailMaxPixelSize: 3072,
-        kCGImageSourceShouldCacheImmediately: true,
-      ] as CFDictionary) {
-      let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] ?? [:]
-      let rawWidth = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.doubleValue ?? Double(image.width)
-      let rawHeight = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.doubleValue ?? Double(image.height)
-      let orientation = (properties[kCGImagePropertyOrientation] as? NSNumber)?.intValue ?? 1
-      let width = orientation >= 5 ? rawHeight : rawWidth
-      let height = orientation >= 5 ? rawWidth : rawHeight
-      let type = (CGImageSourceGetType(source) as String?) ?? ""
-      let types = [UTType.jpeg.identifier: "JPEG", UTType.png.identifier: "PNGf", UTType.tiff.identifier: "TIFF"]
-      if let fileType = types[type], CGImageSourceGetCount(source) == 1 {
+    guard let decoded = try cache.image(id, side: side) else {
+      throw failure("\(filename) could not be rendered as artwork. No substitute image was invented.")
+    }
+    let image = decoded.image
+    switch decoded.kind {
+    case .raster:
+      let original = cache.original(id)
+      if let fileType = embeddedTypes[original.type], original.count == 1 {
         let data = try Data(contentsOf: url, options: .mappedIfSafe)
         guard data.count <= maximumEmbeddedBytes else { throw failure("The source changed or exceeded its PSD byte budget.") }
-        return Artwork(image: image, bytes: data, width: width, height: height,
-          filename: url.lastPathComponent, fileType: fileType, warning: nil)
+        // The placement uses the original's upright pixels, never the decode's.
+        let size = original.size ?? CGSize(width: image.width, height: image.height)
+        return Artwork(image: image, bytes: data, width: Double(size.width), height: Double(size.height),
+          filename: filename, fileType: fileType, warning: nil)
       }
-      return try still(image: image, filename: url.lastPathComponent,
-        warning: "\(url.lastPathComponent) uses a PNG of its first image in the PSD. Export Approved Media to retain its original file.")
+      return try still(image: image, filename: filename,
+        warning: "\(filename) uses a PNG of its first image in the PSD. Export Approved Media to retain its original file.")
+    case .pdf:
+      return try still(image: image, filename: filename,
+        warning: "\(filename) uses a PNG of page 1 in the PSD. Export Approved Media to retain the PDF.")
+    case .video:
+      return try still(image: image, filename: filename,
+        warning: "\(filename) uses its opening video frame in the PSD. Export Approved Media to retain the video.")
     }
-    if let document = CGPDFDocument(url as CFURL), let page = document.page(at: 1) {
-      let bounds = page.getBoxRect(.cropBox)
-      guard bounds.width > 0, bounds.height > 0 else { throw failure("The PDF page has invalid dimensions.") }
-      let factor = min(1, 3072 / max(bounds.width, bounds.height))
-      let width = max(1, Int((bounds.width * factor).rounded())), height = max(1, Int((bounds.height * factor).rounded()))
-      let bitmap = try Bitmap(width: width, height: height, colorSpace: colorSpace)
-      bitmap.context.saveGState()
-      bitmap.context.translateBy(x: 0, y: CGFloat(height))
-      bitmap.context.scaleBy(x: 1, y: -1)
-      bitmap.context.concatenate(page.getDrawingTransform(.cropBox,
-        rect: CGRect(x: 0, y: 0, width: width, height: height), rotate: 0, preserveAspectRatio: true))
-      bitmap.context.drawPDFPage(page)
-      bitmap.context.restoreGState()
-      guard let image = bitmap.context.makeImage() else { throw failure("The PDF page could not be rendered.") }
-      return try still(image: image, filename: url.lastPathComponent,
-        warning: "\(url.lastPathComponent) uses a PNG of page 1 in the PSD. Export Approved Media to retain the PDF.")
-    }
-    if let type = UTType(filenameExtension: url.pathExtension), type.conforms(to: .movie) {
-      let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
-      generator.appliesPreferredTrackTransform = true
-      generator.maximumSize = CGSize(width: 3072, height: 3072)
-      let image = try generator.copyCGImage(at: .zero, actualTime: nil)
-      return try still(image: image, filename: url.lastPathComponent,
-        warning: "\(url.lastPathComponent) uses its opening video frame in the PSD. Export Approved Media to retain the video.")
-    }
-    throw failure("\(url.lastPathComponent) could not be rendered as artwork. No substitute image was invented.")
   }
 
   private static func still(image: CGImage, filename: String, warning: String) throws -> Artwork {
