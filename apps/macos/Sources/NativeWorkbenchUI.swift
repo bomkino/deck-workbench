@@ -21,7 +21,10 @@ struct NativeWorkbenchRoot: View {
         if controller.document == nil {
           NativeWelcomeView(controller: controller)
         } else {
-          HSplitView {
+          // The inspector keeps the width the person gives it; the work area
+          // takes the rest, so a wide window never inflates the inspector or
+          // stops the window from shrinking again.
+          HStack(spacing: 0) {
             Group {
               if controller.compareOpen {
                 NativeCompareView(controller: controller)
@@ -32,14 +35,12 @@ struct NativeWorkbenchRoot: View {
               } else {
                 NativeAssembleView(controller: controller)
               }
-            }.frame(minWidth: 420)
+            }.frame(minWidth: 420, maxWidth: .infinity, maxHeight: .infinity)
             if controller.showContext && !controller.cleanPreview {
-              NativeContextPanel(controller: controller).frame(minWidth: 270, idealWidth: controller.contextWidth, maxWidth: 460)
-                .background(GeometryReader { geometry in
-                  Color.clear.onChange(of: geometry.size.width) { _, width in
-                    if abs(controller.contextWidth - width) > 1 { controller.contextWidth = width }
-                  }
-                })
+              NativePanelResizeHandle(width: $controller.contextWidth, range: NativeWorkbenchRoot.inspectorWidths)
+              NativeContextPanel(controller: controller)
+                .frame(width: min(NativeWorkbenchRoot.inspectorWidths.upperBound, max(NativeWorkbenchRoot.inspectorWidths.lowerBound, controller.contextWidth)))
+                .frame(maxHeight: .infinity)
             }
           }.disabled(controller.lifecycleBusy)
         }
@@ -62,13 +63,16 @@ struct NativeWorkbenchRoot: View {
             }.help("Open a deck (Command-O)")
           }
           ToolbarItem(placement: .principal) {
+            if controller.document != nil {
             Picker("Workspace", selection: $controller.phase) {
               Text("Curate").tag("curate")
               Text("Assemble").tag("assemble")
             }.pickerStyle(.segmented).frame(width: 210 * controller.interfaceScale).disabled(controller.document == nil)
               .help("Curate chooses media for each slide (Command-1); Assemble arranges it (Command-2)")
+            }
           }
           ToolbarItemGroup(placement: .primaryAction) {
+            if controller.document != nil {
             Button { controller.startCleanPreview() } label: {
               Label("Review deck", systemImage: controller.cleanPreview ? "stop.fill" : "play.fill")
             }.help("Review the deck without editing guides (Shift-Command-P)").disabled(controller.document == nil)
@@ -82,12 +86,17 @@ struct NativeWorkbenchRoot: View {
             }.disabled(controller.document?.history.canUndo != true).help("Undo (Command-Z)")
             Button("Export Handoff…") { controller.showExport = true }.disabled(!controller.canExport)
               .buttonStyle(.borderedProminent).help("Export the designer handoff (Shift-Command-E)")
+            }
           }
         }
     }
     .onChange(of: controller.cleanPreview) { _, clean in
       if clean { editingColumns = columns; columns = .detailOnly }
       else { columns = editingColumns }
+    }
+    // Without a deck the slide list is empty; the welcome screen takes the window.
+    .onChange(of: controller.document == nil, initial: true) { _, empty in
+      if !controller.cleanPreview { columns = empty ? .detailOnly : .all }
     }
     .dropDestination(for: URL.self) { urls, _ in controller.handleDrop(urls) } isTargeted: { dropTargeted = $0 }
     .overlay {
@@ -130,6 +139,7 @@ struct NativeWorkbenchRoot: View {
     .environment(\.workbenchInterfaceScale, controller.interfaceScale)
     .frame(minWidth: 900, minHeight: 600)
   }
+  static let inspectorWidths: ClosedRange<Double> = 280...440
   private var subtitle: String {
     guard let deck = controller.document?.deck else { return "" }
     let count = controller.slides.count
@@ -275,16 +285,10 @@ struct NativeWelcomeView: View {
             "Bring in the final writing. Choose the media. Give the designer a clear starting point."
           ).workbenchText(.body).foregroundStyle(.secondary).frame(maxWidth: 520, alignment: .leading)
         }
-        ViewThatFits(in: .horizontal) {
-          HStack(alignment: .top, spacing: 14) { actions }
-          VStack(spacing: 10) { actions }
-        }
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 230 * controller.interfaceScale), spacing: 14, alignment: .top)], spacing: 14) { actions }
         VStack(alignment: .leading, spacing: 14) {
           NativeEyebrow("From final copy to handoff")
-          ViewThatFits(in: .horizontal) {
-            HStack(alignment: .top, spacing: 18) { steps }
-            VStack(alignment: .leading, spacing: 12) { steps }
-          }
+          LazyVGrid(columns: [GridItem(.adaptive(minimum: 190 * controller.interfaceScale), spacing: 18, alignment: .top)], alignment: .leading, spacing: 14) { steps }
         }
         if !controller.recentDocuments.isEmpty {
           VStack(alignment: .leading, spacing: 10) {
@@ -454,7 +458,13 @@ struct NativeSlideSidebar: View {
         Spacer()
         if included.count > 0 { Text("\(Int((Double(ready) / Double(included.count) * 100).rounded()))%").workbenchText(.caption).foregroundStyle(.secondary).monospacedDigit() }
       }
-      ProgressView(value: Double(ready), total: Double(max(1, included.count))).tint(NativeDesign.ready).controlSize(.small)
+      GeometryReader { geometry in
+        ZStack(alignment: .leading) {
+          Capsule().fill(Color.primary.opacity(0.1))
+          Capsule().fill(NativeDesign.ready)
+            .frame(width: included.isEmpty ? 0 : geometry.size.width * CGFloat(ready) / CGFloat(included.count))
+        }
+      }.frame(height: 5)
     }.accessibilityElement(children: .combine)
       .help("A slide is ready when every image slot has a chosen image, or it is text only. Excluded slides are not counted.")
   }
@@ -546,20 +556,14 @@ struct NativeCurateView: View {
       VStack(spacing: 10) {
         // The search field stays outside ViewThatFits: one field, one focus.
         HStack(spacing: 10) {
-          searchField.frame(minWidth: 150, maxWidth: 300)
-          Spacer(minLength: 0)
-          ViewThatFits(in: .horizontal) {
-            collectionPicker.pickerStyle(.segmented)
-            collectionPicker.pickerStyle(.menu).frame(width: 150 * controller.interfaceScale)
-          }
+          searchField.frame(maxWidth: .infinity)
+          sortMenu
           foldersMenu
         }
         ViewThatFits(in: .horizontal) {
-          HStack(spacing: 10) { scope; Spacer(minLength: 4); compareButton; sortMenu; thumbnailSize }
-          VStack(alignment: .leading, spacing: 8) {
-            HStack { scope; Spacer(); compareButton }
-            HStack { sortMenu; Spacer(); thumbnailSize }
-          }
+          HStack(spacing: 10) { collectionPicker.pickerStyle(.segmented); scope; Spacer(minLength: 4); compareButton; thumbnailSize }
+          HStack(spacing: 10) { collectionPicker.pickerStyle(.segmented); Spacer(minLength: 4); compareButton; thumbnailSize }
+          HStack(spacing: 10) { collectionPicker.pickerStyle(.menu); scope; Spacer(minLength: 4); compareButton }
         }
       }.padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 10)
       Divider()
@@ -637,8 +641,8 @@ struct NativeCurateView: View {
       Divider()
       Button("All folders") { controller.selectedRootID = nil }
     } label: {
-      Label("Folders", systemImage: "folder.badge.plus")
-    }.fixedSize()
+      Label("Folders", systemImage: "folder")
+    }.fixedSize().help("Add, show, rescan or reconnect media folders")
   }
   private var scope: some View {
     HStack(spacing: 8) {
@@ -1103,7 +1107,7 @@ struct NativeAssemblyInspector: View {
         }.disabled(legacy || preset == "image-only")
         if let canvas = controller.document?.deck.canvasPreset, let resolved = controller.resolvedScene {
           LabeledContent("Fit size") {
-            Text("\(Int(resolved.effectiveBodySize)) · \(Int(canvas.width)) × \(Int(canvas.height))").monospacedDigit()
+            Text(verbatim: "\(Int(resolved.effectiveBodySize)) · \(Int(canvas.width)) × \(Int(canvas.height))").monospacedDigit()
           }.workbenchText(.caption).foregroundStyle(.secondary)
           if resolved.overflowCharacters > 0 {
             Label("Some copy does not fit this rough layout. Export remains available; include a notes or copy companion to deliver the complete writing.",

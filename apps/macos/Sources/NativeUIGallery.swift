@@ -192,9 +192,13 @@ enum NativeUIGallery {
     }
 
     let controller = try NativeWorkbenchController()
-    let originalTheme = controller.theme, originalScale = controller.interfaceScale
-    defer { controller.theme = originalTheme; controller.interfaceScale = originalScale }
-    controller.theme = "light"; controller.interfaceScale = 1
+    let originalTheme = controller.theme, originalScale = controller.interfaceScale, originalWidth = controller.contextWidth
+    defer {
+      controller.theme = originalTheme; controller.interfaceScale = originalScale; controller.contextWidth = originalWidth
+      NativeSheetMetrics.screenSize = nil
+    }
+    controller.theme = "light"; controller.interfaceScale = 1; controller.contextWidth = 320
+    NativeSheetMetrics.screenSize = CGSize(width: 1680, height: 1050)
     let window = NativeGalleryWindow(contentRect: NSRect(x: 0, y: 0, width: 1440, height: 900),
       styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView], backing: .buffered, defer: false)
     window.title = "Workbench"
@@ -207,23 +211,27 @@ enum NativeUIGallery {
     func shot(_ name: String, settle: Duration = .milliseconds(700)) async throws {
       captured[name] = try await NativeWindowCapture.capture(window, to: output.appendingPathComponent(name + ".png"), settle: settle)
     }
-    func sheetShot(_ name: String) async throws {
-      try await Task.sleep(for: .milliseconds(900))
-      guard let sheet = window.attachedSheet else {
-        captured[name] = "no sheet presented"
-        return
-      }
-      captured[name] = try await NativeWindowCapture.capture(sheet, to: output.appendingPathComponent(name + ".png"), settle: .milliseconds(200))
+    // Sheets are drawn in their own window at their designed size: a sheet
+    // attached to a window larger than a small CI display captures clipped.
+    func sheetShot<Sheet: View>(_ name: String, _ sheet: Sheet) async throws {
+      let host = NSHostingView(rootView: sheet.workbenchText(.body).environment(\.workbenchInterfaceScale, controller.interfaceScale))
+      let size = host.fittingSize
+      let panel = NativeGalleryWindow(contentRect: NSRect(origin: .zero, size: size),
+        styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: false)
+      panel.titlebarAppearsTransparent = true
+      panel.titleVisibility = .hidden
+      panel.contentView = host
+      panel.setFrame(panel.frameRect(forContentRect: NSRect(origin: .zero, size: size)), display: true)
+      panel.orderFront(nil)
+      defer { panel.orderOut(nil) }
+      captured[name] = try await NativeWindowCapture.capture(panel, to: output.appendingPathComponent(name + ".png"), settle: .milliseconds(800))
     }
     func settle() async { await controller.flush(); try? await Task.sleep(for: .milliseconds(300)) }
 
     // Welcome, before any deck.
     try await shot("01-welcome")
     let imported = try NativeCopyImport.parse(Data(deckMarkdown.utf8), filename: "The Lighthouse Keeper.md")
-    controller.imported = imported
-    try await sheetShot("02-import-sheet")
-    controller.imported = nil
-    try await Task.sleep(for: .milliseconds(500))
+    try await sheetShot("02-import-sheet", NativeImportSheet(controller: controller, imported: imported))
 
     // A deck with copy but no media yet.
     let deckURL = root.appendingPathComponent("The Lighthouse Keeper.pitchdeck", isDirectory: true)
@@ -285,33 +293,20 @@ enum NativeUIGallery {
     try await shot("09-review")
     controller.endCleanPreview()
 
+    try await sheetShot("10-export-sheet", NativeExportSheet(controller: controller))
+    try await sheetShot("11-type-and-colours", NativeStarterStyleSheet(controller: controller))
+    if let slide = controller.slides.first(where: { $0.id == slides[1] }) {
+      try await sheetShot("12-copy-editor", NativeCopyEditor(controller: controller, slide: slide))
+    }
+    try await sheetShot("13-settings", NativeSettingsView(controller: controller))
+    try await sheetShot("19-shortcuts", NativeShortcutSheet(controller: controller))
+    try await sheetShot("20-apply-arrangement", NativeApplyLayoutSheet(controller: controller))
+    try await sheetShot("21-moodboard", NativeMoodboardSheet(controller: controller))
+    // One sheet presented for real, to check the attached-sheet path renders.
     controller.showExport = true
-    try await sheetShot("10-export-sheet")
+    try await Task.sleep(for: .milliseconds(900))
+    captured["10b-export-attached"] = window.attachedSheet == nil ? "no sheet presented" : "presented"
     controller.showExport = false
-    try await Task.sleep(for: .milliseconds(400))
-    controller.showStarterStyle = true
-    try await sheetShot("11-type-and-colours")
-    controller.showStarterStyle = false
-    try await Task.sleep(for: .milliseconds(400))
-    controller.beginEditCopy(slides[1])
-    try await sheetShot("12-copy-editor")
-    controller.cancelEditCopy()
-    try await Task.sleep(for: .milliseconds(400))
-    controller.showSettings = true
-    try await sheetShot("13-settings")
-    controller.showSettings = false
-    try await Task.sleep(for: .milliseconds(400))
-    controller.showShortcuts = true
-    try await sheetShot("19-shortcuts")
-    controller.showShortcuts = false
-    try await Task.sleep(for: .milliseconds(400))
-    controller.showApplyLayout = true
-    try await sheetShot("20-apply-arrangement")
-    controller.showApplyLayout = false
-    try await Task.sleep(for: .milliseconds(400))
-    controller.showMoodboard = true
-    try await sheetShot("21-moodboard")
-    controller.showMoodboard = false
     try await Task.sleep(for: .milliseconds(400))
     controller.phase = "curate"
     controller.compareIDs = Array(controller.filteredAssets.prefix(3).map(\.id))

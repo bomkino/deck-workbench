@@ -267,3 +267,38 @@ final class NativeSlideThumbnails: ObservableObject {
     }
   }
 }
+
+/// The divider before a side panel: drag to resize, double-click to reset.
+struct NativePanelResizeHandle: View {
+  @Binding var width: Double
+  let range: ClosedRange<Double>
+  @State private var start: Double?
+  @State private var hovering = false
+  var body: some View {
+    Rectangle().fill(Color(nsColor: .separatorColor)).frame(width: 1)
+      .overlay {
+        Color.clear.frame(width: 9).contentShape(Rectangle())
+          .onHover { inside in
+            guard inside != hovering else { return }
+            hovering = inside
+            if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+          }
+          .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
+            .onChanged { value in
+              let base = start ?? width
+              if start == nil { start = width }
+              width = min(range.upperBound, max(range.lowerBound, base - value.translation.width))
+            }
+            .onEnded { _ in start = nil })
+          .onTapGesture(count: 2) { width = 320 }
+      }
+      .onDisappear { if hovering { NSCursor.pop(); hovering = false } }
+      .accessibilityHidden(true)
+  }
+}
+
+/// Sheet sizes follow the screen; the UI gallery fixes them so captures
+/// on a small CI display match a normal Mac.
+enum NativeSheetMetrics {
+  @MainActor static var screenSize: CGSize?
+}

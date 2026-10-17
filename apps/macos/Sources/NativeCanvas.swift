@@ -168,7 +168,7 @@ final class PrototypeCanvasView: NSView {
     context.clip(to: bounds)
     if controller.cleanPreview { return }
     if controller.showGuides {
-      context.setStrokeColor(NSColor.secondaryLabelColor.withAlphaComponent(0.22).cgColor)
+      context.setStrokeColor(NSColor(white: 0.6, alpha: 0.16).cgColor)
       context.setLineWidth(0.5)
       let grid = NativeSlideGrid(canvas: scene.canvas)
       for x in grid.verticalGuides {

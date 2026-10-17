@@ -3,7 +3,7 @@ import SwiftUI
 
 extension View {
   func nativeSheetFrame(width: CGFloat, height: CGFloat) -> some View {
-    let screen = (NSApp.keyWindow?.screen ?? NSScreen.main)?.visibleFrame.size ?? CGSize(width: 1280, height: 800)
+    let screen = NativeSheetMetrics.screenSize ?? (NSApp.keyWindow?.screen ?? NSScreen.main)?.visibleFrame.size ?? CGSize(width: 1280, height: 800)
     return frame(width: min(width, max(360, screen.width - 100)), height: min(height, max(340, screen.height - 140)))
   }
 }
@@ -104,14 +104,14 @@ struct NativeChosenSlot: View {
       Group {
         if let id = assetID {
           Button { controller.previewCandidate(id) } label: {
-            NativeAssetImage(source: controller.sources[id], longestSide: 512).frame(width: 84, height: 56)
+            NativeAssetImage(source: controller.sources[id], longestSide: 512).frame(width: 72, height: 48)
               .background(Color.black.opacity(0.06)).clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
           }.buttonStyle(.plain).accessibilityLabel("Preview chosen image")
         } else {
           RoundedRectangle(cornerRadius: 6, style: .continuous)
             .strokeBorder(Color.secondary.opacity(0.45), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
             .overlay(Image(systemName: "photo.badge.plus").foregroundStyle(.secondary))
-            .frame(width: 84, height: 56).accessibilityHidden(true)
+            .frame(width: 72, height: 48).accessibilityHidden(true)
         }
       }
       VStack(alignment: .leading, spacing: 5) {
@@ -121,20 +121,24 @@ struct NativeChosenSlot: View {
         }
         Text(assetID.map { controller.assetIndex[$0]?.filename ?? "Original unavailable" } ?? "No image chosen")
           .workbenchText(.caption).foregroundStyle(.secondary).lineLimit(2)
-        HStack(spacing: 6) {
-          if let id = assetID {
-            Button("Remove") { controller.decide("unassign", assetID: id, role: role) }
-              .help("Remove; keep shortlisted").accessibilityLabel("Remove; keep shortlisted")
-          }
-          Button(assetID == nil ? "Find image…" : "Replace…") {
-            controller.curateRole = role
-            controller.phase = "curate"
-            controller.previewOpen = false
-          }.help("Choose candidates for this slot").accessibilityLabel("Choose candidates for this slot")
+        ViewThatFits(in: .horizontal) {
+          HStack(spacing: 6) { slotButtons }
+          VStack(alignment: .leading, spacing: 4) { slotButtons }
         }.controlSize(.small)
       }
       Spacer(minLength: 0)
     }.padding(.vertical, 2)
+  }
+  @ViewBuilder private var slotButtons: some View {
+    if let id = assetID {
+      Button("Remove") { controller.decide("unassign", assetID: id, role: role) }
+        .help("Remove; keep shortlisted").accessibilityLabel("Remove; keep shortlisted")
+    }
+    Button(assetID == nil ? "Find image…" : "Replace…") {
+      controller.curateRole = role
+      controller.phase = "curate"
+      controller.previewOpen = false
+    }.help("Choose candidates for this slot").accessibilityLabel("Choose candidates for this slot")
   }
 }
 
