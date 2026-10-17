@@ -112,20 +112,30 @@ final class PrototypeCanvasView: NSView {
     return sizes
   }
   override func draw(_ dirtyRect: NSRect) {
-    NSColor.windowBackgroundColor.setFill()
+    let clean = controller?.cleanPreview == true
+    (clean ? NSColor.black : NativeDesign.pasteboardNS).setFill()
     bounds.fill()
     guard var scene, let context = NSGraphicsContext.current?.cgContext, let controller else {
       return
     }
+    // Room for the hint above and the floating controls below the slide.
+    let inset = clean
+      ? NSEdgeInsets(top: 24, left: 24, bottom: 84, right: 24)
+      : NSEdgeInsets(top: 40, left: 40, bottom: 76, right: 40)
+    let available = CGRect(x: inset.left, y: inset.bottom, width: max(1, bounds.width - inset.left - inset.right),
+      height: max(1, bounds.height - inset.top - inset.bottom))
     let scale =
-      max(
-        0.02,
-        min((bounds.width - 64) / scene.canvas.width, (bounds.height - 64) / scene.canvas.height))
+      max(0.02, min(available.width / scene.canvas.width, available.height / scene.canvas.height))
       * controller.zoom
     artboard = CGRect(
-      x: (bounds.width - scene.canvas.width * scale) / 2 + pan.x,
-      y: (bounds.height - scene.canvas.height * scale) / 2 + pan.y,
+      x: available.midX - scene.canvas.width * scale / 2 + pan.x,
+      y: available.midY - scene.canvas.height * scale / 2 + pan.y,
       width: scene.canvas.width * scale, height: scene.canvas.height * scale)
+    context.saveGState()
+    context.setShadow(offset: CGSize(width: 0, height: -8), blur: clean ? 0 : 28, color: NSColor.black.withAlphaComponent(0.32).cgColor)
+    context.setFillColor(NSColor.black.cgColor)
+    context.fill(artboard)
+    context.restoreGState()
     if let frame = previewFrame, let gesture, let slide, let canvas {
       if gesture.target == "text" {
         var copy = slide

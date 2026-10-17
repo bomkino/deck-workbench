@@ -195,9 +195,11 @@ enum NativeUIGallery {
     let originalTheme = controller.theme, originalScale = controller.interfaceScale
     defer { controller.theme = originalTheme; controller.interfaceScale = originalScale }
     controller.theme = "light"; controller.interfaceScale = 1
-    let window = NSWindow(contentRect: NSRect(x: 60, y: 60, width: 1440, height: 900),
+    let window = NativeGalleryWindow(contentRect: NSRect(x: 0, y: 0, width: 1440, height: 900),
       styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView], backing: .buffered, defer: false)
     window.title = "Workbench"
+    // CI displays are often 1024 × 768; keep the intended size off screen.
+    window.setFrame(window.frameRect(forContentRect: NSRect(x: 0, y: 0, width: 1440, height: 900)), display: false)
     window.contentView = NSHostingView(rootView: NativeWorkbenchRoot(controller: controller))
     window.makeKeyAndOrderFront(nil)
     NSApp.activate(ignoringOtherApps: true)
@@ -299,6 +301,25 @@ enum NativeUIGallery {
     try await sheetShot("13-settings")
     controller.showSettings = false
     try await Task.sleep(for: .milliseconds(400))
+    controller.showShortcuts = true
+    try await sheetShot("19-shortcuts")
+    controller.showShortcuts = false
+    try await Task.sleep(for: .milliseconds(400))
+    controller.showApplyLayout = true
+    try await sheetShot("20-apply-arrangement")
+    controller.showApplyLayout = false
+    try await Task.sleep(for: .milliseconds(400))
+    controller.showMoodboard = true
+    try await sheetShot("21-moodboard")
+    controller.showMoodboard = false
+    try await Task.sleep(for: .milliseconds(400))
+    controller.phase = "curate"
+    controller.compareIDs = Array(controller.filteredAssets.prefix(3).map(\.id))
+    controller.comparedAssetID = controller.compareIDs.first
+    controller.compareOpen = true
+    try await shot("22-compare")
+    controller.compareOpen = false
+    controller.compareIDs = []
 
     controller.theme = "dark"
     controller.phase = "curate"
@@ -307,12 +328,12 @@ enum NativeUIGallery {
     try await shot("15-assemble-dark")
     controller.theme = "light"
 
-    window.setContentSize(NSSize(width: 1100, height: 720))
+    window.setFrame(window.frameRect(forContentRect: NSRect(x: 0, y: 0, width: 1100, height: 720)), display: true)
     controller.fitCanvas()
     try await shot("16-assemble-compact", settle: .milliseconds(900))
     controller.phase = "curate"
     try await shot("17-curate-compact")
-    window.setContentSize(NSSize(width: 1440, height: 900))
+    window.setFrame(window.frameRect(forContentRect: NSRect(x: 0, y: 0, width: 1440, height: 900)), display: true)
     controller.interfaceScale = 1.5
     controller.phase = "assemble"; controller.fitCanvas()
     try await shot("18-assemble-large-text", settle: .milliseconds(900))
@@ -323,6 +344,12 @@ enum NativeUIGallery {
     try await controller.session.close()
     window.orderOut(nil)
   }
+}
+
+/// A window that keeps its requested size on a small display; the
+/// WindowServer capture includes the part beyond the screen edge.
+final class NativeGalleryWindow: NSWindow {
+  override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
 }
 
 /// Procedural landscape "photographs": sky, sun, layered hills and a light,

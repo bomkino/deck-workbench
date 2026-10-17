@@ -4,6 +4,8 @@ import SwiftUI
 struct NativeLayoutChoice: Identifiable {
   let id: String
   let name: String
+  /// The name without its qualifier, for compact tiles.
+  var shortName: String { name.components(separatedBy: " · ").first ?? name }
   static let all: [NativeLayoutChoice] = [
     .init(id: "auto", name: "Default"), .init(id: "left", name: "Text left"),
     .init(id: "right", name: "Text right"), .init(id: "lower", name: "Text lower"),
@@ -31,18 +33,28 @@ struct NativeSlideEditingBar: View {
     if let slide = controller.selectedSlide {
       ViewThatFits(in: .horizontal) {
         HStack(spacing: 12) {
-          Text(slide.title).workbenchText(.label).lineLimit(1).frame(minWidth: 60, maxWidth: .infinity, alignment: .leading)
+          heading(slide).frame(minWidth: 60, maxWidth: .infinity, alignment: .leading)
           controls(slide)
         }
         VStack(alignment: .leading, spacing: 8) {
-          Text(slide.title).workbenchText(.label).lineLimit(1)
+          heading(slide)
           HStack(spacing: 8) { controls(slide) }
         }
-      }.padding(.horizontal, 14).padding(.vertical, 10)
+      }.padding(.horizontal, 16).padding(.vertical, 9)
     }
   }
+  private func heading(_ slide: DeckSlide) -> some View {
+    let readiness = NativeSlideReadiness(slide)
+    return HStack(spacing: 10) {
+      VStack(alignment: .leading, spacing: 1) {
+        Text("Slide \(controller.slideOrdinals[slide.id] ?? 0) of \(controller.slides.count)").workbenchText(.eyebrow).foregroundStyle(.secondary)
+        Text(slide.title).workbenchText(.label).lineLimit(1)
+      }
+      NativeBadge(text: readiness.label, systemImage: readiness.systemImage, tint: readiness.tint).fixedSize()
+    }.accessibilityElement(children: .combine)
+  }
   @ViewBuilder private func controls(_ slide: DeckSlide) -> some View {
-    NativeLayoutPicker(controller: controller, slide: slide).frame(width: 190 * controller.interfaceScale)
+    NativeLayoutPicker(controller: controller, slide: slide).frame(width: 200 * controller.interfaceScale)
     Button { controller.beginEditCopy() } label: { Label("Edit Copy", systemImage: "pencil") }
       .disabled(!controller.slideEditingAvailable).help("Edit this slide’s writing (Command-E)")
       .accessibilityIdentifier("edit-slide-copy")
@@ -115,20 +127,26 @@ struct NativeCopyEditor: View {
     return value == originalTitle || NativeTitle.isValid(NativeTitle.clean(value))
   }
   var body: some View {
-    VStack(alignment: .leading, spacing: 16) {
-      Text("Edit Slide Copy").workbenchText(.sectionTitle)
-      TextField("Slide name (sidebar and handoff)", text: $title).textFieldStyle(.roundedBorder)
-        .accessibilityLabel("Slide name")
-      Text("The name above is not the on-slide headline. Saving keeps this slide’s media and notes. Undo restores the whole edit.")
-        .workbenchText(.bodyCompact).foregroundStyle(.secondary)
-      if let error = controller.copyEditorError { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
+    NativeSheetScaffold(title: "Edit Slide Copy",
+      subtitle: "The name is not the on-slide headline. Saving keeps this slide’s media and notes. Undo restores the whole edit.",
+      systemImage: "pencil") {
       ScrollView {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 18) {
+          VStack(alignment: .leading, spacing: 6) {
+            NativeEyebrow("Slide name")
+            TextField("Slide name (sidebar and handoff)", text: $title).textFieldStyle(.roundedBorder)
+              .workbenchText(.input).accessibilityLabel("Slide name")
+            if !validTitle { Text("A slide name needs 1 to \(NativeTitle.maximumCharacters) characters.").workbenchText(.caption).foregroundStyle(NativeDesign.attention) }
+          }
+          if let error = controller.copyEditorError {
+            Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(NativeDesign.attention).textSelection(.enabled)
+          }
           ForEach(blocks) { block in
             VStack(alignment: .leading, spacing: 6) {
               HStack {
-                Text(block.role.capitalized).workbenchText(.label)
+                NativeEyebrow(fieldName(block).replacingOccurrences(of: " copy", with: ""))
                 Spacer()
+                Text("\(blocks.first { $0.id == block.id }?.text.count ?? 0) characters").workbenchText(.caption).foregroundStyle(.tertiary).monospacedDigit()
                 if block.role != "headline" {
                   Button("Remove field", role: .destructive) { blocks.removeAll { $0.id == block.id } }
                     .controlSize(.small).help("Removes this field from the draft. Cancel keeps the saved version; Undo restores a saved edit.")
@@ -137,8 +155,11 @@ struct NativeCopyEditor: View {
               }
               TextEditor(text: Binding(get: { blocks.first { $0.id == block.id }?.text ?? "" },
                 set: { value in if let i = blocks.firstIndex(where: { $0.id == block.id }) { blocks[i].setText(value) } }))
-                .workbenchText(.input).frame(minHeight: block.role == "body" ? 150 : 80)
-                .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.secondary.opacity(0.25)))
+                .workbenchText(block.role == "headline" ? .panelTitle : .input)
+                .scrollContentBackground(.hidden).padding(8)
+                .frame(minHeight: block.role == "body" ? 150 : block.role == "headline" ? 64 : 80)
+                .background(NativeDesign.card, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(NativeDesign.strongStroke))
                 .accessibilityLabel(fieldName(block))
             }
           }
@@ -146,21 +167,20 @@ struct NativeCopyEditor: View {
             ForEach(["body", "caption", "credit"], id: \.self) { role in
               Button(role.capitalized) { blocks.append(Self.blank(role)) }
             }
-          }
-        }
+          }.fixedSize()
+        }.padding(24)
       }
-      HStack {
-        Button("Cancel") { controller.cancelEditCopy() }.keyboardShortcut(.cancelAction)
-        Spacer()
-        if controller.copyEditorSaving { ProgressView().controlSize(.small) }
-        Button("Save Copy") {
-          let kept = blocks.filter { initialIDs.contains($0.id) || !$0.text.isEmpty }
-          let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
-          controller.editCopy(kept, title: name == originalTitle ? name : NativeTitle.clean(name))
-        }.buttonStyle(.borderedProminent).keyboardShortcut("s", modifiers: [.command])
-          .disabled(!validTitle)
-      }
-    }.padding(24).nativeSheetFrame(width: 680, height: 710)
+    } footer: {
+      Button("Cancel") { controller.cancelEditCopy() }.keyboardShortcut(.cancelAction)
+      Spacer()
+      if controller.copyEditorSaving { ProgressView().controlSize(.small) }
+      Button("Save Copy") {
+        let kept = blocks.filter { initialIDs.contains($0.id) || !$0.text.isEmpty }
+        let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        controller.editCopy(kept, title: name == originalTitle ? name : NativeTitle.clean(name))
+      }.buttonStyle(.borderedProminent).keyboardShortcut("s", modifiers: [.command])
+        .disabled(!validTitle)
+    }.nativeSheetFrame(width: 700, height: 740)
       .disabled(controller.copyEditorSaving).interactiveDismissDisabled()
   }
 }

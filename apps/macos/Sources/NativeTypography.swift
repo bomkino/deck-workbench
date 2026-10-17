@@ -5,7 +5,7 @@ import SwiftUI
 // Native control sizes are a consumer adaptation of the pinned v13 UI roles.
 // See DESIGN.md. Canvas typography is independent of this interface scale.
 enum NativeUIRole: CaseIterable {
-  case display, pageTitle, sectionTitle, panelTitle, body, bodyCompact, label, action, input, caption, data, code
+  case display, pageTitle, sectionTitle, panelTitle, body, bodyCompact, label, action, input, caption, eyebrow, data, code
 
   var pointSize: CGFloat {
     switch self {
@@ -16,13 +16,14 @@ enum NativeUIRole: CaseIterable {
     case .body, .input: return 14
     case .bodyCompact, .label, .action: return 13
     case .caption, .data, .code: return 12
+    case .eyebrow: return 11
     }
   }
   var fontName: String? {
     switch self {
     case .display: return "pd-head-Medium"
     case .pageTitle: return "pd-body-700"
-    case .sectionTitle, .panelTitle, .label, .action: return "pd-body-600"
+    case .sectionTitle, .panelTitle, .label, .action, .eyebrow: return "pd-body-600"
     case .body, .bodyCompact, .input, .caption: return "pd-body-400"
     case .data, .code: return nil // Avoid v13 Eyebrow's conflicting native family names.
     }

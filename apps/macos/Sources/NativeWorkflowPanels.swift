@@ -12,79 +12,83 @@ struct NativeContextPanel: View {
   @ObservedObject var controller: NativeWorkbenchController
   @AppStorage("native.copyExpanded") private var copyExpanded = true
   var body: some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: 18) {
-        if let slide = controller.selectedSlide {
-          if controller.phase == "assemble" && !controller.previewOpen && !controller.compareOpen {
-            NativeAssemblyInspector(controller: controller, slide: slide)
-            Divider()
-          }
-          if !slide.imageRoles.isEmpty {
-            Text("Chosen for this slide").workbenchText(.panelTitle)
+    if let slide = controller.selectedSlide {
+      Form {
+        if controller.phase == "assemble" && !controller.previewOpen && !controller.compareOpen {
+          NativeAssemblyInspector(controller: controller, slide: slide)
+        }
+        if !slide.imageRoles.isEmpty {
+          Section("Chosen for this slide") {
             ForEach(slide.imageRoles, id: \.self) { role in
               NativeChosenSlot(controller: controller, slide: slide, role: role)
             }
-            Divider()
           }
-          Text("Designer notes").workbenchText(.panelTitle)
+        }
+        if !slide.settings.shortlist.isEmpty {
+          Section("Shortlist · \(slide.settings.shortlist.count)") {
+            ForEach(slide.settings.shortlist, id: \.self) { id in
+              HStack(spacing: 10) {
+                Button { controller.previewCandidate(id) } label: {
+                  NativeAssetImage(source: controller.sources[id], longestSide: 512).frame(width: 64, height: 42)
+                    .background(Color.black.opacity(0.06)).clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                }.buttonStyle(.plain).help("Preview candidate").accessibilityLabel("Preview \(controller.assetIndex[id]?.filename ?? "candidate")")
+                VStack(alignment: .leading, spacing: 5) {
+                  Text(controller.assetIndex[id]?.filename ?? "Reconnect media").workbenchText(.caption).lineLimit(2)
+                  HStack(spacing: 6) {
+                    Button("Use") { controller.decide("use", assetID: id) }
+                      .disabled(slide.imageRoles.isEmpty)
+                    Button("Remove") { controller.decide("remove-shortlist", assetID: id) }
+                      .help("Remove candidate; keep any chosen assignment")
+                  }.controlSize(.small)
+                }
+                Spacer(minLength: 0)
+              }
+            }
+          }
+        }
+        Section {
           TextEditor(text: Binding(get: { controller.notes(for: slide.id) }, set: { controller.setNotes($0, slideID: slide.id) }))
             .id(slide.id) // A text editor's undo history never crosses slide boundaries.
-            .workbenchText(.bodyCompact).frame(minHeight: 110, maxHeight: 200)
-            .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.secondary.opacity(0.25)))
+            .workbenchText(.bodyCompact).scrollContentBackground(.hidden).frame(minHeight: 96, maxHeight: 200)
             .accessibilityLabel("Designer notes for \(slide.title)")
+        } header: {
+          Text("Designer notes")
+        } footer: {
           Text("Direction, not on-slide copy. Included when exporting notes or Copy.md.")
-            .workbenchText(.caption).foregroundStyle(.secondary)
-          Divider()
+            .workbenchText(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+        Section {
           DisclosureGroup(isExpanded: $copyExpanded) {
-            VStack(alignment: .leading, spacing: 14) {
-              HStack {
-                Label("Copy", systemImage: "text.alignleft").workbenchText(.caption)
-                Spacer()
-                Button("Edit Copy…") { controller.beginEditCopy(slide.id) }.controlSize(.small)
-              }
+            VStack(alignment: .leading, spacing: 12) {
               ForEach(slide.copyBlocks) { block in
-                VStack(alignment: .leading, spacing: 5) {
+                VStack(alignment: .leading, spacing: 4) {
                   HStack {
-                    Text(block.role.uppercased()).workbenchText(.caption).foregroundStyle(.secondary)
+                    NativeEyebrow(block.role)
                     Spacer()
                     Button {
                       NSPasteboard.general.clearContents()
                       NSPasteboard.general.setString(block.text, forType: .string)
                     } label: { Image(systemName: "doc.on.doc") }
-                    .buttonStyle(.plain).help("Copy \(block.role)")
+                    .buttonStyle(.borderless).help("Copy \(block.role)")
                     .accessibilityLabel("Copy \(block.role)")
                   }
                   Text(block.text.isEmpty ? "—" : block.text).textSelection(.enabled)
-                    .workbenchText(.bodyCompact)
+                    .workbenchText(block.role == "headline" ? .label : .bodyCompact).fixedSize(horizontal: false, vertical: true)
                 }
               }
-            }.padding(.top, 10)
-          } label: { Text("Slide copy").workbenchText(.label) }
-          Toggle("Include in handoff", isOn: Binding(get: { slide.settings.included }, set: { controller.patchSlide(["included": $0]) }))
-          if !slide.settings.shortlist.isEmpty {
-            Divider()
-            Text("Shortlist · \(slide.settings.shortlist.count)").workbenchText(.label)
-            LazyVStack(alignment: .leading, spacing: 10) {
-              ForEach(slide.settings.shortlist, id: \.self) { id in
-                HStack(spacing: 8) {
-                  Button { controller.previewCandidate(id) } label: {
-                    NativeAssetImage(source: controller.sources[id], longestSide: 512).frame(width: 64, height: 42)
-                  }.buttonStyle(.plain).help("Preview candidate").accessibilityLabel("Preview \(controller.assetIndex[id]?.filename ?? "candidate")")
-                  VStack(alignment: .leading, spacing: 4) {
-                    Text(controller.assetIndex[id]?.filename ?? "Reconnect media").workbenchText(.caption).lineLimit(2)
-                    HStack {
-                      Button("Use") { controller.decide("use", assetID: id) }
-                        .disabled(slide.imageRoles.isEmpty)
-                      Button("Remove") { controller.decide("remove-shortlist", assetID: id) }
-                        .help("Remove candidate; keep any chosen assignment")
-                    }.controlSize(.small)
-                  }
-                }
-              }
+            }.padding(.top, 8)
+          } label: {
+            HStack {
+              Text("Slide copy").workbenchText(.label)
+              Spacer()
+              Button("Edit Copy…") { controller.beginEditCopy(slide.id) }.controlSize(.small)
             }
           }
-        } else { Text("Choose a slide.").foregroundStyle(.secondary) }
-      }.padding(16)
+          Toggle("Include in handoff", isOn: Binding(get: { slide.settings.included }, set: { controller.patchSlide(["included": $0]) }))
+        }
+      }.formStyle(.grouped)
+    } else {
+      NativeEmptyState(systemImage: "rectangle.on.rectangle", title: "Choose a slide.", message: "Its media, layout, notes and copy appear here.") { EmptyView() }
     }
   }
 }
@@ -94,32 +98,43 @@ struct NativeChosenSlot: View {
   let slide: DeckSlide
   let role: String
   private var assetID: String? { slide.mediaAssignments?.first { $0.role == role }?.assetReferenceId }
+  private var active: Bool { controller.curateRole == role }
   var body: some View {
-    VStack(alignment: .leading, spacing: 6) {
-      HStack {
-        Text("Image \((slide.imageRoles.firstIndex(of: role) ?? 0) + 1)").workbenchText(.label)
-        Spacer()
-        if controller.curateRole == role { Image(systemName: "scope").accessibilityLabel("Active destination slot") }
-      }
-      HStack(alignment: .top, spacing: 8) {
+    HStack(alignment: .top, spacing: 10) {
+      Group {
         if let id = assetID {
           Button { controller.previewCandidate(id) } label: {
-            NativeAssetImage(source: controller.sources[id], longestSide: 512).frame(width: 82, height: 58)
+            NativeAssetImage(source: controller.sources[id], longestSide: 512).frame(width: 84, height: 56)
+              .background(Color.black.opacity(0.06)).clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
           }.buttonStyle(.plain).accessibilityLabel("Preview chosen image")
-          VStack(alignment: .leading, spacing: 6) {
-            Text(controller.assetIndex[id]?.filename ?? "Original unavailable").workbenchText(.caption).lineLimit(2)
-            Button("Remove; keep shortlisted") { controller.decide("unassign", assetID: id, role: role) }.controlSize(.small)
-          }
-        } else { Text("No image chosen").workbenchText(.caption).foregroundStyle(.secondary) }
+        } else {
+          RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .strokeBorder(Color.secondary.opacity(0.45), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+            .overlay(Image(systemName: "photo.badge.plus").foregroundStyle(.secondary))
+            .frame(width: 84, height: 56).accessibilityHidden(true)
+        }
       }
-      Button("Choose candidates for this slot") {
-        controller.curateRole = role
-        controller.phase = "curate"
-        controller.previewOpen = false
-      }.controlSize(.small)
-    }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
-      .background(controller.curateRole == role ? Color.accentColor.opacity(0.08) : Color.secondary.opacity(0.04))
-      .clipShape(RoundedRectangle(cornerRadius: 5))
+      VStack(alignment: .leading, spacing: 5) {
+        HStack(spacing: 6) {
+          Text("Image \((slide.imageRoles.firstIndex(of: role) ?? 0) + 1)").workbenchText(.label)
+          if active && slide.imageRoles.count > 1 { Image(systemName: "scope").foregroundStyle(.tint).accessibilityLabel("Active destination slot") }
+        }
+        Text(assetID.map { controller.assetIndex[$0]?.filename ?? "Original unavailable" } ?? "No image chosen")
+          .workbenchText(.caption).foregroundStyle(.secondary).lineLimit(2)
+        HStack(spacing: 6) {
+          if let id = assetID {
+            Button("Remove") { controller.decide("unassign", assetID: id, role: role) }
+              .help("Remove; keep shortlisted").accessibilityLabel("Remove; keep shortlisted")
+          }
+          Button(assetID == nil ? "Find image…" : "Replace…") {
+            controller.curateRole = role
+            controller.phase = "curate"
+            controller.previewOpen = false
+          }.help("Choose candidates for this slot").accessibilityLabel("Choose candidates for this slot")
+        }.controlSize(.small)
+      }
+      Spacer(minLength: 0)
+    }.padding(.vertical, 2)
   }
 }
 
@@ -127,55 +142,73 @@ struct NativeApplyLayoutSheet: View {
   @ObservedObject var controller: NativeWorkbenchController
   @State private var selected: Set<String> = []
   var body: some View {
-    VStack(alignment: .leading, spacing: 16) {
-      Text("Apply this arrangement").workbenchText(.sectionTitle)
-      Text("Copies the prototype layout, text region, columns and gradient. Copy, notes and image crops stay with each slide. Choices that no longer have a slot stay shortlisted. Undo reverses the complete operation.")
-        .workbenchText(.bodyCompact).foregroundStyle(.secondary)
-      HStack {
-        Button("Select included slides") { selected = Set(controller.slides.filter { $0.settings.included && $0.id != controller.selectedSlideID }.map(\.id)) }
-        Button("Clear") { selected = [] }
-      }
-      List(controller.slides.filter { $0.id != controller.selectedSlideID }) { slide in
-        Toggle(slide.title, isOn: Binding(get: { selected.contains(slide.id) }, set: { if $0 { selected.insert(slide.id) } else { selected.remove(slide.id) } }))
-      }
-      HStack {
-        Button("Cancel") { controller.showApplyLayout = false }.keyboardShortcut(.cancelAction)
-        Spacer()
-        Button("Apply to \(selected.count) slides") { controller.applyArrangement(to: controller.slides.map(\.id).filter { selected.contains($0) }) }
-          .buttonStyle(.borderedProminent).disabled(selected.isEmpty)
-      }
-    }.padding(24).nativeSheetFrame(width: 630, height: 580)
+    NativeSheetScaffold(title: "Apply this arrangement",
+      subtitle: "Copies the prototype layout, text region, columns and gradient. Copy, notes and image crops stay with each slide. Choices that no longer have a slot stay shortlisted. Undo reverses the complete operation.",
+      systemImage: "square.on.square") {
+      VStack(alignment: .leading, spacing: 10) {
+        HStack {
+          Button("Select included slides") { selected = Set(controller.slides.filter { $0.settings.included && $0.id != controller.selectedSlideID }.map(\.id)) }
+          Button("Clear") { selected = [] }
+          Spacer()
+          Text("\(selected.count) selected").workbenchText(.caption).foregroundStyle(.secondary)
+        }.controlSize(.small)
+        List(controller.slides.filter { $0.id != controller.selectedSlideID }) { slide in
+          Toggle(isOn: Binding(get: { selected.contains(slide.id) }, set: { if $0 { selected.insert(slide.id) } else { selected.remove(slide.id) } })) {
+            HStack(spacing: 8) {
+              Text(String(format: "%02d", controller.slideOrdinals[slide.id] ?? 0)).workbenchText(.data).foregroundStyle(.secondary)
+              Text(slide.title)
+            }
+          }.accessibilityLabel(slide.title)
+        }.listStyle(.bordered(alternatesRowBackgrounds: true))
+      }.padding(20)
+    } footer: {
+      Button("Cancel") { controller.showApplyLayout = false }.keyboardShortcut(.cancelAction)
+      Spacer()
+      Button("Apply to \(selected.count) slides") { controller.applyArrangement(to: controller.slides.map(\.id).filter { selected.contains($0) }) }
+        .buttonStyle(.borderedProminent).disabled(selected.isEmpty)
+    }.nativeSheetFrame(width: 640, height: 600)
   }
 }
 
 struct NativeHandoffResultSheet: View {
   @ObservedObject var controller: NativeWorkbenchController
   var body: some View {
-    VStack(alignment: .leading, spacing: 16) {
-      if let result = controller.exportResult {
-        Text(result.issues.isEmpty ? "Handoff saved" : "Handoff saved with exceptions").workbenchText(.sectionTitle)
-        Text("\(result.slideCount) slides · \(result.originalCopies) original-media copies").foregroundStyle(.secondary)
+    if let result = controller.exportResult {
+      NativeSheetScaffold(title: result.issues.isEmpty ? "Handoff saved" : "Handoff saved with exceptions",
+        subtitle: "\(result.slideCount) slides · \(result.originalCopies) original-media copies",
+        systemImage: result.issues.isEmpty ? "checkmark.seal.fill" : "exclamationmark.triangle.fill") {
         ScrollView {
-          VStack(alignment: .leading, spacing: 12) {
-            ForEach(result.produced, id: \.self) { name in
-              Button(name) { NSWorkspace.shared.open(result.url.appendingPathComponent(name)) }.buttonStyle(.link)
-            }
-            if !result.issues.isEmpty {
-              Divider()
-              Text("Review these exceptions").workbenchText(.label)
-              ForEach(Array(result.issues.enumerated()), id: \.offset) { _, issue in
-                Text(issue).workbenchText(.bodyCompact).textSelection(.enabled)
+          VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 0) {
+              ForEach(Array(result.produced.enumerated()), id: \.offset) { index, name in
+                if index > 0 { Divider().padding(.leading, 40) }
+                Button { NSWorkspace.shared.open(result.url.appendingPathComponent(name)) } label: {
+                  HStack(spacing: 10) {
+                    Image(systemName: name.hasSuffix("/") || !name.contains(".") ? "folder.fill" : "doc.fill").foregroundStyle(.tint).frame(width: 20)
+                    Text(name).lineLimit(1).truncationMode(.middle)
+                    Spacer()
+                    Image(systemName: "arrow.up.forward.square").foregroundStyle(.tertiary)
+                  }.padding(.horizontal, 12).padding(.vertical, 8).contentShape(Rectangle())
+                }.buttonStyle(.plain).accessibilityLabel("Open \(name)")
               }
+            }.nativeCard(padding: 0)
+            if !result.issues.isEmpty {
+              NativeEyebrow("Review these exceptions")
+              VStack(alignment: .leading, spacing: 8) {
+                ForEach(Array(result.issues.enumerated()), id: \.offset) { _, issue in
+                  Label(issue, systemImage: "exclamationmark.triangle").workbenchText(.bodyCompact).textSelection(.enabled)
+                    .foregroundStyle(.primary)
+                }
+              }.nativeCard(padding: 12)
             }
-          }.frame(maxWidth: .infinity, alignment: .leading)
+          }.frame(maxWidth: .infinity, alignment: .leading).padding(20)
         }
-        HStack {
-          Button("Reveal handoff folder") { NSWorkspace.shared.activateFileViewerSelecting([result.url]) }
-          Spacer()
-          Button("Done") { controller.showExportResult = false }.keyboardShortcut(.cancelAction)
-        }
-      }
-    }.padding(24).nativeSheetFrame(width: 700, height: 540)
+      } footer: {
+        Button("Reveal handoff folder") { NSWorkspace.shared.activateFileViewerSelecting([result.url]) }
+        Spacer()
+        Button("Done") { controller.showExportResult = false }.keyboardShortcut(.cancelAction).buttonStyle(.borderedProminent)
+      }.nativeSheetFrame(width: 700, height: 560)
+    }
   }
 }
 
@@ -230,7 +263,7 @@ struct NativeCropZoomControls: View {
   @State private var editing = false
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
-      HStack { Text("Crop zoom"); Spacer(); Text("\(Int((zoom * 100).rounded()))%").monospacedDigit() }.workbenchText(.caption)
+      LabeledContent("Crop zoom") { Text("\(Int((zoom * 100).rounded()))%").monospacedDigit() }
       Slider(value: $zoom, in: 1...4, onEditingChanged: { active in
         editing = active
         if !active { controller.zoomCrop(zoom, role: role, slideID: slideID) }

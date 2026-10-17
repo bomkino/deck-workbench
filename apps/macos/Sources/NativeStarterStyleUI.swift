@@ -24,9 +24,10 @@ struct NativeStarterStyleSheet: View {
     palette.colors.values.allSatisfy { pair in [pair.dark, pair.light].allSatisfy(NativeColourLibrary.validHex) }
   }
   var body: some View {
-    VStack(alignment: .leading, spacing: 16) {
-      Text("Type & colours").workbenchText(.sectionTitle)
-      Picker("Edit", selection: $tab) { Text("Type").tag("type"); Text("Colours").tag("colours") }.pickerStyle(.segmented)
+    NativeSheetScaffold(title: "Type & colours", subtitle: "Starter fonts, sizes and a four-accent palette for the prototype and handoff.", systemImage: "textformat") {
+      VStack(alignment: .leading, spacing: 14) {
+      Picker("Edit", selection: $tab) { Text("Type").tag("type"); Text("Colours").tag("colours") }.pickerStyle(.segmented).labelsHidden()
+        .frame(maxWidth: 280)
       ScrollView {
         VStack(alignment: .leading, spacing: 20) {
           if tab == "type" {
@@ -36,9 +37,9 @@ struct NativeStarterStyleSheet: View {
               Button("pitch.dog Head + Body") { type.useFonts(head: "pd-head-Medium", sub: "pd-body-600", body: "pd-body-400") }
               Button("SF Pro throughout") { type.useFonts(head: "System", sub: "System", body: "System") }
             }.workbenchText(.action).help("Sets the three font faces. Your size steps, alignment and colours stay as chosen.")
-            NativeTypeRoleEditor(title: "Head", roleName: "headline", role: $type.head)
-            NativeTypeRoleEditor(title: "Sub", roleName: "subheadline", role: $type.sub)
-            NativeTypeRoleEditor(title: "Body", roleName: "body", role: $type.body)
+            NativeTypeRoleEditor(title: "Head", roleName: "headline", role: $type.head).nativeCard(padding: 12)
+            NativeTypeRoleEditor(title: "Sub", roleName: "subheadline", role: $type.sub).nativeCard(padding: 12)
+            NativeTypeRoleEditor(title: "Body", roleName: "body", role: $type.body).nativeCard(padding: 12)
             Text("Step 0 is Head 48, Sub 40 and Body 32. The same sizes apply at both slide widths. Review wrapping after changing fonts; Fit copy can reduce the rendered size.").workbenchText(.caption).foregroundStyle(.secondary)
             if !type.unavailableFonts.isEmpty { Text("Choose installed replacements for: " + type.unavailableFonts.joined(separator: ", ")).foregroundStyle(.orange) }
           } else {
@@ -46,12 +47,15 @@ struct NativeStarterStyleSheet: View {
           }
         }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 4)
       }
-      Divider()
-      Toggle(tab == "type" ? "Apply type to every slide" : "Apply colours to every slide", isOn: scope)
-      Text(allSlides ? "One Undo restores the previous settings. Each slide keeps its dark or light appearance." : "Changes apply to the current slide. One Undo restores its previous settings.").workbenchText(.caption).foregroundStyle(.secondary)
-      HStack {
+      }.padding(.horizontal, 24).padding(.top, 16)
+    } footer: {
+      VStack(alignment: .leading, spacing: 2) {
+        Toggle(tab == "type" ? "Apply type to every slide" : "Apply colours to every slide", isOn: scope)
+        Text(allSlides ? "One Undo restores the previous settings. Each slide keeps its dark or light appearance." : "Changes apply to the current slide. One Undo restores its previous settings.").workbenchText(.caption).foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      Spacer()
         Button("Cancel") { controller.showStarterStyle = false }.keyboardShortcut(.cancelAction)
-        Spacer()
         Button(applyType && applyColours ? "Apply type & colours" : applyType ? "Apply type" : "Apply colours") {
           do {
             let typePatch: [String: Any] = applyType ? ["starterType": try nativeObject(type)] : [:]
@@ -64,8 +68,7 @@ struct NativeStarterStyleSheet: View {
             }
           } catch { controller.failure = error.localizedDescription }
         }.buttonStyle(.borderedProminent).disabled((applyType && !type.unavailableFonts.isEmpty) || (applyColours && !validPalette))
-      }.workbenchText(.action)
-    }.padding(24).nativeSheetFrame(width: 670, height: 770)
+    }.nativeSheetFrame(width: 690, height: 780)
       .onAppear {
         type = controller.selectedSlide?.settings.layout.starterType ?? .standard
         palette = controller.selectedSlide?.settings.layout.palette ?? .standard

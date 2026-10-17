@@ -129,6 +129,8 @@ final class NativeWorkbenchController: ObservableObject {
   @Published private(set) var failedCommands: [NativePendingCommand] = []
   private(set) var documentURL: URL?
   let session: NativeDocumentSession
+  /// Navigator thumbnails, observed separately so a render only redraws the slide list.
+  let thumbnails = NativeSlideThumbnails()
   private var writeTail: Task<Void, Never>?
   private var noteTasks: [String: Task<Void, Never>] = [:]
   private var scanTask: Task<Void, Never>?
@@ -184,6 +186,7 @@ final class NativeWorkbenchController: ObservableObject {
         name: "KernelUnavailable", message: "The bundled document engine is missing.")
     }
     session = try NativeDocumentSession(kernelURL: url)
+    thumbnails.attach(self)
     applyTheme()
   }
   var selectedSlide: DeckSlide? { selectedSlideID.flatMap { slideIndex[$0] } }
@@ -193,6 +196,7 @@ final class NativeWorkbenchController: ObservableObject {
     slideIndex = Dictionary(uniqueKeysWithValues: slides.map { ($0.id, $0) })
     slideOrdinals = Dictionary(uniqueKeysWithValues: slides.enumerated().map { ($0.element.id, $0.offset + 1) })
     refreshMediaScope()
+    thumbnails.schedule()
     if let slide = selectedSlide {
       if !slide.imageRoles.contains(curateRole) { curateRole = slide.imageRoles.first ?? "primary" }
       let preset = NativeSlideRenderer.resolvedPreset(slide: slide)
@@ -867,6 +871,28 @@ final class NativeWorkbenchController: ObservableObject {
       self.beginImport { try NativeCopyImport.read(url) }
     }
   }
+  /// Files dropped on the window: a deck opens, writing is read for import
+  /// and a folder is added as media.
+  func handleDrop(_ urls: [URL]) -> Bool {
+    guard let url = urls.first, !lifecycleBusy else { return false }
+    var directory: ObjCBool = false
+    let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &directory)
+    switch url.pathExtension.lowercased() {
+    case "pitchdeck":
+      Task { await open(url) }
+    case "md", "markdown", "txt", "text":
+      guard !importRunning, !replacementSaving else { return false }
+      guard !copyEditorOpen else { copyEditorError = "Save or cancel this copy edit before importing more writing."; return false }
+      beginImport { try NativeCopyImport.read(url) }
+    default:
+      guard exists, directory.boolValue, document != nil, !scanRunning else {
+        status = document == nil ? "Drop final copy (.md or .txt) or a .pitchdeck to begin." : "Drop a folder of media, final copy or a deck."
+        return false
+      }
+      startScan(url: url, rootID: nil)
+    }
+    return true
+  }
   private func beginImport(_ operation: @escaping @Sendable () throws -> ImportedCopyDocument) {
     guard !lifecycleBusy, !importRunning else { return }
     importRunning = true; importError = nil; importGeneration += 1
@@ -1247,6 +1273,7 @@ final class NativeWorkbenchController: ObservableObject {
       sources = resolved
       roots = update.catalog.roots
       assets = update.catalog.assets
+      thumbnails.schedule()
       catalogRevision = update.catalog.revision
       prefetchAdjacent()
     } catch {
