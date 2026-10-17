@@ -1,6 +1,6 @@
 # Workbench repository instructions
 
-Read README.md, docs/MAC_APP.md, docs/NATIVE_ARCHITECTURE.md and docs/KNOWN_LIMITATIONS.md first. Old numbered product/architecture/implementation documents are historical.
+Read README.md, docs/MAC_APP.md, docs/NATIVE_ARCHITECTURE.md and docs/KNOWN_LIMITATIONS.md first. Older product/architecture/implementation documents live in docs/history and are historical.
 
 Build only the native Mac app. Preserve exact copy, stable identities, independent shortlist membership, coherent undo, durable acknowledgement and recoverable user files. SwiftUI/AppKit owns interaction; JavaScriptCore hosts the internal kernel without a browser. No Linux/Electron/browser product.
 
