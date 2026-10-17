@@ -1,6 +1,6 @@
-# Active native architecture — v0.1.3
+# Active native architecture — current source
 
-NativeWorkbenchUI, NativeWorkflowPanels, NativeCanvas and NativeShortcuts are the Mac surfaces. NativeWorkbenchController owns transient selection, drafts, filters, indexed projections and a serial captured-intention queue. NativeDocumentSession owns the document kernel and durable store actor. JavaScriptCore hosts the TypeScript-derived internal kernel without a browser. PitchDeckDocumentStore retains checkpoints, journal/replay, schema compatibility and safe recovery.
+NativeWorkbenchUI, NativeWorkflowPanels, NativeSlideEditing, NativeStarterStyleUI, NativeMoodboardSheet, NativeCanvas and NativeShortcuts are the Mac surfaces. NativeWorkbenchController owns transient selection, drafts, filters, indexed projections and a serial captured-intention queue. NativeDocumentSession owns the document kernel and durable store actor. JavaScriptCore hosts the TypeScript-derived internal kernel without a browser. PitchDeckDocumentStore retains checkpoints, journal/replay, schema compatibility and safe recovery.
 
 Known map edits (`frames`, `crops`, `imageFits`) merge by image role. Null resets a map or an entry; scalar/optional layout values have explicit reset semantics. Native layout changes reconcile visible image roles, retaining displaced choices as shortlisted candidates. Batch arrangements reuse the same command validation and compound history; no second mutation path.
 

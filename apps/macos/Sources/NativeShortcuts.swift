@@ -210,7 +210,13 @@ struct NativeShortcutSheet: View {
             Text("Space-drag").monospaced()
             Text("Pan canvas; pinch to zoom")
           }
-          GridRow { Text("⇧⌘P").monospaced(); Text("Review the deck: arrows browse, Escape returns to editing") }
+          GridRow { Text("⇧⌘P").monospaced(); Text("Review the deck: arrows, Space / Shift-Space, Home and End browse; Escape returns to editing") }
+          GridRow { Text("⌘F").monospaced(); Text("Switch to Curate and search media") }
+          GridRow { Text("⌘1 / ⌘2").monospaced(); Text("Curate / Assemble") }
+          GridRow { Text("⌘0 · ⌥⌘I").monospaced(); Text("Fit the canvas · show or hide the context panel") }
+          GridRow { Text("⌘N · ⇧⌘V · ⌘O").monospaced(); Text("Import final copy · paste final copy · open a deck") }
+          GridRow { Text("⇧⌘R").monospaced(); Text("Reveal the focused media in Finder") }
+          GridRow { Text("Double-click / Return").monospaced(); Text("On a slide: edit its copy. On an image: preview it") }
           GridRow {
             Text("Escape").monospaced()
             Text("Cancel a canvas drag or close preview")

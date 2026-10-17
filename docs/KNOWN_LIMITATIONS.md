@@ -1,10 +1,10 @@
-# Known boundaries — v0.4.0 implementation
+# Known boundaries — current source
 
 Apple Silicon and macOS 26+ only. Ad-hoc signed, not notarized. The application is a prototype/intent tool, not final production design software.
 
 These docs describe implemented behaviour, not release, installation or native Adobe acceptance. The package journey launches the extracted Mac app and exercises synthetic document/edit/export cases; inspect the receipt for the exact build SHA and checks actually completed. A passing encoder readback or scripted journey does not prove Photoshop shared-object editing, InDesign placement, every user path or a finished design.
 
-Still requiring hands-on evaluation: VoiceOver and full keyboard navigation of every native control; all display/window/scaling combinations; large real media libraries on studio machines; network/removable/cloud-managed folders and permission recovery; every supported source codec. Performance counters are evidence from a synthetic hosted-Mac workload, not a blanket speed multiplier.
+Still requiring hands-on evaluation: VoiceOver and full keyboard navigation of every native control. Known gaps: the canvas is a single accessibility element; resizing a frame, panning a crop and moving gradient end points are pointer gestures (the inspector offers nudges, presets, Centre crop and zoom instead); media focus in the grid is drawn rather than a real keyboard focus, so it is announced to VoiceOver instead. Also unevaluated: all display/window/scaling combinations; large real media libraries on studio machines; network/removable/cloud-managed folders and permission recovery; every supported source codec. Performance counters are evidence from a synthetic hosted-Mac workload, not a blanket speed multiplier.
 
 Import accepts UTF-8 Markdown/text up to 1 MiB, including Workbench Markdown v1; it does not convert DOCX/PDF. Replacement maps existing slides without automatically adding, removing or reordering them. Manual add, duplicate, rename (slides, parts and the deck), move and confirmed delete are available from the Slide menu/sidebar. The deck must retain at least one slide. Candidate comparison supports three items; a moodboard supports up to 12 chosen image slots. Ratings/project-wide picks remain secondary legacy metadata.
 

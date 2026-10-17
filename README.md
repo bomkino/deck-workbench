@@ -4,7 +4,7 @@ A native Mac tool for turning final writing and a pile of references into a clea
 
 ## v0.4.0 source — project colours and production handoff
 
-This guide covers v0.4.0 source. Find published builds and their verification receipts in [Mac releases](https://github.com/bomkino/deck-workbench/releases). Requires **Apple Silicon and macOS 26+**. Ad-hoc signed; not notarized.
+This guide covers the current source: v0.4.0 plus the changes listed under Unreleased in the release notes. Find published builds and their verification receipts in [Mac releases](https://github.com/bomkino/deck-workbench/releases). Requires **Apple Silicon and macOS 26+**. Ad-hoc signed; not notarized.
 
 1. Choose the release's **.app.zip**, not GitHub's automatic source archive. Quit the old Workbench and unzip it.
 2. Drag **Deck Workbench.app** into **Applications**, replacing the old app.
@@ -31,13 +31,17 @@ Production/
 Approved Media/<slide>/original files
 Shortlisted Media/<slide>/original files
 Media index.csv
+Starter Kit/          (with production writing or PSDs)
+START HERE.txt        (with production writing or PSDs)
+InDesign/Deck.indd    (when built automatically)
+Export issues.txt     (when something needs review)
 ```
 
-New decks default to **2576 × 1080**; **1920 × 1080** has its own exact starter grid. Head, Sub and Body fonts and size/leading steps are editable. Fit Copy is optional; review any overflow before handoff. Shortlist membership remains independent of the chosen image.
+New decks default to **2576 × 1080**; **1920 × 1080** has its own exact starter grid. Head, Sub and Body fonts and size/leading steps are editable. Fit Copy is optional; review any overflow before handoff. Choosing an image also shortlists it; removing one keeps the other.
 
 `Production/workbench.md` supplies the three writing roles for the existing InDesign/Figma import workflow. Its manifest records source fields, slide order, projection warnings and output hashes. PSDs retain full editable images and default to Workbench framing with editable masks; a full-image option disables those masks: `00.Background` and `01.Character` share one embedded artwork source. Optional automatic InDesign building creates `InDesign/Deck.indd` with styled copy and linked PSDs. Both starters, layout kits and production scripts—including the Figma PNG exporter—travel in `Starter Kit`. Text layout, gradients and character cut-outs still need design work; the PDF remains the visual guide. See [production workflow and limits](docs/MAC_APP.md#export).
 
-**Help → Keyboard Shortcuts** or **Command-/** opens the reference. Curate: arrows browse, Space opens/closes preview, S shortlists, Shift-S removes shortlist membership, M chooses, X rejects, [ and ] switch slides. Commands pause while editing text. Command-F focuses search. Command-Shift-E exports.
+**Help → Keyboard Shortcuts**, **Command-/** or **?** opens the reference. Curate: arrows browse, Space opens/closes preview, S shortlists, Shift-S removes shortlist membership, M chooses, X rejects, C compares, [ and ] switch slides (Option-[ / ] on layouts that need it). Commands pause while editing text; a focused slide list keeps its own arrow keys. Command-F switches to Curate and focuses search. Command-1 / Command-2 switch Curate / Assemble, Command-0 fits the canvas, Command-Option-I shows or hides the context panel and Command-Shift-R reveals focused media in Finder. Command-N imports final copy, Command-Shift-V pastes it and Command-O opens a deck. Command-Shift-E exports. Double-click (or Return on) a slide to edit its copy; double-click an image to preview it.
 
 **Change a slide:** use **Layout** or **Edit Copy** above the work area. **Add a slide:** use **Add Slide** at the bottom of the sidebar. Right-click a slide or open the **Slide** menu to duplicate, rename, move or delete it. Delete confirms first and Undo restores the full slide; original media stays untouched.
 

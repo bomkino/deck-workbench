@@ -1,3 +1,19 @@
+# Unreleased
+
+**In-app updates.** Workbench checks this repository's releases once a day, and on **Deck Workbench › Check for Updates…**, and installs a new version only when its signature matches pitch.dog's update key (Sparkle 2.10.0). Versions up to 0.4.0 have no updater, so the first release with it is installed by hand once.
+
+**Reliability.** Long editing sessions stay fast: undo/redo keeps the last 500 steps and the bridge to the document kernel no longer grows with history. Saved files use full-sync writes. A deck left open by a crashed Workbench, or with an interrupted final change, opens after you agree to the exact repair, and the original lock and journal are kept inside the deck. Closing never gets stuck on a failed checkpoint, refused notes or a lost lock.
+
+**Media.** Rescans reuse fingerprints of unchanged files instead of reading every original again, and save progress less often. App bundles, Photos libraries and "._" companion files are no longer catalogued; overlapping media folders are refused. Large originals are checked by size and date at handoff, reconnecting a folder of large files needs matching names and sizes, and a cancelled scan keeps what it found.
+
+**Writing.** Copy.md imports back exactly — names, every field and role, blank states and notes — and replacing from an unchanged export changes nothing. Deck, part and slide names follow one 240-character rule everywhere, with **Rename Part…** and **Rename Deck…** in the Slide menu. Several ordinary-Markdown import quirks are fixed.
+
+**Canvas.** Gradient edits on styled slides are saved again, and the direction buttons keep the slide's colours. Square and portrait canvases keep copy clear of images. Moves snap either edge to guides, oversized frames keep their size, and released drags no longer jump back. Colours render in sRGB.
+
+**Keyboard and accessibility.** The slide list keeps its own arrow keys, Option-[ / ] switches slides on layouts that need Option, controls have distinct accessible names, and failures and media focus are announced to VoiceOver. Type & colours no longer drops edits made on the other tab.
+
+**InDesign.** Cancelling an automatic build stops InDesign, a stopped build is marked incomplete, a replacement character Workbench exported is accepted, and Contents is identified explicitly. The PNG exporter works whatever Photoshop's ruler unit. A handoff's starter kit is verified against the app's own manifest.
+
 # v0.4.0 — project colours across Workbench and InDesign
 
 Choose a neutral base and independent Primary, Secondary, Third, Fourth and Mono families in **Type & colours → Colours**. The bundled library contains 31 Radix-based families and five bases, with dark/light text, solid-fill, foreground, soft-fill and line roles. Colour previews show contrast against the selected base. Custom hex editing remains available. Apply copies exact colour values into the chosen slides; later library updates do not recolour saved projects.
