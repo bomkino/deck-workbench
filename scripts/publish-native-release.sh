@@ -94,7 +94,7 @@ python3 - "$RECEIPT" "$SHA" "$VERSION" <<'PYRECEIPT'
 import json, sys
 r=json.load(open(sys.argv[1]))
 assert r['commit']==sys.argv[2] and r['version']==sys.argv[3]
-for name in ['copyComplete','previewScope','shortlistIndependent','reopen','savedCopyRecovery','uiIndependentPDF','nativeKeyEvents','layoutPicker','perImageEdits','notesUndo','validationDoesNotFence','copyOnlyIndependent','literalCopy','safeFilenames','thumbnailCache', 'slideManagement', 'copyEditorTarget', 'editedCopyHandoff','imageVisibleInPDF','layoutFrameCopy','layoutResetUndo','textLayoutReused','gradientScreenExportParity','visibleLayoutTargets','reviewNavigation','cropZoomUndo','notesTargetIdentity','catalogRevisionReuse','boundedImport','lifecycleSerialization','productionCopy','starterGridAndType','sharedPSDExport']:
+for name in ['copyComplete','previewScope','shortlistIndependent','reopen','savedCopyRecovery','uiIndependentPDF','nativeKeyEvents','layoutPicker','perImageEdits','notesUndo','validationDoesNotFence','copyOnlyIndependent','literalCopy','safeFilenames','thumbnailCache', 'slideManagement', 'copyEditorTarget', 'editedCopyHandoff','imageVisibleInPDF','layoutFrameCopy','layoutResetUndo','textLayoutReused','gradientScreenExportParity','visibleLayoutTargets','reviewNavigation','cropZoomUndo','notesTargetIdentity','catalogRevisionReuse','boundedImport','lifecycleSerialization','productionCopy','starterGridAndType','sharedPSDExport','crashRecovery','mediaCatalog']:
     assert r.get(name) is True, name
 assert r['prototypePages']==20 and r['rapidDecisions']==40 and r['originalCopies']>=60
 PYRECEIPT

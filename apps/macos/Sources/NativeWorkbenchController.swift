@@ -1136,7 +1136,7 @@ final class NativeWorkbenchController: ObservableObject {
       let scan = object?["scan"] as? [String: Any]
       status =
         scan?["status"] as? String == "incomplete"
-        ? "Scan stopped with partial results; nothing was marked missing."
+        ? "Scan stopped with partial results; only files confirmed gone were marked missing."
         : "\(assets.count) media files available"
     } catch is CancellationError {
       if generation == catalogGeneration { status = "Scan cancelled; discovered media remains available." }

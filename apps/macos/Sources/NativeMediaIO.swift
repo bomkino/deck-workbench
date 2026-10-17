@@ -13,11 +13,16 @@ enum NativeMediaIO {
     throws -> T
   {
     var root = URL(fileURLWithPath: source.rootPath, isDirectory: true)
+    // A bookmark that no longer resolves (a renamed volume, a copied Mac)
+    // falls back to the saved path; the folder identity check below decides.
     if let bookmark = source.bookmark {
       var stale = false
-      root = try URL(
+      if let resolved = try? URL(
         resolvingBookmarkData: bookmark, options: [.withSecurityScope, .withoutUI], relativeTo: nil,
         bookmarkDataIsStale: &stale)
+      {
+        root = resolved
+      }
     }
     let access = root.startAccessingSecurityScopedResource()
     defer { if access { root.stopAccessingSecurityScopedResource() } }
@@ -59,6 +64,7 @@ enum NativeMediaIO {
         guard
           let input = CGImageSourceCreateWithData(
             data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+          withinDecodeLimit(input),
           let thumb = CGImageSourceCreateThumbnailAtIndex(
             input, 0,
             [
@@ -90,6 +96,16 @@ enum NativeMediaIO {
       }
       return output as Data
     }
+  }
+
+  /// A thumbnail decodes the whole image first, so a small file can still
+  /// claim more pixels than memory allows. The catalogue applies the same cap.
+  private static func withinDecodeLimit(_ input: CGImageSource) -> Bool {
+    guard let properties = CGImageSourceCopyPropertiesAtIndex(input, 0, nil) as? [CFString: Any],
+      let width = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue,
+      let height = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue
+    else { return false }
+    return width > 0 && height > 0 && width <= 32_768 && height <= 32_768 && width * height <= 64_000_000
   }
 
   /// Copy via no-follow file descriptors and calculate the checksum in the same
@@ -150,7 +166,16 @@ enum NativeMediaIO {
         )
       }
       let expected = expectedFingerprint ?? source.fingerprint
-      if !acceptChanged, !expected.hasPrefix("unavailable:"), expected != fingerprint {
+      // Originals too large to fingerprint when catalogued are identified by
+      // size and modification time instead; a change to either is a change.
+      let observed: String
+      if expected.hasPrefix("unavailable:") {
+        let modified = Int64(after.st_mtimespec.tv_sec) * 1_000 + Int64(after.st_mtimespec.tv_nsec) / 1_000_000
+        observed = "unavailable:\(after.st_size):\(modified)"
+      } else {
+        observed = fingerprint
+      }
+      if !acceptChanged, expected != observed {
         throw WorkbenchFailure(
           name: "SourceChanged",
           message:
