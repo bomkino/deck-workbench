@@ -108,11 +108,22 @@ enum NativeCompatibilityChecks {
       do { _ = try await session.open(at: url, repairs: repairs); try await session.close(); return nil }
       catch { return error as? WorkbenchFailure }
     }
-    for (pid, host, label) in [(ProcessInfo.processInfo.processIdentifier, PitchDeckDocumentStore.currentHostID(), "a running writer"), (finished.processIdentifier, "another-mac", "another Mac")] {
+    // Another running process stands in for a Workbench that has the deck open.
+    let running = Process()
+    running.executableURL = URL(fileURLWithPath: "/bin/sleep")
+    running.arguments = ["120"]
+    try running.run()
+    defer { running.terminate() }
+    for (pid, host, label) in [(running.processIdentifier, PitchDeckDocumentStore.currentHostID(), "a running writer"), (finished.processIdentifier, "another-mac", "another Mac")] {
       try lock(pid: pid, host: host).write(to: lockURL)
       try require(await failureName()?.name == "DocumentBusy", "A lock held by \(label) was offered for replacement")
       try files.removeItem(at: lockURL)
     }
+    // A lock this process wrote that no open deck holds (closing could not
+    // remove it) is offered for replacement, with consent, without a relaunch.
+    try lock(pid: ProcessInfo.processInfo.processIdentifier, host: PitchDeckDocumentStore.currentHostID()).write(to: lockURL)
+    try require(await failureName()?.name == "StaleWriterLock", "A lock this Workbench could not remove kept its deck closed until relaunch")
+    try files.removeItem(at: lockURL)
     let staleLock = try lock(pid: finished.processIdentifier, host: PitchDeckDocumentStore.currentHostID())
     try staleLock.write(to: lockURL)
     let intact = try Data(contentsOf: journalURL)
