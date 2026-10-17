@@ -27,7 +27,7 @@ struct NativeStarterStyleSheet: View {
     NativeSheetScaffold(title: "Type & colours", subtitle: "Starter fonts, sizes and a four-accent palette for the prototype and handoff.", systemImage: "textformat") {
       VStack(alignment: .leading, spacing: 14) {
       Picker("Edit", selection: $tab) { Text("Type").tag("type"); Text("Colours").tag("colours") }.pickerStyle(.segmented).labelsHidden()
-        .frame(maxWidth: 280)
+        .fixedSize()
       ScrollView {
         VStack(alignment: .leading, spacing: 20) {
           if tab == "type" {

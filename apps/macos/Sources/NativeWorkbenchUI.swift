@@ -822,7 +822,7 @@ struct NativeCurateActions: View {
     ViewThatFits(in: .horizontal) {
       HStack(spacing: 12) { destination; Spacer(minLength: 8); actions }
       VStack(alignment: .leading, spacing: 10) { destination; HStack(spacing: 8) { actions } }
-    }
+    }.frame(maxWidth: .infinity, alignment: .leading)
   }
   @ViewBuilder private var destination: some View {
     if let slide = controller.selectedSlide {
@@ -1461,7 +1461,7 @@ struct NativeSettingsView: View {
             Text("System").tag("system")
             Text("Light").tag("light")
             Text("Dark").tag("dark")
-          }
+          }.pickerStyle(.segmented).fixedSize()
           Picker("Interface size", selection: $controller.interfaceScale) {
             ForEach([0.9, 1.0, 1.1, 1.25, 1.5, 1.75], id: \.self) { Text("\(Int($0*100))%").tag($0) }
           }

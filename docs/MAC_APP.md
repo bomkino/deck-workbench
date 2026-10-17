@@ -12,7 +12,7 @@ On-slide writing is protected by default. Edit opens a deliberate copy editor. D
 
 Layout and Edit Copy are always available in the selected-slide bar above Curate/Assemble; the context inspector does not have to be open. The bar also shows the slide's position and readiness. Right-click a sidebar slide or use the Slide menu for the same actions.
 
-The sidebar shows each slide as a thumbnail drawn by the same renderer as the canvas and export, with its readiness: **Needs an image** (an image slot is empty), **Images chosen**, **Text only** or **Excluded from export**. The bar under the list counts ready slides among the included ones.
+The sidebar shows each slide as a thumbnail drawn by the same renderer as the canvas and export, with its readiness: **Needs an image** (an image slot is empty), **Images chosen**, **Text only** or **Excluded from export**. The bar under the list counts ready slides among the included ones. Drag the divider before the context panel to resize it; double-click the divider to restore its default width. Settings → Appearance switches the app between System, Light and Dark; each slide's own Dark/Light appearance is separate and belongs to the deck.
 
 - **Add Slide** / Command-Shift-N inserts after the current slide, in its section, and opens the editor. New slides default to full bleed with text.
 - **Duplicate Slide** / Command-D preserves the source slide's copy, chosen media, shortlist, notes and supported layout. Document identities are new; original media is shared, not modified.

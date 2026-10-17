@@ -428,6 +428,9 @@ final class PrototypeCanvasView: NSView {
       spaceHeld = false; cancelGesture()
       for task in imageTasks.values { task.cancel() }
       imageTasks = [:]; imageKeys = [:]; images = [:]
+    } else if let controller {
+      // Back in a window without a SwiftUI update: reload what was released.
+      update(controller)
     }
   }
   override func keyDown(with event: NSEvent) {

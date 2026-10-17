@@ -222,8 +222,9 @@ enum NativeUIGallery {
       panel.titleVisibility = .hidden
       panel.contentView = host
       panel.setFrame(panel.frameRect(forContentRect: NSRect(origin: .zero, size: size)), display: true)
-      panel.orderFront(nil)
-      defer { panel.orderOut(nil) }
+      // Key, so controls draw as they do in an attached sheet.
+      panel.makeKeyAndOrderFront(nil)
+      defer { panel.orderOut(nil); window.makeKeyAndOrderFront(nil) }
       captured[name] = try await NativeWindowCapture.capture(panel, to: output.appendingPathComponent(name + ".png"), settle: .milliseconds(800))
     }
     func settle() async { await controller.flush(); try? await Task.sleep(for: .milliseconds(300)) }
@@ -239,7 +240,7 @@ enum NativeUIGallery {
     controller.document = try JSONDecoder().decode(DeckDocumentSnapshot.self, from: initial)
     controller.selectSlide(controller.slides[1].id)
     controller.phase = "curate"
-    try await shot("03-curate-no-media")
+    try await shot("03-curate-no-media", settle: .milliseconds(1800))
 
     let media = try await controller.session.mediaSession()
     _ = try await media.authorizeRootJSON(mediaURL)
@@ -283,7 +284,7 @@ enum NativeUIGallery {
 
     controller.phase = "assemble"
     controller.selectSlide(slides[1]); controller.selectionTarget = "text"; controller.fitCanvas()
-    try await shot("06-assemble")
+    try await shot("06-assemble", settle: .milliseconds(1200))
     controller.selectSlide(slides[3]); controller.selectionTarget = "gradient"; controller.fitCanvas()
     try await shot("07-assemble-gradient")
     controller.selectSlide(slides[6]); controller.selectionTarget = "primary"; controller.fitCanvas()
@@ -320,7 +321,7 @@ enum NativeUIGallery {
     controller.phase = "curate"
     try await shot("14-curate-dark", settle: .milliseconds(900))
     controller.phase = "assemble"; controller.fitCanvas()
-    try await shot("15-assemble-dark")
+    try await shot("15-assemble-dark", settle: .milliseconds(1400))
     controller.theme = "light"
 
     window.setFrame(window.frameRect(forContentRect: NSRect(x: 0, y: 0, width: 1100, height: 720)), display: true)
