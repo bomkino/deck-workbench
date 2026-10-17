@@ -2,13 +2,13 @@
 
 A native Mac tool for turning final writing and a pile of references into a clear prototype and designer handoff. It helps communicate intent; it does not replace the designer.
 
-## v0.4.0 source — project colours and production handoff
+## v0.5.0 — a new workspace, PSD copy guides and in-app updates
 
-This guide covers the current source: v0.4.0 plus the changes listed under Unreleased in the release notes. Find published builds and their verification receipts in [Mac releases](https://github.com/bomkino/deck-workbench/releases). Requires **Apple Silicon and macOS 26+**. Ad-hoc signed; not notarized.
+This guide covers v0.5.0; the [release notes](docs/RELEASE_NOTES.md) list what changed. Find published builds and their verification receipts in [Mac releases](https://github.com/bomkino/deck-workbench/releases). Requires **Apple Silicon and macOS 26+**. Ad-hoc signed; not notarized.
 
 1. Choose the release's **.app.zip**, not GitHub's automatic source archive. Quit the old Workbench and unzip it.
 2. Drag **Deck Workbench.app** into **Applications**, replacing the old app.
-3. Open it. Keep an untouched copy of existing decks before migration. From the first release with in-app updates onward, later versions arrive through **Deck Workbench › Check for Updates…** instead.
+3. Open it. Keep an untouched copy of existing decks before migration. From v0.5.0 onward, later versions arrive through **Deck Workbench › Check for Updates…** instead.
 
 If macOS blocks the first launch, open **System Settings → Privacy & Security → Open Anyway** after attempting to open the app. Do not disable Gatekeeper globally. A malware warning is different: do not override it.
 

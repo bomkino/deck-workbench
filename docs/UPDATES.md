@@ -57,7 +57,7 @@ Things that break updates:
 
 ## The first release with updates
 
-v0.4.0 and earlier have no updater, so nothing reaches them: everyone installs the first release with updates by hand once (unzip it into Applications, then **Open Anyway** in System Settings › Privacy & Security). Every version after that arrives by itself. The first release's own feed names only itself, so it offers nothing until the next one.
+v0.5.0 is the first release with updates. v0.4.0 and earlier have no updater, so nothing reaches them: everyone installs v0.5.0 by hand once (unzip it into Applications, then **Open Anyway** in System Settings › Privacy & Security). Every version after that arrives by itself. The first release's own feed names only itself, so it offers nothing until the next one.
 
 ## Testing
 
