@@ -52,7 +52,8 @@ struct DeckSlide: Codable, Sendable, Identifiable {
         return title
       }
     }
-    return copyBlocks.first(where: { $0.role == "headline" })?.text.nonempty ?? "Untitled slide"
+    // Older slides without a stored name show their headline as a one-line name.
+    return copyBlocks.first(where: { $0.role == "headline" }).map { NativeTitle.withSuffix($0.text, "") }?.nonempty ?? "Untitled slide"
   }
   var legacyComposition: LegacyComposition? {
     designOptions?.first { $0.id == activeDesignOptionId }?.composition

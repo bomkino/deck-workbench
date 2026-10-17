@@ -129,6 +129,8 @@ struct NativeWorkbenchCommands: Commands {
       Button("Duplicate Slide") { controller.duplicateSlide() }.keyboardShortcut("d")
         .disabled(!controller.slideEditingAvailable)
       Button("Rename Slide…") { controller.renameSlide() }.disabled(!controller.slideEditingAvailable)
+      Button("Rename Part…") { controller.renamePart() }.disabled(!controller.slideEditingAvailable)
+      Button("Rename Deck…") { controller.renameDeck() }.disabled(!controller.slideEditingAvailable)
       Button("Edit Copy…") { controller.beginEditCopy() }.keyboardShortcut("e")
         .disabled(!controller.slideEditingAvailable)
       Divider()

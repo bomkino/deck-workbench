@@ -736,10 +736,8 @@ final class NativeWorkbenchController: ObservableObject {
     guard let id = requestedID ?? selectedSlideID, let source = slideIndex[id],
       let section = document?.deck.sections.first(where: { $0.slides.contains(where: { $0.id == id }) }) else { return }
     let duplicateID = UUID().uuidString.lowercased()
-    var stem = String(source.title.prefix(450))
-    while stem.utf16.count > 450 { stem.removeLast() }
-    var title = "\(stem) — Copy", n = 2
-    while slides.contains(where: { $0.title == title }) { title = "\(stem) — Copy \(n)"; n += 1 }
+    var title = NativeTitle.withSuffix(source.title, " — Copy"), n = 2
+    while slides.contains(where: { $0.title == title }) { title = NativeTitle.withSuffix(source.title, " — Copy \(n)"); n += 1 }
     queueSlideEdit(type: "native.slide.duplicate", payload: ["slideId": duplicateID,
       "sourceSlideId": id, "sectionId": section.id, "afterSlideId": id, "title": title],
       label: "Duplicate Slide", selectedAfter: duplicateID)
@@ -755,9 +753,41 @@ final class NativeWorkbenchController: ObservableObject {
     alert.addButton(withTitle: "Rename"); alert.addButton(withTitle: "Cancel")
     alert.window.initialFirstResponder = field
     guard alert.runModal() == .alertFirstButtonReturn else { return }
-    let title = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !title.isEmpty && title.utf16.count <= 500 else { failure = "Use a slide name from 1 to 500 characters."; return }
+    let title = NativeTitle.clean(field.stringValue)
+    guard NativeTitle.isValid(title) else { failure = "Use a slide name of 1 to 240 characters."; return }
     renameSlide(id, to: title)
+  }
+  /// Deck and part names follow the same rule as slide names, so a name
+  /// imported before that rule (or with a stray space or tab) can be fixed
+  /// without re-importing.
+  func renameDeck() {
+    guard slideEditingAvailable, let deck = document?.deck,
+      let title = askForName("Rename deck", "This names the deck in Workbench and in handoff folders and production writing.", current: deck.title)
+    else { return }
+    guard title != deck.title else { return }
+    queueSlideEdit(type: "deck.rename", payload: ["title": title], label: "Rename Deck")
+  }
+  func renamePart(_ requestedID: String? = nil) {
+    guard slideEditingAvailable, let id = requestedID ?? selectedSlideID,
+      let section = document?.deck.sections.first(where: { $0.slides.contains(where: { $0.id == id }) }),
+      let title = askForName("Rename part", "Parts group slides in the sidebar and in production writing.", current: section.title)
+    else { return }
+    guard title != section.title else { return }
+    queueSlideEdit(type: "section.rename", payload: ["sectionId": section.id, "title": title], label: "Rename Part")
+  }
+  private func askForName(_ message: String, _ information: String, current: String) -> String? {
+    let alert = NSAlert()
+    alert.messageText = message
+    alert.informativeText = information
+    let field = NSTextField(string: current)
+    field.frame = NSRect(x: 0, y: 0, width: 320, height: 24)
+    alert.accessoryView = field
+    alert.addButton(withTitle: "Rename"); alert.addButton(withTitle: "Cancel")
+    alert.window.initialFirstResponder = field
+    guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+    let title = NativeTitle.clean(field.stringValue)
+    guard NativeTitle.isValid(title) else { failure = "Use a name of 1 to 240 characters."; return nil }
+    return title
   }
   func renameSlide(_ id: String, to title: String) {
     queueSlideEdit(type: "native.slide.rename", payload: ["slideId": id, "title": title], label: "Rename Slide")

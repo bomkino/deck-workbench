@@ -101,12 +101,7 @@ enum NativeHandoffExporter {
     }
     if options.copy {
       try component("Copy.md") {
-        var copy = "# \(heading(snapshot.deck.title))\n\nCanvas: \(snapshot.deck.canvasPreset.id)\n\n"
-        for (index, slide) in slides.enumerated() {
-          copy += "## \(String(format: "%02d", index + 1)) — \(heading(slide.title))\n\n"
-          for block in slide.copyBlocks { copy += "### \(heading(block.role))\n\n" + literalBlock(block.text) + "\n" }
-          if !slide.settings.notes.isEmpty { copy += "### Designer notes\n\n" + literalBlock(slide.settings.notes) + "\n" }
-        }
+        let copy = NativeCopyMarkdown.write(title: snapshot.deck.title, canvasID: snapshot.deck.canvasPreset.id, slides: slides)
         try Data(copy.utf8).write(to: staging.appendingPathComponent("Copy.md"), options: .atomic)
       }
       advance("Writing complete copy")
@@ -492,6 +487,9 @@ enum NativeHandoffExporter {
     var value = name.precomposedStringWithCanonicalMapping.components(
       separatedBy: CharacterSet(charactersIn: "/\\:\0\n\r")
     ).joined(separator: "-").trimmingCharacters(in: .whitespacesAndNewlines)
+    // A leading dot would hide the folder or file in Finder.
+    while value.hasPrefix(".") { value.removeFirst() }
+    value = value.trimmingCharacters(in: .whitespacesAndNewlines)
     while value.utf8.count > maximumBytes { value.removeLast() }
     if value.isEmpty || value == "." || value == ".." { return "Untitled" }
     return value
@@ -506,22 +504,15 @@ enum NativeHandoffExporter {
   static func safeFilename(_ name: String, suffix: String? = nil) -> String {
     let cleaned = safeName(name, maximumBytes: 8192)
     let url = URL(fileURLWithPath: cleaned)
+    // An implausibly long "extension" stays part of the name, so the result
+    // always fits the 255-byte file name limit.
     let ext = url.pathExtension
-    let ending = ext.isEmpty ? "" : "." + ext
+    let keepsExtension = !ext.isEmpty && ext.utf8.count <= 32
+    let ending = keepsExtension ? "." + ext : ""
     let extra = suffix.map { "-" + $0 } ?? ""
     let budget = max(1, 180 - ending.utf8.count - extra.utf8.count)
-    let stem = safeName(url.deletingPathExtension().lastPathComponent, maximumBytes: budget)
+    let stem = safeName(keepsExtension ? url.deletingPathExtension().lastPathComponent : cleaned, maximumBytes: budget)
     return stem + extra + ending
-  }
-  private static func heading(_ value: String) -> String {
-    value.replacingOccurrences(of: "\n", with: " ").replacingOccurrences(of: "\r", with: " ")
-      .replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "#", with: "\\#")
-  }
-  private static func literalBlock(_ value: String) -> String {
-    var longest = 0, run = 0
-    for c in value { if c == "`" { run += 1; longest = max(longest, run) } else { run = 0 } }
-    let fence = String(repeating: "`", count: max(3, longest + 1))
-    return fence + "\n" + value + "\n" + fence + "\n"
   }
   static func csvField(_ value: String) -> String {
     let first = value.trimmingCharacters(in: .whitespacesAndNewlines).first

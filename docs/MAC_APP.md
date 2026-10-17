@@ -2,9 +2,9 @@
 
 ## Intake and copy
 
-File → Import Final Copy reads UTF-8 Markdown/text locally, up to 1 MiB. File → Paste Final Copy uses exactly the same parser. Review slide boundaries before creating a deck. Ordinary Markdown follows `examples/native-copy.md`; its fenced blocks protect literal headings and backslashes. Workbench Markdown v1 uses its own structural-prefix escaping and preserves `present`, `intentionally-blank` and `unreviewed` copy states. Unsupported or malformed structure produces an error without changing the open deck.
+File → Import Final Copy reads UTF-8 Markdown/text locally, up to 1 MiB. File → Paste Final Copy uses exactly the same parser. Review slide boundaries before creating a deck. Ordinary Markdown follows `examples/native-copy.md`; its fenced blocks protect literal headings and backslashes. Workbench Markdown v1 uses its own structural-prefix escaping and preserves `present`, `intentionally-blank` and `unreviewed` copy states. A Copy.md exported by this version imports back exactly: slide names without their reading numbers, every field with its own role (including caption, credit and other roles), blank and unreviewed states, and notes. Copy.md files exported by earlier versions still import as ordinary Markdown. Deck, part and slide names are single lines of up to 240 characters; tabs and line breaks in names become spaces and surrounding spaces are removed. Unsupported or malformed structure produces an error without changing the open deck.
 
-Replacement is a separate preview: match incoming slides to existing slides, inspect both texts, then apply. Only uniquely identical titles are proposed automatically. Ambiguous titles need explicit mapping, not guesses by page number. Unmapped existing slides remain unchanged. Replacement preserves the matched slides' IDs, media, notes and layout; it is one undoable operation. It does not insert/reorder/delete slides.
+Replacement is a separate preview: match incoming slides to existing slides, inspect both texts, then apply. Replacing from an unchanged export changes nothing. From Production `workbench.md`, a field you did not edit keeps the original fields it stands for (Body can stand for body, caption and credit together); an edited field replaces them. Only uniquely identical titles are proposed automatically. Ambiguous titles need explicit mapping, not guesses by page number. Unmapped existing slides remain unchanged. Replacement preserves the matched slides' IDs, media, notes and layout; it is one undoable operation. It does not insert/reorder/delete slides.
 
 On-slide writing is protected by default. Edit opens a deliberate copy editor. Designer notes are separate and autosave after a brief pause. Document Undo flushes pending notes first; Undo while typing uses the native text editor's history. Acknowledged drafts cannot overwrite an undone note.
 
@@ -14,7 +14,7 @@ Layout and Edit Copy are always available in the selected-slide bar above Curate
 
 - **Add Slide** / Command-Shift-N inserts after the current slide, in its section, and opens the editor. New slides default to full bleed with text.
 - **Duplicate Slide** / Command-D preserves the source slide's copy, chosen media, shortlist, notes and supported layout. Document identities are new; original media is shared, not modified.
-- **Rename** changes the sidebar and export-folder name, not the on-slide headline. Edit Copy also offers this name field.
+- **Rename** changes the sidebar and export-folder name, not the on-slide headline. Edit Copy also offers this name field. **Rename Part…** and **Rename Deck…** change the sidebar group and the deck name used in handoff folders and production writing.
 - **Move Earlier/Later** / Command-Option-Up/Down retains slide identity and can cross section boundaries.
 - **Move to Position…** accepts a deck position from 1 to the current slide count. Contents and the next handoff follow the new order.
 - **Delete Slide** / Command-Shift-Delete asks for confirmation. Undo restores the full slide and order. Source files remain untouched. The final slide cannot be deleted; edit it or add another first.
@@ -70,7 +70,7 @@ Command-Shift-E selects complete handoff components and all/current/selected sli
 
 - Prototype.pdf: clean proportional slides, one page per exported slide.
 - Prototype with notes.pdf: slide preview, full copy, direction and source filenames; long copy continues onto labelled companion pages.
-- Copy.md: literal editable text in fenced blocks, organised by slide; notes separate.
+- Copy.md: literal editable text in fenced blocks, organised by slide, with every field's role and blank state; notes separate. It can be imported again unchanged.
 - Production/workbench.md: Workbench Markdown v1 writing for the existing InDesign/Figma import workflow.
 - Production/workbench-production.json: stable slide IDs, source/export order, complete copy fields, three-role projection, notes, warnings, copy/PSD hashes, and each styled slide's frozen palette plus Head/Sub/Body colour roles. Keep it beside workbench.md. The bundled InDesign builder consumes these colours; a writing-only import does not carry them.
 - Production/PSD/Slide 01.psd, Slide 02.psd, …: numbered RGB/8-bit artwork files at 1920 × 1080 or 2576 × 1080. Selecting PSD also selects the production writing and manifest.

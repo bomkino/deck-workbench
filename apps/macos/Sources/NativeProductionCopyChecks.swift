@@ -100,7 +100,12 @@ enum NativeProductionCopyChecks {
       try require(exported.issues.isEmpty && exported.produced == ["Copy.md"], "Copy-only exporter needed media or omitted copy")
       let reread = try NativeCopyImport.read(exported.url.appendingPathComponent("Copy.md"))
       try require(reread.canvasID == canvasID, "Copy.md re-import silently changed the canvas")
-      try require(reread.slides[0].blocks.map(\.text) == snapshot.deck.slides[0].copyBlocks.map(\.text), "Copy.md round trip changed literal fields or their boundary LFs")
+      func fields(_ blocks: [DeckCopyBlock]) -> [String] {
+        blocks.map { "\($0.role)\u{0}\($0.text)\u{0}\($0.text.isEmpty ? $0.state ?? "" : "present")" }
+      }
+      try require(reread.title == snapshot.deck.title && reread.slides.map(\.title) == snapshot.deck.slides.map(\.title)
+        && zip(reread.slides, snapshot.deck.slides).allSatisfy { fields($0.blocks) == fields($1.copyBlocks) && $0.notes == $1.settings.notes },
+        "Copy.md re-import changed a name, field, role, blank state, notes or boundary LF")
       options.copy = false; options.productionCopy = true
       try require(NativeHandoffExporter.requiredAssetIDs(snapshot: snapshot, options: options).isEmpty, "Production writing alone requested artwork")
       let writing = try NativeHandoffExporter.export(snapshot: mixed, sources: [:], to: folder, options: options, progress: { _ in })
@@ -164,7 +169,31 @@ enum NativeProductionCopyChecks {
         "frames": ["primary": ["x": 96, "y": 256, "width": 800, "height": 600]]]]])
     try send("native.slide.add", ["slideId": "toc", "sectionId": "part", "afterSlideId": "normal",
       "title": "Contents", "kind": "contents"])
+    // Original fields beyond the three projected ones, as a writer's import leaves them.
+    let fieldsPayload: [[String: Any]] = try [("head", "headline", "Original writing", "headline.1"), ("body", "body", "Body", "body.1"),
+      ("caption", "caption", "Caption text", "caption.1"), ("credit", "credit", "Photo: A. Person", "credit.1")].map {
+      ["id": $0.0, "role": $0.1, "semanticKey": $0.3, "value": try nativeObject(RichCopy($0.2))]
+    }
+    try send("native.copy.replace", ["slides": [["slideId": "normal", "blocks": fieldsPayload]]])
     let before = try snapshot()
+    func prepared(_ payload: Data) throws -> [String: Any] {
+      try kernel.prepare(command: ["commandId": UUID().uuidString.lowercased(), "expectedRevision": before.revision,
+        "type": "native.copy.replace", "payload": JSONSerialization.jsonObject(with: payload), "source": ["kind": "ui"], "issuedAt": "2026-09-14T20:00:00Z"])
+    }
+    // Replacing from unchanged exports changes nothing: workbench.md keeps the
+    // fields its Body stands for, and Copy.md carries every field exactly.
+    let unchangedProduction = try NativeCopyImport.parse(Data(NativeWorkbenchMarkdown.project(snapshot: before, slides: NativeContents.resolve(slides: before.deck.slides)).markdown.utf8), filename: "workbench.md")
+    let unchangedCopy = try NativeCopyImport.parse(Data(NativeCopyMarkdown.write(title: before.deck.title, canvasID: before.deck.canvasPreset.id, slides: before.deck.slides).utf8), filename: "Copy.md")
+    for unchanged in [unchangedProduction, unchangedCopy] {
+      let matched = NativeCopyReplacement.matches(unchanged, in: before.deck)
+      try require(prepared(NativeCopyReplacement.payload(unchanged, in: before.deck, matches: matched))["duplicate"] as? Bool == true,
+        "Replacing from an unchanged export rewrote the slide's fields")
+    }
+    // An incoming field whose key is already held by a kept field (as after a
+    // field was removed in Edit Copy) gets the next free key, not a duplicate.
+    var extra = unchangedCopy
+    extra.parts[0].slides[0].blocks.append(DeckCopyBlock(id: UUID().uuidString.lowercased(), semanticKey: "body.1", role: "body", value: RichCopy("Second body")))
+    _ = try prepared(NativeCopyReplacement.payload(extra, in: before.deck, matches: NativeCopyReplacement.matches(extra, in: before.deck)))
     let projected = NativeContents.resolve(slides: before.deck.slides)
     let production = try NativeWorkbenchMarkdown.project(snapshot: before, slides: projected)
     var imported = try NativeCopyImport.parse(Data(production.markdown.utf8), filename: "workbench.md")
@@ -196,7 +225,10 @@ enum NativeProductionCopyChecks {
       } else {
         try require(changed.copyBlocks.first { $0.role == "headline" }?.text == revised
           && changed.copyBlocks.first { $0.role == "body" }?.text == revised, "Normal or moodboard writing was not replaced exactly")
-        try require(Set(old.copyBlocks.map(\.id)).isSubset(of: Set(changed.copyBlocks.map(\.id))), "Replacement changed existing field identities")
+        if old.id == "normal" {
+          try require(!changed.copyBlocks.contains { $0.role == "caption" || $0.role == "credit" }, "A replaced Body kept the fields it stood for")
+        }
+        try require(Set(old.copyBlocks.filter { !["caption", "credit"].contains($0.role) }.map(\.id)).isSubset(of: Set(changed.copyBlocks.map(\.id))), "Replacement changed existing field identities")
         var preserved = changed
         preserved.contentBlocks = old.contentBlocks
         try require(nativeJSON(preserved) == nativeJSON(old), "Replacement changed moodboard images, crops, frames, shortlist, notes or appearance")

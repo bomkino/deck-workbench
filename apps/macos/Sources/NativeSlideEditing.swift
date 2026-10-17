@@ -79,12 +79,14 @@ struct NativeCopyEditor: View {
   @ObservedObject var controller: NativeWorkbenchController
   let slideID: String
   let initialIDs: Set<String>
+  let originalTitle: String
   @State private var title: String
   @State private var blocks: [DeckCopyBlock]
   init(controller: NativeWorkbenchController, slide: DeckSlide) {
     self.controller = controller
     slideID = slide.id
     initialIDs = Set(slide.copyBlocks.map(\.id))
+    originalTitle = slide.title
     _title = State(initialValue: slide.title)
     var fields = slide.copyBlocks
     // A heading-only import must still have somewhere to enter a body.
@@ -100,9 +102,11 @@ struct NativeCopyEditor: View {
     let id = UUID().uuidString.lowercased()
     return DeckCopyBlock(id: id, semanticKey: "\(role).\(id)", role: role, value: RichCopy(""))
   }
+  /// An unchanged name is always accepted, so an older over-long name never
+  /// blocks saving a copy edit; a new name follows the shared title rule.
   private var validTitle: Bool {
     let value = title.trimmingCharacters(in: .whitespacesAndNewlines)
-    return !value.isEmpty && value.utf16.count <= 500
+    return value == originalTitle || NativeTitle.isValid(NativeTitle.clean(value))
   }
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
@@ -144,7 +148,8 @@ struct NativeCopyEditor: View {
         if controller.copyEditorSaving { ProgressView().controlSize(.small) }
         Button("Save Copy") {
           let kept = blocks.filter { initialIDs.contains($0.id) || !$0.text.isEmpty }
-          controller.editCopy(kept, title: title.trimmingCharacters(in: .whitespacesAndNewlines))
+          let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
+          controller.editCopy(kept, title: name == originalTitle ? name : NativeTitle.clean(name))
         }.buttonStyle(.borderedProminent).keyboardShortcut("s", modifiers: [.command])
           .disabled(!validTitle)
       }
