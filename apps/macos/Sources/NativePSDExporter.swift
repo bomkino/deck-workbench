@@ -55,7 +55,7 @@ enum NativePSDExporter {
       }
       embeddedBytes += size
     }
-    let estimated = width * height * 4 * (scene.imageLayers.count * 2 + (textGuide == nil ? 8 : 10)) + embeddedBytes * 4
+    let estimated = width * height * 4 * (scene.imageLayers.count * 2 + (textGuide == nil ? 8 : 12)) + embeddedBytes * 4
     guard embeddedBytes <= maximumEmbeddedBytes, estimated <= maximumWorkingBytes else {
       throw failure("This slide exceeds the PSD export memory budget. Export its originals and assemble this slide manually.")
     }
@@ -70,10 +70,14 @@ enum NativePSDExporter {
       "width": width, "height": height, "guides": guides, "cropToFrames": cropToFrames,
       "sharedID": uuid(), "instanceIDs": [uuid(), uuid()],
     ]
+    var startArguments: [Any] = []
     if let frame = textGuide {
-      configuration["textGuideRect"] = [frame.minX, frame.minY, frame.width, frame.height]
+      let guide = try textGuidePixels(scene: scene, region: frame, canvas: CGRect(x: 0, y: 0, width: width, height: height), colorSpace: colorSpace)
+      configuration["textGuideRect"] = [Int(guide.rect.minX), Int(guide.rect.minY), Int(guide.rect.width), Int(guide.rect.height)]
+      startArguments = [try host.bytes(guide.boxes), try host.bytes(guide.copy)]
     }
-    _ = try host.call("start", arguments: [try json(configuration), try host.bytes(profile as Data)])
+    let startPrefix: [Any] = [try json(configuration), try host.bytes(profile as Data)]
+    _ = try host.call("start", arguments: startPrefix + startArguments)
     let composite = try Bitmap(width: width, height: height, colorSpace: colorSpace)
     var sourceIDs: [String: String] = [:]
     var issues: [String] = []
@@ -152,6 +156,36 @@ enum NativePSDExporter {
           .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       }) else { return nil }
     return region
+  }
+
+  /// Inside Shared Artwork, a hidden guide shows the slide's writing exactly as
+  /// Workbench sets it, over its text boxes, so artwork can be extended and
+  /// placed around the real copy. Both layers share one rectangle.
+  private static func textGuidePixels(scene: ResolvedPrototype, region: CGRect, canvas: CGRect, colorSpace: CGColorSpace)
+    throws -> (rect: CGRect, boxes: Data, copy: Data)
+  {
+    let frames = scene.texts.map(\.frame).filter { $0.intersects(canvas) }
+    let covered = frames.reduce(region) { $0.union($1) }.insetBy(dx: -3, dy: -3).intersection(canvas).integral
+    guard !covered.isNull, covered.width >= 1, covered.height >= 1 else { throw failure("The text guide has no area on the canvas.") }
+    let cyan = CGColor(srgbRed: 64 / 255, green: 184 / 255, blue: 1, alpha: 1)
+    let boxes = try Bitmap(width: Int(covered.width), height: Int(covered.height), colorSpace: colorSpace)
+    boxes.context.translateBy(x: -covered.minX, y: -covered.minY)
+    boxes.context.setStrokeColor(cyan.copy(alpha: 0.85) ?? cyan)
+    boxes.context.setLineWidth(1.5)
+    boxes.context.setLineDash(phase: 0, lengths: [8, 6])
+    boxes.context.stroke(region.insetBy(dx: 0.75, dy: 0.75))
+    boxes.context.setLineDash(phase: 0, lengths: [])
+    for frame in frames {
+      boxes.context.setFillColor(cyan.copy(alpha: 0.14) ?? cyan)
+      boxes.context.fill(frame)
+      boxes.context.setStrokeColor(cyan)
+      boxes.context.setLineWidth(2)
+      boxes.context.stroke(frame.insetBy(dx: 1, dy: 1))
+    }
+    let copy = try Bitmap(width: Int(covered.width), height: Int(covered.height), colorSpace: colorSpace)
+    copy.context.translateBy(x: -covered.minX, y: -covered.minY)
+    NativeSlideRenderer.drawCopy(scene, in: copy.context)
+    return (covered, boxes.straightRGBA(), copy.straightRGBA())
   }
 
   private struct Artwork {

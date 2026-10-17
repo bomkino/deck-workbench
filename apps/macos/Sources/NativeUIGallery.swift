@@ -291,8 +291,13 @@ enum NativeUIGallery {
     controller.selectSlide(slides[6]); controller.selectionTarget = "primary"; controller.fitCanvas()
     try await shot("08-assemble-two-images")
     controller.selectSlide(slides[1]); controller.selectionTarget = "text"
+    controller.setNotes("Open on the lamp turning; hold two beats of dark before the line lands. Keep the sea out of focus.", slideID: slides[1])
+    await settle()
     controller.startCleanPreview()
     try await shot("09-review")
+    controller.reviewNotes = true
+    try await shot("09b-review-notes")
+    controller.reviewNotes = false
     controller.endCleanPreview()
 
     try await sheetShot("10-export-sheet", NativeExportSheet(controller: controller))

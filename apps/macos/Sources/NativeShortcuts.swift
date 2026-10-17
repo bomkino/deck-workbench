@@ -99,7 +99,10 @@ enum NativeShortcuts {
       case 115: if let id = controller.slides.first?.id { controller.selectSlide(id) }
       case 119: if let id = controller.slides.last?.id { controller.selectSlide(id) }
       case 53: controller.endCleanPreview()
-      default: return false
+      default:
+        // N by character, so it follows the keyboard layout.
+        guard (event.charactersIgnoringModifiers ?? "").lowercased() == "n" else { return false }
+        if !event.isARepeat { controller.reviewNotes.toggle() }
       }
       return true
     }
@@ -165,6 +168,7 @@ struct NativeShortcutSheet: View {
       ("⇧⌘N", "Add a slide after the selected slide"),
       ("⌘D", "Duplicate slide, copy, layout, choices and notes"),
       ("⌘E", "Edit slide copy"),
+      ("⌘J", "Go to the next slide that still needs an image"),
       ("⌥⌘↑ / ⌥⌘↓", "Move slide earlier / later"),
       ("⇧⌘Delete", "Delete slide with confirmation; original files stay untouched"),
       ("Double-click / Return", "On a slide: edit its copy. On an image: preview it"),
@@ -173,7 +177,7 @@ struct NativeShortcutSheet: View {
       ("Assemble: arrows", "Nudge selected text/frame; Shift moves ten units"),
       ("Space-drag", "Pan canvas; pinch to zoom"),
       ("Escape", "Cancel a canvas drag or close preview"),
-      ("⇧⌘P", "Review the deck: arrows, Space / Shift-Space, Home and End browse; Escape returns to editing"),
+      ("⇧⌘P", "Review the deck: arrows, Space / Shift-Space, Home and End browse; N shows notes; Escape returns to editing"),
       ("⌘0 · ⌥⌘I", "Fit the canvas · show or hide the context panel"),
     ]),
     ("Deck and workspace", [

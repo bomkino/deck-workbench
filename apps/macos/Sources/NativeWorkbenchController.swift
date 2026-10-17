@@ -82,6 +82,8 @@ final class NativeWorkbenchController: ObservableObject {
     }
   }
   @Published var viewportRevision = 0
+  /// Review deck shows the slide's designer notes beside it (N).
+  @Published var reviewNotes = false
   @Published var showContext = true
   @Published var contextWidth: Double = UserDefaults.standard.object(forKey: "native.contextWidth") as? Double ?? 310 {
     didSet { UserDefaults.standard.set(contextWidth, forKey: "native.contextWidth") }
@@ -295,6 +297,25 @@ final class NativeWorkbenchController: ObservableObject {
     return pendingSearchFocus
   }
   func endCleanPreview() { cleanPreview = false }
+  /// The next included slide, after the selected one and wrapping round, that
+  /// still has an empty image slot.
+  func nextSlideNeedingImage() {
+    guard document != nil, !slides.isEmpty, !lifecycleBusy else { return }
+    let start = slideOrdinals[selectedSlideID ?? ""] ?? 0
+    let ordered = Array(slides[min(start, slides.count)...]) + Array(slides[..<min(start, slides.count)])
+    guard let next = ordered.first(where: { NativeSlideReadiness($0).needsImage }) else {
+      status = "Every included slide has its images."
+      return
+    }
+    cleanPreview = false
+    selectSlide(next.id)
+    phase = "curate"
+  }
+  /// Any sheet that owns the keyboard; drops wait until it closes.
+  var modalOpen: Bool {
+    showShortcuts || showExport || showSettings || copyEditorOpen || imported != nil || showApplyLayout
+      || showStarterStyle || showMoodboard || showExportResult
+  }
   func startCleanPreview() {
     guard document != nil, !lifecycleBusy, !copyEditorOpen else { return }
     cleanPreview.toggle()
@@ -875,6 +896,7 @@ final class NativeWorkbenchController: ObservableObject {
   /// and a folder is added as media.
   func handleDrop(_ urls: [URL]) -> Bool {
     guard let url = urls.first, !lifecycleBusy else { return false }
+    guard !modalOpen else { status = "Finish or close the open sheet, then drop again."; return false }
     var directory: ObjCBool = false
     let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &directory)
     switch url.pathExtension.lowercased() {

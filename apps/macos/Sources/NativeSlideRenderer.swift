@@ -423,6 +423,10 @@ enum NativeSlideRenderer {
       }
       context.restoreGState()
     }
+    drawCopy(scene, in: context)
+  }
+  /// The slide's writing and contents leaders, in top-left canvas units.
+  static func drawCopy(_ scene: ResolvedPrototype, in context: CGContext) {
     for item in scene.texts { drawText(item, context: context) }
     for line in scene.dottedLines {
       context.saveGState()

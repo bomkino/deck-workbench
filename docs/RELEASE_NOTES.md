@@ -12,6 +12,10 @@
 
 **Keyboard and accessibility.** The slide list keeps its own arrow keys, Option-[ / ] switches slides on layouts that need Option, controls have distinct accessible names, and failures and media focus are announced to VoiceOver. Type & colours no longer drops edits made on the other tab.
 
+**A redesigned workspace.** Slides show live thumbnails with what each still needs: an empty image slot, or copy that doesn't fit. Command-J (or the link under the slide list) goes to the next slide waiting for an image. Media sits on a quiet light table with clear chosen, shortlisted and compared marks, and the bar under it shows where your next choice lands. The canvas fills the window with floating controls; Review deck runs on black and shows designer notes with N. The export sheet checks the handoff first and takes you to anything missing. Drop final copy, a deck or a media folder anywhere in the window. Every sheet shares one calm layout, and Settings switches Light, Dark or System appearance.
+
+**PSD text guide.** Inside each PSD's Shared Artwork, the hidden text guide now shows the slide's actual copy, set exactly as in Workbench, over its outlined text boxes, instead of a plain cyan rectangle. Turn the group's eye on to extend or place artwork around the real words. It keeps its name, so every bundled PNG exporter still hides it.
+
 **InDesign.** Cancelling an automatic build stops InDesign, a stopped build is marked incomplete, a replacement character Workbench exported is accepted, and Contents is identified explicitly. The PNG exporter works whatever Photoshop's ruler unit. A handoff's starter kit is verified against the app's own manifest.
 
 # v0.4.0 — project colours across Workbench and InDesign

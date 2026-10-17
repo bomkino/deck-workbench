@@ -199,6 +199,8 @@ struct NativeLayoutSchematic: View {
 @MainActor
 final class NativeSlideThumbnails: ObservableObject {
   @Published private(set) var images: [String: NSImage] = [:]
+  /// Slides whose copy does not fit their prototype layout.
+  @Published private(set) var overflowing: Set<String> = []
   private var signatures: [String: Int] = [:]
   private var pending: Task<Void, Never>?
   private weak var controller: NativeWorkbenchController?
@@ -229,7 +231,7 @@ final class NativeSlideThumbnails: ObservableObject {
 
   private func refresh() async {
     guard let controller, let canvas = controller.document?.deck.canvasPreset else {
-      images = [:]; signatures = [:]; return
+      images = [:]; signatures = [:]; overflowing = []; return
     }
     let slides = controller.slides
     let live = Set(slides.map(\.id))
@@ -237,6 +239,7 @@ final class NativeSlideThumbnails: ObservableObject {
       images = images.filter { live.contains($0.key) }
       signatures = signatures.filter { live.contains($0.key) }
     }
+    if !overflowing.isSubset(of: live) { overflowing = overflowing.intersection(live) }
     for slide in slides {
       guard !Task.isCancelled else { return }
       let key = signature(slide, canvas: canvas, controller: controller)
@@ -255,6 +258,9 @@ final class NativeSlideThumbnails: ObservableObject {
         signature(current, canvas: canvas, controller: controller) == key else { continue }
       // Typesetting shares Core Text state that is used on the main actor.
       let scene = NativeSlideRenderer.resolve(slide: current, canvas: canvas)
+      if (scene.overflowCharacters > 0) != overflowing.contains(slide.id) {
+        if scene.overflowCharacters > 0 { overflowing.insert(slide.id) } else { overflowing.remove(slide.id) }
+      }
       let width = Self.pixelWidth, height = max(1, (width * canvas.height / canvas.width).rounded())
       guard let context = CGContext(data: nil, width: Int(width), height: Int(height), bitsPerComponent: 8, bytesPerRow: 0,
         space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { continue }

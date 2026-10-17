@@ -39,7 +39,7 @@ enum NativePSDChecks {
         "orientationFixture": orientationFixture,
         "embeddedOriginalVerification": "Encoder reads back and compares every embedded source byte.",
         "framingVerification": "Encoder reads back mask enablement and exact placement in both modes. Slide 01 is masked; Slide 05 uses the same full images with masks disabled.",
-        "textGuideVerification": "Slides 01 and 05 carry one hidden 50% vector guide at the resolved text region. Whitespace, image-only, empty and fully overset copy are checked to omit it. Native inspection must enable and save the guide, then verify bundled PNG export removes it without modifying the PSD.",
+        "textGuideVerification": "Slides 01 and 05 carry one hidden guide group in Shared Artwork: the slide copy as Workbench sets it over its text boxes, read back by the encoder at the expected bounds. Whitespace, image-only, empty and fully overset copy are checked to omit it. Native inspection must enable and save the guide, then verify bundled PNG export removes it without modifying the PSD.",
         "existingOutputProtected": outputProtected,
         "processLifetimePeakRSSBytesAtStart": initialRSS, "processLifetimePeakRSSBytesAtEnd": peakRSS(),
         "photoshopVisualInspection": "Pending: inspect cropping, colour, shared-content updates and guide visibility.",

@@ -143,6 +143,8 @@ struct NativeWorkbenchCommands: Commands {
       Button("Rename Deck…") { controller.renameDeck() }.disabled(!controller.slideEditingAvailable)
       Button("Edit Copy…") { controller.beginEditCopy() }.keyboardShortcut("e")
         .disabled(!controller.slideEditingAvailable)
+      Button("Next Slide Needing an Image") { controller.nextSlideNeedingImage() }.keyboardShortcut("j")
+        .disabled(controller.document == nil || controller.lifecycleBusy)
       Divider()
       Menu("Layout") {
         ForEach(NativeLayoutChoice.all) { choice in

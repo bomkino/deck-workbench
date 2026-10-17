@@ -384,6 +384,14 @@ struct NativeRecentRow: View {
   let url: URL
   let action: () -> Void
   @State private var hovering = false
+  private var detail: String {
+    let folder = (url.deletingLastPathComponent().path as NSString).abbreviatingWithTildeInPath
+    guard FileManager.default.fileExists(atPath: url.path) else { return "Not found in " + folder }
+    guard let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate else { return folder }
+    let formatter = RelativeDateTimeFormatter()
+    formatter.unitsStyle = .full
+    return "Edited " + formatter.localizedString(for: date, relativeTo: Date()) + " · " + folder
+  }
   var body: some View {
     Button(action: action) {
       HStack(spacing: 12) {
@@ -392,8 +400,7 @@ struct NativeRecentRow: View {
           .background(Color.accentColor.opacity(0.11), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         VStack(alignment: .leading, spacing: 2) {
           Text(url.deletingPathExtension().lastPathComponent).workbenchText(.label).lineLimit(1)
-          Text((url.deletingLastPathComponent().path as NSString).abbreviatingWithTildeInPath)
-            .workbenchText(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+          Text(detail).workbenchText(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
         }
         Spacer(minLength: 8)
         Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(.tertiary)
@@ -421,7 +428,7 @@ struct NativeSlideSidebar: View {
       ForEach(controller.document?.deck.sections ?? []) { section in
         Section(section.title) {
           ForEach(section.slides) { slide in
-            NativeSlideRow(slide: slide, ordinal: ordinal(slide), thumbnail: thumbnails.images[slide.id], aspect: aspect).tag(slide.id)
+            NativeSlideRow(slide: slide, ordinal: ordinal(slide), thumbnails: thumbnails, aspect: aspect).tag(slide.id)
           }
         }
       }
@@ -452,6 +459,7 @@ struct NativeSlideSidebar: View {
   @ViewBuilder private var progress: some View {
     let included = controller.slides.filter { $0.settings.included }
     let ready = included.filter { NativeSlideReadiness($0).isReady }.count
+    let waiting = included.filter { NativeSlideReadiness($0).needsImage }.count
     VStack(alignment: .leading, spacing: 6) {
       HStack {
         Text("\(ready) of \(included.count) slides ready").workbenchText(.caption)
@@ -465,7 +473,18 @@ struct NativeSlideSidebar: View {
             .frame(width: included.isEmpty ? 0 : geometry.size.width * CGFloat(ready) / CGFloat(included.count))
         }
       }.frame(height: 5)
-    }.accessibilityElement(children: .combine)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(ready) of \(included.count) slides ready")
+      if waiting > 0 {
+        Button { controller.nextSlideNeedingImage() } label: {
+          Label(waiting == 1 ? "Go to the slide that needs an image" : "Next of \(waiting) slides that need images", systemImage: "arrow.forward.circle.fill")
+            .workbenchText(.caption)
+        }.buttonStyle(.link).help("Command-J")
+      } else if !included.isEmpty {
+        Label("Every slide has its images", systemImage: "checkmark.seal.fill")
+          .workbenchText(.caption).foregroundStyle(NativeDesign.ready)
+      }
+    }
       .help("A slide is ready when every image slot has a chosen image, or it is text only. Excluded slides are not counted.")
   }
   private func ordinal(_ slide: DeckSlide) -> String {
@@ -476,8 +495,12 @@ struct NativeSlideSidebar: View {
 struct NativeSlideRow: View {
   let slide: DeckSlide
   let ordinal: String
-  let thumbnail: NSImage?
+  // Observed by each row: a List keeps its rows until their own inputs
+  // change, so a finished thumbnail must reach the row directly.
+  @ObservedObject var thumbnails: NativeSlideThumbnails
   let aspect: CGFloat
+  private var thumbnail: NSImage? { thumbnails.images[slide.id] }
+  private var overflowing: Bool { slide.settings.included && thumbnails.overflowing.contains(slide.id) }
   private var readiness: NativeSlideReadiness { NativeSlideReadiness(slide) }
   private var summary: String {
     let shortlisted = slide.settings.shortlist.count
@@ -498,6 +521,13 @@ struct NativeSlideRow: View {
         .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(NativeDesign.strongStroke, lineWidth: 0.5))
         .opacity(slide.settings.included ? 1 : 0.4)
+        .overlay(alignment: .bottomLeading) {
+          if overflowing {
+            Image(systemName: "text.badge.xmark").font(.system(size: 10, weight: .semibold)).foregroundStyle(.white)
+              .padding(4).background(NativeDesign.attention, in: Circle()).padding(5)
+              .help("Some copy does not fit this slide’s layout")
+          }
+        }
         .overlay(alignment: .bottomTrailing) {
           if readiness.needsImage {
             Image(systemName: "photo.badge.plus").font(.system(size: 10, weight: .semibold)).foregroundStyle(.white)
@@ -511,11 +541,14 @@ struct NativeSlideRow: View {
         VStack(alignment: .leading, spacing: 2) {
           Text(slide.title).workbenchText(.bodyCompact).lineLimit(1)
           Text(summary).workbenchText(.caption).foregroundStyle(.secondary).lineLimit(1)
+          if overflowing {
+            Text("Copy doesn’t fit").workbenchText(.caption).foregroundStyle(NativeDesign.attention).lineLimit(1)
+          }
         }
       }
     }.padding(.vertical, 5)
       .accessibilityElement(children: .combine)
-      .accessibilityLabel("\(ordinal), \(slide.title), \(summary)")
+      .accessibilityLabel("\(ordinal), \(slide.title), \(summary)\(overflowing ? ", copy doesn’t fit" : "")")
   }
 }
 struct NativeMediaGrid: View {
@@ -989,6 +1022,7 @@ struct NativeAssembleView: View {
   var body: some View {
     ZStack(alignment: .bottom) {
       NativeCanvas(controller: controller)
+        .overlay(alignment: .topTrailing) { reviewNotes }
       if controller.cleanPreview {
         reviewBar.padding(.bottom, 18)
       } else {
@@ -1019,6 +1053,22 @@ struct NativeAssembleView: View {
         .buttonStyle(.borderedProminent).help("Review the deck full-window (Shift-Command-P)")
     }.controlSize(.small).nativeFloatingBar()
   }
+  @ViewBuilder private var reviewNotes: some View {
+    if controller.cleanPreview && controller.reviewNotes, let slide = controller.selectedSlide {
+      let notes = controller.notes(for: slide.id).trimmingCharacters(in: .whitespacesAndNewlines)
+      VStack(alignment: .leading, spacing: 8) {
+        NativeEyebrow("Designer notes")
+        ScrollView {
+          Text(notes.isEmpty ? "No notes for this slide." : notes)
+            .workbenchText(.bodyCompact).foregroundStyle(notes.isEmpty ? Color.secondary : Color.primary)
+            .frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
+        }.frame(maxHeight: 260)
+      }.padding(16).frame(width: 340)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: NativeDesign.radiusLarge, style: .continuous))
+        .environment(\.colorScheme, .dark)
+        .padding(18)
+    }
+  }
   private var reviewBar: some View {
     HStack(spacing: 12) {
       Button { controller.moveSlide(-1) } label: { Image(systemName: "chevron.left") }
@@ -1032,6 +1082,8 @@ struct NativeAssembleView: View {
       Divider().frame(height: 18)
       Text(controller.selectedSlide?.title ?? "").workbenchText(.label).lineLimit(1).frame(maxWidth: 320)
       Divider().frame(height: 18)
+      Toggle(isOn: $controller.reviewNotes) { HStack(spacing: 6) { Text("Notes"); NativeKeycap("N") } }
+        .toggleStyle(.button).accessibilityLabel("Show designer notes")
       Button { controller.endCleanPreview() } label: { HStack(spacing: 6) { Text("Back to editing"); NativeKeycap("Esc") } }
         .accessibilityLabel("Back to editing · Esc")
     }.nativeFloatingBar().environment(\.colorScheme, .dark)
@@ -1262,16 +1314,18 @@ struct NativeExportSheet: View {
   private var includeInDesign: Bool { inDesign && supportsPSD }
   private var includePSD: Bool { (psd || includeInDesign) && supportsPSD }
   private var includeProductionCopy: Bool { productionCopy || includePSD }
-  private var exportCount: Int {
+  private var exportIDs: Set<String> {
     let ids = scope == "current" ? Set([controller.selectedSlideID ?? ""]) : scope == "selected" ? selectedIDs : Set(controller.slides.map(\.id))
-    return controller.slides.filter { $0.settings.included && ids.contains($0.id) }.count
+    return Set(controller.slides.filter { $0.settings.included && ids.contains($0.id) }.map(\.id))
   }
+  private var exportCount: Int { exportIDs.count }
   private var itemCount: Int {
     [prototype, notes, copy, includeProductionCopy, includePSD, includeInDesign, approved, shortlisted].filter { $0 }.count
   }
   var body: some View {
     NativeSheetScaffold(title: "Export designer handoff", subtitle: "A new folder. Original source files stay untouched.", systemImage: "shippingbox") {
       Form {
+        NativeExportReadiness(controller: controller, thumbnails: controller.thumbnails, slideIDs: exportIDs)
         Section("Guides and writing") {
           item("Prototype.pdf", "Clean visual guide", "doc.richtext", $prototype)
           item("Prototype with notes.pdf", "Complete copy and direction", "doc.text.below.ecg", $notes)
@@ -1365,6 +1419,51 @@ struct NativeExportSheet: View {
     Text(text).workbenchText(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
   }
 }
+/// What the designer will find missing, before the handoff is made. Export
+/// stays available; each line jumps to the slide.
+struct NativeExportReadiness: View {
+  @ObservedObject var controller: NativeWorkbenchController
+  @ObservedObject var thumbnails: NativeSlideThumbnails
+  let slideIDs: Set<String>
+  private var exported: [DeckSlide] { controller.slides.filter { slideIDs.contains($0.id) } }
+  private var missing: [DeckSlide] { exported.filter { NativeSlideReadiness($0).needsImage } }
+  private var overflowing: [DeckSlide] { exported.filter { thumbnails.overflowing.contains($0.id) } }
+  var body: some View {
+    Section {
+      if missing.isEmpty && overflowing.isEmpty {
+        Label(exported.isEmpty ? "Choose at least one included slide." : "Every slide in this handoff has its images, and its copy fits.",
+          systemImage: exported.isEmpty ? "info.circle" : "checkmark.seal.fill")
+          .foregroundStyle(exported.isEmpty ? Color.secondary : NativeDesign.ready)
+      }
+      ForEach(missing) { slide in row(slide, problem: NativeSlideReadiness(slide).label, systemImage: "photo.badge.plus", phase: "curate") }
+      ForEach(overflowing) { slide in row(slide, problem: "Copy doesn’t fit its layout", systemImage: "text.badge.xmark", phase: "assemble") }
+    } header: {
+      Text("Before you hand off")
+    } footer: {
+      if !missing.isEmpty || !overflowing.isEmpty {
+        Text("You can still export: empty slots stay empty and the notes PDF and Copy.md carry the complete writing.")
+          .workbenchText(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+      }
+    }
+  }
+  private func row(_ slide: DeckSlide, problem: String, systemImage: String, phase: String) -> some View {
+    HStack(spacing: 10) {
+      Image(systemName: systemImage).foregroundStyle(NativeDesign.attention).frame(width: 18)
+      Text(String(format: "%02d", controller.slideOrdinals[slide.id] ?? 0)).workbenchText(.data).foregroundStyle(.secondary)
+      VStack(alignment: .leading, spacing: 1) {
+        Text(slide.title).lineLimit(1)
+        Text(problem).workbenchText(.caption).foregroundStyle(.secondary)
+      }
+      Spacer(minLength: 8)
+      Button("Show") {
+        controller.showExport = false
+        controller.selectSlide(slide.id)
+        controller.phase = phase
+      }.controlSize(.small).accessibilityLabel("Show \(slide.title)")
+    }
+  }
+}
+
 struct NativeImportSheet: View {
   @ObservedObject var controller: NativeWorkbenchController
   let imported: ImportedCopyDocument
