@@ -48,13 +48,13 @@ actor NativeDocumentSession {
     }
   }
 
-  func open(at url: URL) throws -> Data {
+  func open(at url: URL, repairs: PitchDeckOpenRepairs = PitchDeckOpenRepairs()) throws -> Data {
     guard store == nil else {
       throw WorkbenchFailure(
         name: "DocumentBusy", message: "Close the current deck before opening another.")
     }
     let candidate = try DeckKernelHost(kernelURL: kernelURL)
-    let (newStore, loaded) = try PitchDeckDocumentStore.open(at: url)
+    let (newStore, loaded) = try PitchDeckDocumentStore.open(at: url, repairs: repairs)
     do {
       try candidate.open(checkpoint: loaded.checkpoint)
       for record in loaded.replayRecords { try candidate.replay(record) }
@@ -108,7 +108,7 @@ actor NativeDocumentSession {
     let prepared = try kernel.prepare(command: command)
     if prepared["duplicate"] as? Bool == true { return writeReceipt() }
     // Back up and promote before any incompatible record reaches the journal.
-    if PitchDeckDocumentStore.preparedNeedsStarterSchema(prepared) { try store.ensureStarterCompatibilityBackup() }
+    if Self.needsStarterSchema(prepared) { try store.ensureStarterCompatibilityBackup() }
     else if type.hasPrefix("native.") { try store.ensureNativeCompatibilityBackup() }
     var appended = false
     do {
@@ -134,7 +134,7 @@ actor NativeDocumentSession {
         name: "RecoveryRequired", message: "The intended deck is not writable.")
     }
     let prepared = try (redo ? kernel.prepareRedo() : kernel.prepareUndo())
-    if PitchDeckDocumentStore.preparedNeedsStarterSchema(prepared) { try store.ensureStarterCompatibilityBackup() }
+    if Self.needsStarterSchema(prepared) { try store.ensureStarterCompatibilityBackup() }
     var appended = false
     do {
       _ = try store.appendDurably(prepared: prepared)
@@ -150,6 +150,13 @@ actor NativeDocumentSession {
       throw error
     }
     return writeReceipt()
+  }
+
+  /// The kernel keeps the full prepared deck and history and reports whether
+  /// they need the schema 3 reader. Older full payloads are still inspected.
+  private static func needsStarterSchema(_ prepared: [String: Any]) -> Bool {
+    if let flag = prepared["requiresStarterSchema"] as? Bool { return flag }
+    return PitchDeckDocumentStore.preparedNeedsStarterSchema(prepared)
   }
 
   private func writeReceipt() -> NativeWriteReceipt {
@@ -175,15 +182,24 @@ actor NativeDocumentSession {
       throw error
     }
   }
-  func close() throws {
-    guard let store else { return }
+  /// Closing always ends the session. A checkpoint is an optimisation: every
+  /// acknowledged change is already in the journal and replays on next open,
+  /// so a failed save or lock release is reported, never a reason to stay open.
+  @discardableResult func close() throws -> String? {
+    guard let store else { return nil }
+    var warning: String?
     // Never write a stale checkpoint over a possibly durable interrupted append.
-    if !fenced && !store.needsRecovery { try save() }
-    try store.close()
+    if !fenced && !store.needsRecovery {
+      do { try save() } catch { warning = "The deck closed, but its quick-open checkpoint was not updated (\(error.localizedDescription)). All saved changes replay from its journal next time." }
+    }
+    do { try store.close() } catch {
+      warning = warning ?? "The deck closed, but its lock could not be released (\(error.localizedDescription))."
+    }
     media?.revoke()
     self.store = nil
     media = nil
     fenced = false
+    return warning
   }
   func recoveryRequired() -> Bool { fenced || store?.needsRecovery == true }
   func documentURL() -> URL? { store?.packageURL }

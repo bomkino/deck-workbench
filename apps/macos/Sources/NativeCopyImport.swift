@@ -55,6 +55,29 @@ struct ImportedCopyDocument: Sendable {
   }
 }
 
+/// Conflict check for copy edits. It must match nativeCopyDigest in
+/// packages/deck-kernel/src/native-kernel.ts: two 32-bit FNV-1a variants over
+/// UTF-16 code units plus the unit count. Sending it instead of the editor's
+/// original blocks keeps large slides within the kernel's command limit.
+enum NativeCopyDigest {
+  static func digest(_ blocks: [DeckCopyBlock]) -> String {
+    var a: UInt32 = 0x811c_9dc5, b: UInt32 = 0x050c_5d1f, length = 0
+    func feed(_ text: String) {
+      for unit in text.utf16 {
+        a = (a ^ UInt32(unit)) &* 0x0100_0193
+        b = (b ^ UInt32(unit)) &* 0x0100_0193
+        b ^= b >> 13
+        length += 1
+      }
+    }
+    for block in blocks {
+      for part in [block.id, block.semanticKey, block.role, block.text, block.state ?? ""] { feed(part); feed("\u{0}") }
+      feed("\u{1}")
+    }
+    return "v1:\(length):" + String(format: "%08x", a) + ":" + String(format: "%08x", b)
+  }
+}
+
 /// Replacement uses stored copy; generated contents is a view/export projection.
 enum NativeCopyReplacement {
   static func destinations(in deck: DeckDocument) -> [DeckSlide] {
@@ -96,7 +119,7 @@ enum NativeCopyReplacement {
         return block
       }
       return ["slideId": slide.id, "blocks": try nativeObject(blocks),
-        "expectedBlocks": try nativeObject(slide.copyBlocks)]
+        "expectedCopyDigest": NativeCopyDigest.digest(slide.copyBlocks)]
     }
     return try JSONSerialization.data(withJSONObject: ["slides": replacements], options: .sortedKeys)
   }

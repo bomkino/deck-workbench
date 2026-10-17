@@ -4,20 +4,27 @@ import JavaScriptCore
 final class DeckKernelHost {
     private let context: JSContext
     private let adapter: JSValue
+    // A custom exception handler replaces JSContext.exception, so the last
+    // exception is kept here for the call that raised it.
+    private let lastException = ExceptionBox()
+
+    private final class ExceptionBox {
+        var message: String?
+    }
 
     init(kernelURL: URL) throws {
         guard let context = JSContext() else {
             throw WorkbenchFailure(name: "KernelUnavailable", message: "JavaScriptCore context could not start")
         }
         self.context = context
-        var capturedException: String?
+        let box = lastException
         context.exceptionHandler = { _, exception in
-            capturedException = exception?.toString() ?? "Unknown JavaScriptCore exception"
+            box.message = exception?.toString() ?? "Unknown JavaScriptCore exception"
         }
         let source = try String(contentsOf: kernelURL, encoding: .utf8)
         context.evaluateScript(source, withSourceURL: kernelURL)
-        if let capturedException {
-            throw WorkbenchFailure(name: "KernelUnavailable", message: capturedException)
+        if let message = box.message {
+            throw WorkbenchFailure(name: "KernelUnavailable", message: message)
         }
         guard let adapter = context.objectForKeyedSubscript("DeckKernelJSON"), !adapter.isUndefined else {
             throw WorkbenchFailure(name: "KernelUnavailable", message: "Bundled Deck kernel did not expose its typed host adapter")
@@ -70,8 +77,10 @@ final class DeckKernelHost {
         guard let function = adapter.objectForKeyedSubscript(name), !function.isUndefined else {
             throw WorkbenchFailure(name: "KernelUnavailable", message: "Kernel adapter method \(name) is missing")
         }
-        guard let value = function.call(withArguments: arguments), !value.isUndefined else {
-            let exception = context.exception?.toString() ?? "No result"
+        lastException.message = nil
+        guard let value = function.call(withArguments: arguments), !value.isUndefined, lastException.message == nil else {
+            let exception = lastException.message ?? context.exception?.toString() ?? "No result"
+            lastException.message = nil
             context.exception = nil
             throw WorkbenchFailure(name: "KernelUnavailable", message: "\(name) failed: \(exception)")
         }

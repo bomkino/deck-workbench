@@ -645,7 +645,7 @@ final class NativeWorkbenchController: ObservableObject {
       deckID == document?.deck.deckId, !lifecycleBusy else { return }
     do {
       var update: [String: Any] = ["slideId": target.id, "blocks": try nativeObject(blocks),
-        "expectedBlocks": try nativeObject(target.copyBlocks)]
+        "expectedCopyDigest": NativeCopyDigest.digest(target.copyBlocks)]
       if let title, title != target.title { update["title"] = title }
       let payload = try JSONSerialization.data(withJSONObject: ["slides": [update]], options: .sortedKeys)
       copyEditorSaving = true
@@ -864,21 +864,46 @@ final class NativeWorkbenchController: ObservableObject {
     }
   }
   func open(_ url: URL) async {
-    guard !lifecycleBusy else { return }
+    guard !lifecycleBusy else { status = "Workbench is finishing the previous action. Try again in a moment."; return }
     if documentURL?.standardizedFileURL == url.standardizedFileURL { return }
     lifecycleBusy = true
     defer { lifecycleBusy = false }
     guard await closeCurrentDocument() else { return }
     do {
-      try apply(await session.open(at: url))
+      try apply(await openWithConsent(url))
       documentURL = url
       remember(url)
       status = "Deck opened"
       await refreshCatalog()
+    } catch is CancellationError {
+      status = "The deck was not opened and was not changed."
     } catch {
-      failure =
-        "\(error.localizedDescription) Use Recover Saved Copy for a crash-left lock; the original will not be changed."
+      let name = (error as? WorkbenchFailure)?.name
+      failure = name == "JournalCorruption" || name == "UnsupportedSchema" || name == "MissingAttachment"
+        ? "\(error.localizedDescription) Use Recover Saved Copy to make a working copy; the original will not be changed."
+        : error.localizedDescription
     }
+  }
+  /// A deck left by a crash may need its stale lock replaced or an interrupted
+  /// final journal line set aside. Both happen only after the person agrees,
+  /// for the exact bytes they were told about, with the originals kept inside
+  /// the deck's recovery folder.
+  private func openWithConsent(_ url: URL) async throws -> Data {
+    var repairs = PitchDeckOpenRepairs()
+    for _ in 0..<3 {
+      do { return try await session.open(at: url, repairs: repairs) }
+      catch let failure as WorkbenchFailure where ["StaleWriterLock", "InterruptedJournal"].contains(failure.name) && failure.detail != nil {
+        let lock = failure.name == "StaleWriterLock"
+        let alert = NSAlert()
+        alert.messageText = lock ? "Open a deck that was not closed properly?" : "Open without the interrupted change?"
+        alert.informativeText = failure.message + "\n\nTo leave this deck exactly as it is, choose Cancel and use File → Recover Saved Copy instead."
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: lock ? "Open Deck" : "Open Without It")
+        guard alert.runModal() == .alertSecondButtonReturn else { throw CancellationError() }
+        if lock { repairs.staleLockDigest = failure.detail } else { repairs.interruptedJournalDigest = failure.detail }
+      }
+    }
+    throw WorkbenchFailure(name: "DocumentBusy", message: "The deck changed while Workbench was checking it. Nothing was changed; try opening it again.")
   }
   @discardableResult func closeForSwitch() async -> Bool {
     guard !lifecycleBusy else { return false }
@@ -910,7 +935,7 @@ final class NativeWorkbenchController: ObservableObject {
     prefetchTask?.cancel(); prefetchTask = nil
     if let media = try? await session.mediaSession() { await media.cancelNativeScans() }
     do {
-      try await session.close()
+      let closeWarning = try await session.close()
       document = nil
       documentURL = nil
       selectedSlideID = nil
@@ -928,7 +953,7 @@ final class NativeWorkbenchController: ObservableObject {
       roots = []
       sources = [:]
       catalogRevision = -1
-      status = "Import final copy to begin."
+      status = closeWarning ?? "Import final copy to begin."
       return true
     } catch {
       failure = error.localizedDescription

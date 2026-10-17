@@ -76,9 +76,65 @@ enum NativeCompatibilityChecks {
     try files.moveItem(at: held, to: recovery)
     try await blocked.close()
 
+    try await crashRecovery(root: root, checkpoint: checkpoint, kernelURL: kernelURL)
+
     let typedCopy = ["nextDeck": ["sections": [["slides": [["contentBlocks": [["role": "body", "value": ["text": "appearance"]]]]]]]]] as [String: Any]
     try require(!PitchDeckDocumentStore.preparedNeedsStarterSchema(typedCopy), "Copy words were mistaken for schema fields")
     let stateOnly = ["nextDeck": ["sections": [["slides": [["contentBlocks": [["role": "body", "state": "unreviewed"]]]]]]]] as [String: Any]
     try require(PitchDeckDocumentStore.preparedNeedsStarterSchema(stateOnly), "Copy review state did not require the new reader")
+  }
+
+  /// A crash leaves a lock from a dead process and possibly a partial final
+  /// journal line. Each is repaired only with consent for the exact bytes,
+  /// keeping the originals; live locks and other Macs' locks are never taken.
+  private static func crashRecovery(root: URL, checkpoint: Data, kernelURL: URL) async throws {
+    let files = FileManager.default
+    let url = root.appendingPathComponent("Crashed.pitchdeck", isDirectory: true)
+    try PitchDeckDocumentStore.create(at: url, checkpoint: checkpoint).close()
+    let session = try NativeDocumentSession(kernelURL: kernelURL)
+    _ = try await session.open(at: url)
+    _ = try await session.execute(type: "native.slide.patch", payload: JSONSerialization.data(withJSONObject: ["slideId": "slide", "patch": ["notes": "Saved before the crash"]]), deckID: "compat-deck", commandID: "before-crash", label: "Note")
+    try await session.close()
+    let finished = Process()
+    finished.executableURL = URL(fileURLWithPath: "/usr/bin/true")
+    try finished.run(); finished.waitUntilExit()
+    func lock(pid: Int32, host: String) throws -> Data {
+      try JSONSerialization.data(withJSONObject: ["format": PitchDeckDocumentStore.writerLockFormat, "schemaVersion": 1, "ownerToken": "crashed-writer",
+        "processId": pid, "createdAt": "2026-10-17T12:00:00Z", "hostId": host, "bootSession": PitchDeckDocumentStore.currentBootSession()])
+    }
+    let lockURL = url.appendingPathComponent(PitchDeckDocumentStore.writerLockFile)
+    let journalURL = url.appendingPathComponent("journal.ndjson")
+    func failureName(_ repairs: PitchDeckOpenRepairs = PitchDeckOpenRepairs()) async -> WorkbenchFailure? {
+      do { _ = try await session.open(at: url, repairs: repairs); try await session.close(); return nil }
+      catch { return error as? WorkbenchFailure }
+    }
+    for (pid, host, label) in [(ProcessInfo.processInfo.processIdentifier, PitchDeckDocumentStore.currentHostID(), "a running writer"), (finished.processIdentifier, "another-mac", "another Mac")] {
+      try lock(pid: pid, host: host).write(to: lockURL)
+      try require(await failureName()?.name == "DocumentBusy", "A lock held by \(label) was offered for replacement")
+      try files.removeItem(at: lockURL)
+    }
+    let staleLock = try lock(pid: finished.processIdentifier, host: PitchDeckDocumentStore.currentHostID())
+    try staleLock.write(to: lockURL)
+    let intact = try Data(contentsOf: journalURL)
+    var torn = intact; torn.append(Data("{\"interrupted\":".utf8))
+    try torn.write(to: journalURL)
+    guard let stale = await failureName(), stale.name == "StaleWriterLock", let lockDigest = stale.detail else {
+      throw WorkbenchFailure(name: "AcceptanceFailure", message: "A dead writer's lock was not recognised")
+    }
+    try require(try Data(contentsOf: lockURL) == staleLock && Data(contentsOf: journalURL) == torn, "Detecting a crash changed the deck before consent")
+    try require(await failureName(PitchDeckOpenRepairs(staleLockDigest: "different"))?.name == "StaleWriterLock", "A lock was replaced without consent for its exact bytes")
+    guard let interrupted = await failureName(PitchDeckOpenRepairs(staleLockDigest: lockDigest)), interrupted.name == "InterruptedJournal", let journalDigest = interrupted.detail else {
+      throw WorkbenchFailure(name: "AcceptanceFailure", message: "An interrupted journal line was not recognised")
+    }
+    let kept = try files.contentsOfDirectory(atPath: url.appendingPathComponent("recovery").path)
+    try require(kept.contains { $0.hasPrefix("stale-writer-lock-") } && !files.fileExists(atPath: lockURL.path), "The replaced lock was not kept or the failed open kept a lock")
+    try require(try Data(contentsOf: journalURL) == torn, "The journal changed before consent")
+    _ = try await session.open(at: url, repairs: PitchDeckOpenRepairs(interruptedJournalDigest: journalDigest))
+    let state = try JSONDecoder().decode(DeckDocumentSnapshot.self, from: await session.snapshot())
+    try require(state.deck.slides[0].settings.notes == "Saved before the crash", "Crash recovery lost an acknowledged change")
+    try await session.close()
+    try require(try Data(contentsOf: journalURL) == intact, "The interrupted line was not set aside exactly")
+    let journals = try files.contentsOfDirectory(atPath: url.appendingPathComponent("recovery").path).filter { $0.hasPrefix("interrupted-journal-") }
+    try require(journals.count == 1 && Data(contentsOf: url.appendingPathComponent("recovery/\(journals[0])")) == torn, "The original interrupted journal was not kept")
   }
 }
