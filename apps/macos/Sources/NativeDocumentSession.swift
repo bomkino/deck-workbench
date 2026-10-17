@@ -3,7 +3,8 @@ import Foundation
 /// The sole owner of a document's kernel and file store. Methods containing a
 /// commit have no suspension point; expected revisions never come from a view.
 struct NativeWriteReceipt: Sendable {
-  let snapshot: Data?
+  /// Decoded inside the session, so the main thread only applies it.
+  let document: DeckDocumentSnapshot?
   let revision: Int
   let viewError: String?
 }
@@ -159,13 +160,23 @@ actor NativeDocumentSession {
     return PitchDeckDocumentStore.preparedNeedsStarterSchema(prepared)
   }
 
+  /// The open document, decoded here rather than on the main thread.
+  func document() throws -> DeckDocumentSnapshot {
+    guard store != nil else {
+      throw WorkbenchFailure(name: "NoDocument", message: "Open or import a deck first.")
+    }
+    let data = try kernel.queryData("native.document")
+    do { return try JSONDecoder().decode(DeckDocumentSnapshot.self, from: data) }
+    catch { throw kernel.failure(in: data) ?? error }
+  }
+
   private func writeReceipt() -> NativeWriteReceipt {
     do {
       return NativeWriteReceipt(
-        snapshot: try snapshot(), revision: store?.currentRevision ?? 0, viewError: nil)
+        document: try document(), revision: store?.currentRevision ?? 0, viewError: nil)
     } catch {
       return NativeWriteReceipt(
-        snapshot: nil, revision: store?.currentRevision ?? 0, viewError: error.localizedDescription)
+        document: nil, revision: store?.currentRevision ?? 0, viewError: error.localizedDescription)
     }
   }
 

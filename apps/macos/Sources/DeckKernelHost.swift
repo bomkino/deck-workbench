@@ -73,7 +73,32 @@ final class DeckKernelHost {
         return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .prettyPrinted])
     }
 
+    /// The query's JSON text as returned, for decoding straight into Swift
+    /// types: no dictionary, no re-encoding, so it can be decoded off the
+    /// main thread in one pass.
+    func queryData(_ name: String, params: [String: Any] = [:]) throws -> Data {
+        try callData("query", arguments: [name, try jsonString(params)])
+    }
+
     private func call(_ name: String, arguments: [Any]) throws -> [String: Any] {
+        let data = try callData(name, arguments: arguments)
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw WorkbenchFailure(name: "KernelUnavailable", message: "\(name) returned an invalid object")
+        }
+        if object["ok"] as? Bool == false {
+            throw kernelFailure(object)
+        }
+        return object
+    }
+
+    /// A failure reported inside JSON that did not decode as the expected type.
+    func failure(in data: Data) -> WorkbenchFailure? {
+        guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              object["ok"] as? Bool == false else { return nil }
+        return kernelFailure(object)
+    }
+
+    private func callData(_ name: String, arguments: [Any]) throws -> Data {
         guard let function = adapter.objectForKeyedSubscript(name), !function.isUndefined else {
             throw WorkbenchFailure(name: "KernelUnavailable", message: "Kernel adapter method \(name) is missing")
         }
@@ -87,13 +112,7 @@ final class DeckKernelHost {
         guard let json = value.toString(), let data = json.data(using: .utf8) else {
             throw WorkbenchFailure(name: "KernelUnavailable", message: "\(name) returned non-JSON data")
         }
-        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw WorkbenchFailure(name: "KernelUnavailable", message: "\(name) returned an invalid object")
-        }
-        if object["ok"] as? Bool == false {
-            throw kernelFailure(object)
-        }
-        return object
+        return data
     }
 
     private func kernelFailure(_ object: [String: Any]) -> WorkbenchFailure {

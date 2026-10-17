@@ -374,7 +374,9 @@ final class NativeWorkbenchController: ObservableObject {
       ? NSAppearance(named: .darkAqua) : theme == "light" ? NSAppearance(named: .aqua) : nil
   }
   private func apply(_ data: Data) throws {
-    let snapshot = try JSONDecoder().decode(DeckDocumentSnapshot.self, from: data)
+    apply(try JSONDecoder().decode(DeckDocumentSnapshot.self, from: data))
+  }
+  private func apply(_ snapshot: DeckDocumentSnapshot) {
     let newDeck = document?.deck.deckId != snapshot.deck.deckId
     // When the selected slide goes away (undoing an Add or Duplicate, a
     // deletion), select the slide now at its position, not the first slide.
@@ -397,11 +399,8 @@ final class NativeWorkbenchController: ObservableObject {
     }
   }
   private func accept(_ receipt: NativeWriteReceipt) {
-    if let snapshot = receipt.snapshot {
-      do { try apply(snapshot) } catch {
-        failure =
-          "Saved revision \(receipt.revision), but the view could not refresh. Reopen to refresh; do not repeat the decision."
-      }
+    if let snapshot = receipt.document {
+      apply(snapshot)
     } else {
       failure =
         "Saved revision \(receipt.revision), but the view needs refreshing. \(receipt.viewError ?? "")"

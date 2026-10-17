@@ -188,6 +188,21 @@ struct NativeWorkbenchCommands: Commands {
         controller.previewOpen = false
         controller.showShortcuts = true
       }.keyboardShortcut("/").disabled(controller.modalOpen)
+      Divider()
+      // The guide and notes for exactly this version, on the project page.
+      Button("Deck Workbench Guide") { NativeHelpLinks.open("blob/\(NativeHelpLinks.tag)/README.md") }
+      Button("Release Notes") { NativeHelpLinks.open("releases/tag/\(NativeHelpLinks.tag)") }
+      Button("Report a Problem…") { NativeHelpLinks.open("issues/new") }
     }
+  }
+}
+enum NativeHelpLinks {
+  static let repository = "https://github.com/bomkino/deck-workbench/"
+  static var tag: String {
+    "v" + (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0")
+  }
+  static func open(_ path: String) {
+    guard let url = URL(string: repository + path) else { return }
+    NSWorkspace.shared.open(url)
   }
 }
