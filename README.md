@@ -65,7 +65,7 @@ npm run verify:package
 
 Build produces an ad-hoc-signed `.app.zip` and SHA-256 file under `artifacts/`. The package journey runs the actual extracted app with synthetic decks and handoff cases. It does not establish every interactive, accessibility or performance property. Check the receipt associated with the exact release commit.
 
-Normal CI builds artifacts; a release is published only by running the release workflow on `main` for an explicit version tag. Installed copies from the first release with updates onward offer newer versions themselves (**Deck Workbench › Check for Updates…**); each update is checked against pitch.dog's signing key before it installs. See [Updates](docs/UPDATES.md). No Electron installation, browser build, account, cloud service, model or telemetry is required.
+Normal CI builds artifacts; a release is published only by running the release workflow on `main` for an explicit version tag. Installed copies from v0.5.0 onward offer newer versions themselves (**Deck Workbench › Check for Updates…**); each update is checked against pitch.dog's signing key before it installs. See [Updates](docs/UPDATES.md). No Electron installation, browser build, account, cloud service, model or telemetry is required.
 
 [Workflow](docs/MAC_APP.md) · [Updates](docs/UPDATES.md) · [Limitations](docs/KNOWN_LIMITATIONS.md) · [Architecture](docs/NATIVE_ARCHITECTURE.md) · [Release notes](docs/RELEASE_NOTES.md) · [Documentation index](docs/README.md)
 

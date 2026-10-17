@@ -39,8 +39,8 @@ Keeping the key on GitHub is the trade Deck Beat's UPDATES.md describes: releasi
 Releases still publish the exact CI artifact of a commit on `main`, never a rebuild. To release:
 
 1. On `main`, raise the version (always upwards) in `package.json`, `CFBundleShortVersionString` and `CFBundleVersion` in `apps/macos/Info.plist`, and add its `# vX.Y.Z — …` section at the top of `docs/RELEASE_NOTES.md`. `CFBundleVersion` follows the version: 0.5.0 → 500, 1.4.2 → 10402. The build refuses a mismatch, because Sparkle compares `CFBundleVersion`.
-2. Let **Native Mac build** pass on that commit's push to `main` (it also runs the update test below), then push the tag `vX.Y.Z` on that commit. A tag alone publishes nothing.
-3. In the Actions tab, run **Publish tagged Mac release** on `main` with that tag. It:
+2. Let **Native Mac build** pass on that commit's push to `main` (it also runs the update test below).
+3. In the Actions tab, run **Publish tagged Mac release** on `main` with the tag `vX.Y.Z`. Without an existing tag it uses `main`'s current commit, only if that commit carries the version, and publishing creates the tag; to release an earlier commit of `main`, push its tag first. A tag alone publishes nothing. The workflow:
    1. finds the successful push build of the tag's commit, checks the ZIP's checksum, the acceptance receipt, the code signature, the commit and version inside the app, that the app trusts pitch.dog's key and reads this repository's feed, and that `docs/RELEASE_NOTES.md` has the version's section;
    2. signs that ZIP into `appcast.xml` with `scripts/sign-release.sh`, with the version's notes for the update window, and checks the signature with the public key inside the app, as Sparkle will. A wrong or missing key stops here, before anything is published;
    3. publishes the release. Only a version higher than every published one is marked **Latest**, so publishing an older patch never rolls installed copies back. It then waits until `releases/latest/download/appcast.xml` names the new version;
