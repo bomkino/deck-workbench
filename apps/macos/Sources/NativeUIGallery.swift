@@ -241,6 +241,7 @@ enum NativeUIGallery {
     controller.selectSlide(controller.slides[1].id)
     controller.phase = "curate"
     try await shot("03-curate-no-media", settle: .milliseconds(1800))
+    captured["03-thumbnails-rendered"] = "\(controller.thumbnails.images.count) of \(controller.slides.count)"
 
     let media = try await controller.session.mediaSession()
     _ = try await media.authorizeRootJSON(mediaURL)
@@ -335,6 +336,7 @@ enum NativeUIGallery {
     try await shot("18-assemble-large-text", settle: .milliseconds(900))
     controller.interfaceScale = 1
 
+    captured["end-thumbnails-rendered"] = "\(controller.thumbnails.images.count) of \(controller.slides.count)"
     try JSONSerialization.data(withJSONObject: captured, options: [.prettyPrinted, .sortedKeys])
       .write(to: output.appendingPathComponent("gallery.json"))
     try await controller.session.close()
