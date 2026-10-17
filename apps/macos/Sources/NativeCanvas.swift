@@ -97,6 +97,15 @@ final class PrototypeCanvasView: NSView {
     }
     needsDisplay = true
   }
+  /// Catalogue sizes of the originals on this slide (upright, as previews are).
+  private func sourceSizes(_ scene: ResolvedPrototype) -> [String: CGSize] {
+    var sizes: [String: CGSize] = [:]
+    for layer in scene.imageLayers {
+      guard let id = layer.assetID, let asset = controller?.assetIndex[id], let width = asset.width, let height = asset.height else { continue }
+      sizes[id] = CGSize(width: width, height: height)
+    }
+    return sizes
+  }
   override func draw(_ dirtyRect: NSRect) {
     NSColor.windowBackgroundColor.setFill()
     bounds.fill()
@@ -138,7 +147,7 @@ final class PrototypeCanvasView: NSView {
       }
     }
     if let gradient = previewGradient { scene.gradient = gradient }
-    NativeSlideRenderer.draw(scene, in: context, rect: artboard, images: images, rasterizeGradient: false)
+    NativeSlideRenderer.draw(scene, in: context, rect: artboard, images: images, sourceSizes: sourceSizes(scene), rasterizeGradient: false)
     context.saveGState()
     defer { context.restoreGState() }
     context.clip(to: bounds)
@@ -287,8 +296,9 @@ final class PrototypeCanvasView: NSView {
     }
     var crop = layer?.crop ?? .full
     if mode == "crop", let id = layer?.assetID, let image = images[id] {
+      let size = NativeSlideRenderer.sourceSize(image, original: sourceSizes(scene)[id])
       let placement = NativeSlideRenderer.imageRect(
-        sourceWidth: Double(image.width), sourceHeight: Double(image.height), frame: frame,
+        sourceWidth: size.width, sourceHeight: size.height, frame: frame,
         crop: crop, fit: "fill")
       crop = PrototypeCrop(
         x: (frame.minX - placement.minX) / placement.width,
@@ -347,31 +357,9 @@ final class PrototypeCanvasView: NSView {
       guard hypot((g.end.x - g.start.x) * gesture.frame.width, (g.end.y - g.start.y) * gesture.frame.height) >= 1 else { return }
       previewGradient = g
     } else {
-      var f = gesture.frame
-      if gesture.mode == "resize" {
-        f.size.width = max(64, min(canvas.width - f.minX, f.width + dx))
-        f.size.height = max(64, min(canvas.height - f.minY, f.height + dy))
-      } else {
-        f.origin.x = min(canvas.width - f.width, max(0, f.minX + dx))
-        f.origin.y = min(canvas.height - f.height, max(0, f.minY + dy))
-      }
-      if controller?.showGuides == true && !event.modifierFlags.contains(.option) {
-        let xs = NativeLayoutGeometry.xGuides(canvas)
-        let ys = NativeLayoutGeometry.yGuides(canvas)
-        let tolerance = 6 * canvas.width / max(artboard.width, 1)
-        let edgeX = gesture.mode == "resize" ? f.maxX : f.minX
-        let edgeY = gesture.mode == "resize" ? f.maxY : f.minY
-        if let x = xs.min(by: { abs($0 - edgeX) < abs($1 - edgeX) }), abs(x - edgeX) < tolerance {
-          if gesture.mode == "resize" { f.size.width = max(64, x - f.minX) } else { f.origin.x = x }
-        }
-        if let y = ys.min(by: { abs($0 - edgeY) < abs($1 - edgeY) }), abs(y - edgeY) < tolerance {
-          if gesture.mode == "resize" { f.size.height = max(64, y - f.minY) } else { f.origin.y = y }
-        }
-      }
-      f.origin.x = max(0, min(canvas.width - f.width, f.minX))
-      f.origin.y = max(0, min(canvas.height - f.height, f.minY))
-      f.size.width = min(canvas.width - f.minX, f.width)
-      f.size.height = min(canvas.height - f.minY, f.height)
+      let snap = controller?.showGuides == true && !event.modifierFlags.contains(.option)
+      let f = NativeLayoutGeometry.draggedFrame(gesture.frame, dx: dx, dy: dy, resize: gesture.mode == "resize",
+        canvas: canvas, snapTolerance: snap ? 6 * canvas.width / max(artboard.width, 1) : nil)
       previewFrame = f
     }
     needsDisplay = true

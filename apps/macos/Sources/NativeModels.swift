@@ -205,6 +205,18 @@ struct PrototypePoint: Codable, Equatable, Sendable {
 struct PrototypeColors: Codable, Equatable, Sendable {
   var start = "#000000"
   var end = "#000000"
+  private enum CodingKeys: String, CodingKey { case start, end }
+  init(start: String = "#000000", end: String = "#000000") {
+    self.start = start
+    self.end = end
+  }
+  /// Saved gradients use canonical lowercase colours; palette values are
+  /// uppercase, so every payload is written in the saved form.
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(start.lowercased(), forKey: .start)
+    try container.encode(end.lowercased(), forKey: .end)
+  }
 }
 struct PrototypeGradient: Codable, Equatable, Sendable {
   var type: String = "linear"

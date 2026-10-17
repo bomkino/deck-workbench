@@ -4,6 +4,7 @@ import CoreGraphics
 import CoreText
 import CryptoKit
 import Foundation
+import ImageIO
 import PDFKit
 
 struct HandoffOptions: Codable, Sendable {
@@ -328,6 +329,21 @@ enum NativeHandoffExporter {
     }
     return result
   }
+  /// Upright pixel sizes of the staged originals, as the PSD uses them.
+  private static func originalSizes(slide: DeckSlide, staged: [String: URL]) -> [String: CGSize] {
+    var sizes: [String: CGSize] = [:]
+    for id in slide.chosenIDs {
+      guard let url = staged[id],
+        let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
+        let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+        let width = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.doubleValue,
+        let height = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.doubleValue
+      else { continue }
+      let orientation = (properties[kCGImagePropertyOrientation] as? NSNumber)?.intValue ?? 1
+      sizes[id] = orientation >= 5 ? CGSize(width: height, height: width) : CGSize(width: width, height: height)
+    }
+    return sizes
+  }
   private static func makePDF(_ url: URL, title: String) throws -> CGContext {
     guard let consumer = CGDataConsumer(url: url as CFURL),
       let context = CGContext(
@@ -375,7 +391,7 @@ enum NativeHandoffExporter {
       beginPage(context, width: canvas.width, height: canvas.height)
       NativeSlideRenderer.draw(
         scene, in: context, rect: CGRect(x: 0, y: 0, width: canvas.width, height: canvas.height),
-        images: loaded)
+        images: loaded, sourceSizes: originalSizes(slide: slide, staged: staged))
       context.endPDFPage()
       progress(index + 1)
     }
@@ -454,7 +470,7 @@ enum NativeHandoffExporter {
             scene, in: context,
             rect: CGRect(
               x: margin, y: height - textY - previewHeight, width: actualWidth,
-              height: previewHeight), images: loaded)
+              height: previewHeight), images: loaded, sourceSizes: originalSizes(slide: slide, staged: staged))
           textY += previewHeight + 28
         }
         let placement = NativeSlideRenderer.textPlacement(

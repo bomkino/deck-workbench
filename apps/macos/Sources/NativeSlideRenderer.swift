@@ -33,13 +33,17 @@ struct ResolvedPrototype {
 }
 
 enum NativeSlideRenderer {
+  /// Square and portrait canvases have no room for a side column, so their
+  /// side layouts set the copy low on the page, over a bottom gradient.
+  static func isNarrow(_ canvas: DeckCanvas) -> Bool { canvas.width / canvas.height < 1.3 }
   static func defaultTextRegion(canvas: DeckCanvas, preset: String) -> CGRect {
     let grid = NativeSlideGrid(canvas: canvas), usable = grid.usable
     if preset == "moodboard" { return CGRect(x: grid.marginX, y: grid.marginY, width: usable.width, height: grid.rowStart(2) - grid.marginY - grid.rowGutter) }
-    if canvas.width / canvas.height < 1.3 || ["wide", "text-only"].contains(preset) { return usable }
-    if preset == "lower" { return CGRect(x: grid.marginX, y: grid.rowStart(6), width: usable.width, height: usable.maxY - grid.rowStart(6)) }
-    if preset == "right" { return CGRect(x: grid.columnStart(12), y: grid.marginY, width: grid.span(12), height: usable.height) }
+    if ["wide", "text-only"].contains(preset) { return usable }
     if ["two-images", "three-images"].contains(preset) { return CGRect(x: grid.marginX, y: grid.rowStart(8), width: usable.width, height: usable.maxY - grid.rowStart(8)) }
+    if preset == "lower" || (isNarrow(canvas) && ["left", "right"].contains(preset)) { return CGRect(x: grid.marginX, y: grid.rowStart(6), width: usable.width, height: usable.maxY - grid.rowStart(6)) }
+    if isNarrow(canvas) { return usable }
+    if preset == "right" { return CGRect(x: grid.columnStart(12), y: grid.marginY, width: grid.span(12), height: usable.height) }
     return CGRect(x: grid.marginX, y: grid.marginY, width: grid.span(12), height: usable.height)
   }
   static func resolvedPreset(slide: DeckSlide) -> String {
@@ -98,6 +102,10 @@ enum NativeSlideRenderer {
       }
       scene.overflowCharacters += slide.copyBlocks.filter { !represented.contains($0.id) }.reduce(0)
       { $0 + $1.text.utf16.count }
+      // The PSD text guide and canvas outline follow where legacy copy is drawn.
+      if layout.textFrame == nil, let first = scene.texts.first {
+        scene.textRegion = scene.texts.dropFirst().reduce(first.frame) { $0.union($1.frame) }
+      }
       return scene
     }
     let showImages = preset != "text-only"
@@ -127,14 +135,13 @@ enum NativeSlideRenderer {
       }
       if !multiple && preset != "image-only" && preset != "moodboard" {
         var gradient = PrototypeGradient()
-        if layout.starterType != nil || layout.appearance != nil { gradient.colors = PrototypeColors(start: background, end: background) }
-        if preset == "right" {
-          gradient.start = PrototypePoint(x: 1, y: 0.5)
-          gradient.end = PrototypePoint(x: 0.28, y: 0.5)
-        }
-        if preset == "lower" {
+        if layout.starterType != nil || layout.appearance != nil { gradient.colors = PrototypeColors(start: background.lowercased(), end: background.lowercased()) }
+        if preset == "lower" || (isNarrow(canvas) && ["left", "right"].contains(preset)) {
           gradient.start = PrototypePoint(x: 0.5, y: 1)
           gradient.end = PrototypePoint(x: 0.5, y: 0.25)
+        } else if preset == "right" {
+          gradient.start = PrototypePoint(x: 1, y: 0.5)
+          gradient.end = PrototypePoint(x: 0.28, y: 0.5)
         }
         if preset == "wide" {
           gradient.opacity = 0.82
@@ -154,7 +161,7 @@ enum NativeSlideRenderer {
     let key = TextLayoutKey(blocks: blocks, width: region.width, height: region.height,
       columns: layout.columns, targetSize: targetSize, minimumSize: min(20 * unitScale, targetSize), fit: layout.fitCopy, starterType: layout.starterType, palette: palette, appearance: appearance, gutter: gutter,
       usePalette: usePalette, contentsID: layout.contents == true ? slide.id + ":contents" : nil,
-      contentsGutter: contentsGutter)
+      contentsGutter: contentsGutter, unavailableFonts: layout.starterType?.unavailableFonts ?? [])
     let encodedKey = (try? nativeJSON(key)).map { $0 as NSData }
     let cached: CachedTextLayout
     if let encodedKey, let hit = textLayoutCache.object(forKey: encodedKey) { cached = hit }
@@ -206,6 +213,8 @@ enum NativeSlideRenderer {
     let usePalette: Bool
     let contentsID: String?
     let contentsGutter: Double
+    /// A layout made while a font was missing is not reused once it is installed.
+    let unavailableFonts: [String]
   }
   private final class CachedTextLayout {
     let placements: [PrototypeTextPlacement]
@@ -375,9 +384,11 @@ enum NativeSlideRenderer {
       frame: rect, content: text, textFrame: frame, visible: CTFrameGetVisibleStringRange(frame))
   }
   /// Both AppKit and PDF contexts call this same top-left canvas transform.
+  /// `sourceSizes` holds the originals' upright pixel sizes, so a preview's
+  /// rounded size never shifts a crop between canvas, PDF and PSD.
   static func draw(
     _ scene: ResolvedPrototype, in context: CGContext, rect: CGRect, images: [String: CGImage],
-    rasterizeGradient: Bool = true
+    sourceSizes: [String: CGSize] = [:], rasterizeGradient: Bool = true
   ) {
     context.saveGState()
     defer { context.restoreGState() }
@@ -389,7 +400,7 @@ enum NativeSlideRenderer {
     context.fill(bounds)
     for layer in scene.imageLayers {
       guard let id = layer.assetID, let image = images[id] else { continue }
-      drawImage(image, layer: layer, context: context)
+      drawImage(image, layer: layer, size: sourceSize(image, original: sourceSizes[id]), context: context)
     }
     if let gradient = scene.gradient {
       let frame = scene.gradientFrame
@@ -432,7 +443,7 @@ enum NativeSlideRenderer {
     return cache
   }()
   private static func gradientFill(_ gradient: PrototypeGradient) -> CGGradient? {
-    CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+    CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB),
       colors: [color(gradient.colors?.start ?? "#000000", alpha: gradient.opacity),
                color(gradient.colors?.end ?? "#000000", alpha: 0)] as CFArray,
       locations: [0, 1])
@@ -447,7 +458,7 @@ enum NativeSlideRenderer {
     let key = "\(width):\(height):\(gradient.start.x):\(gradient.start.y):\(gradient.end.x):\(gradient.end.y):\(gradient.opacity):\(startColor):\(endColor)" as NSString
     if let image = gradientCache.object(forKey: key) { return image }
     guard let bitmap = CGContext(data: nil, width: width, height: height,
-      bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+      bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
       let fill = gradientFill(gradient) else { return nil }
     bitmap.translateBy(x: 0, y: CGFloat(height))
@@ -471,7 +482,9 @@ enum NativeSlideRenderer {
   static func imageRect(
     sourceWidth: Double, sourceHeight: Double, frame: CGRect, crop: PrototypeCrop, fit: String
   ) -> CGRect {
-    let crop = fit == "fit" ? PrototypeCrop.full : crop
+    var crop = fit == "fit" ? PrototypeCrop.full : crop
+    // A crafted near-zero crop would place the image at astronomic sizes.
+    crop.width = max(crop.width, 0.0001); crop.height = max(crop.height, 0.0001)
     let scale =
       fit == "fit"
       ? min(frame.width / sourceWidth, frame.height / sourceHeight)
@@ -486,9 +499,17 @@ enum NativeSlideRenderer {
     }
     return CGRect(x: x, y: y, width: width, height: height)
   }
-  private static func drawImage(_ image: CGImage, layer: PrototypeImageLayer, context: CGContext) {
+  /// The original's size when it matches the decoded image's shape (up to the
+  /// preview's rounding); otherwise the decoded image's own size.
+  static func sourceSize(_ image: CGImage, original: CGSize?) -> CGSize {
+    let decoded = CGSize(width: image.width, height: image.height)
+    guard let original, original.width > 0, original.height > 0, decoded.width > 0, decoded.height > 0 else { return decoded }
+    let tolerance = 2 / min(decoded.width, decoded.height)
+    return abs(original.width / original.height / (decoded.width / decoded.height) - 1) <= tolerance ? original : decoded
+  }
+  private static func drawImage(_ image: CGImage, layer: PrototypeImageLayer, size: CGSize, context: CGContext) {
     let rect = imageRect(
-      sourceWidth: Double(image.width), sourceHeight: Double(image.height), frame: layer.frame,
+      sourceWidth: size.width, sourceHeight: size.height, frame: layer.frame,
       crop: layer.crop, fit: layer.fit)
     context.saveGState()
     context.clip(to: layer.frame)
@@ -500,8 +521,9 @@ enum NativeSlideRenderer {
   }
   static func color(_ hex: String, alpha: Double = 1) -> CGColor {
     let value = UInt64(hex.dropFirst(), radix: 16) ?? 0
+    // Palette hex values are sRGB, as in the PSD and InDesign handoff.
     return CGColor(
-      red: Double((value >> 16) & 255) / 255, green: Double((value >> 8) & 255) / 255,
+      srgbRed: Double((value >> 16) & 255) / 255, green: Double((value >> 8) & 255) / 255,
       blue: Double(value & 255) / 255, alpha: alpha)
   }
   static func decodedImage(_ data: Data) -> CGImage? {

@@ -44,6 +44,52 @@ enum NativeLayoutGeometry {
     return PrototypeCrop(x: max(0, min(1 - w, current.x + current.width / 2 - w / 2)),
       y: max(0, min(1 - h, current.y + current.height / 2 - h / 2)), width: w, height: h)
   }
+  /// A frame moved or resized by a canvas drag. It never shrinks just because
+  /// it is moved: one larger than the canvas (a bleed) keeps its size and may
+  /// only move while it still covers the canvas, and a resize may not grow
+  /// past the canvas or the frame's existing overhang. With a tolerance,
+  /// resizing snaps the right and bottom edges to the nearest guide and moving
+  /// snaps whichever edge is nearer one, so frames align to both margins.
+  static func draggedFrame(_ start: CGRect, dx: Double, dy: Double, resize: Bool, canvas: DeckCanvas, snapTolerance: Double?) -> CGRect {
+    var f = start
+    let maxRight = max(canvas.width, start.maxX), maxBottom = max(canvas.height, start.maxY)
+    func clampOrigin(_ value: Double, size: Double, extent: Double) -> Double {
+      min(max(0, extent - size), max(min(0, extent - size), value))
+    }
+    if resize {
+      f.size.width = max(64, min(maxRight - f.minX, f.width + dx))
+      f.size.height = max(64, min(maxBottom - f.minY, f.height + dy))
+    } else {
+      f.origin.x = clampOrigin(f.minX + dx, size: f.width, extent: canvas.width)
+      f.origin.y = clampOrigin(f.minY + dy, size: f.height, extent: canvas.height)
+    }
+    if let tolerance = snapTolerance {
+      func nearest(_ guides: [Double], _ edges: [(edge: Double, offset: Double)]) -> (guide: Double, offset: Double)? {
+        var best: (guide: Double, offset: Double, distance: Double)?
+        for (edge, offset) in edges {
+          guard let guide = guides.min(by: { abs($0 - edge) < abs($1 - edge) }), abs(guide - edge) < tolerance else { continue }
+          if best == nil || abs(guide - edge) < best!.distance { best = (guide, offset, abs(guide - edge)) }
+        }
+        return best.map { ($0.guide, $0.offset) }
+      }
+      let xs = xGuides(canvas), ys = yGuides(canvas)
+      if resize {
+        if let x = nearest(xs, [(f.maxX, 0)]) { f.size.width = max(64, x.guide - f.minX) }
+        if let y = nearest(ys, [(f.maxY, 0)]) { f.size.height = max(64, y.guide - f.minY) }
+      } else {
+        if let x = nearest(xs, [(f.minX, 0), (f.maxX, f.width)]) { f.origin.x = x.guide - x.offset }
+        if let y = nearest(ys, [(f.minY, 0), (f.maxY, f.height)]) { f.origin.y = y.guide - y.offset }
+      }
+    }
+    if resize {
+      f.size.width = min(maxRight - f.minX, f.width)
+      f.size.height = min(maxBottom - f.minY, f.height)
+    } else {
+      f.origin.x = clampOrigin(f.minX, size: f.width, extent: canvas.width)
+      f.origin.y = clampOrigin(f.minY, size: f.height, extent: canvas.height)
+    }
+    return f
+  }
   static func hasText(_ scene: ResolvedPrototype) -> Bool {
     scene.texts.contains { $0.visible.length > 0 }
   }

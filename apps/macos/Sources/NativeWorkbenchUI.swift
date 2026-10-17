@@ -651,22 +651,12 @@ struct NativeAssemblyInspector: View {
               setGradient(g)
             }
           })
+        // Direction buttons change only the direction; the slide's gradient
+        // colours (a light slide's cream fade, say) stay as they are.
         HStack {
-          Button("Left") { var g = PrototypeGradient(); g.opacity = opacity; setGradient(g) }
-          Button("Right") {
-            var g = PrototypeGradient()
-            g.opacity = opacity
-            g.start = PrototypePoint(x: 1, y: 0.5)
-            g.end = PrototypePoint(x: 0.28, y: 0.5)
-            setGradient(g)
-          }
-          Button("Bottom") {
-            var g = PrototypeGradient()
-            g.opacity = opacity
-            g.start = PrototypePoint(x: 0.5, y: 1)
-            g.end = PrototypePoint(x: 0.5, y: 0.25)
-            setGradient(g)
-          }
+          Button("Left") { setDirection(PrototypePoint(x: 0, y: 0.5), PrototypePoint(x: 0.72, y: 0.5)) }
+          Button("Right") { setDirection(PrototypePoint(x: 1, y: 0.5), PrototypePoint(x: 0.28, y: 0.5)) }
+          Button("Bottom") { setDirection(PrototypePoint(x: 0.5, y: 1), PrototypePoint(x: 0.5, y: 0.25)) }
         }.controlSize(.small)
       } else if controller.selectionTarget != "text" {
         Picker(
@@ -728,6 +718,13 @@ struct NativeAssemblyInspector: View {
     do { controller.patchLayout(["gradient": try nativeObject(gradient)]) } catch {
       controller.failure = error.localizedDescription
     }
+  }
+  private func setDirection(_ start: PrototypePoint, _ end: PrototypePoint) {
+    var g = controller.resolvedScene?.gradient ?? PrototypeGradient()
+    g.opacity = opacity
+    g.start = start
+    g.end = end
+    setGradient(g)
   }
 }
 struct NativeExportSheet: View {
