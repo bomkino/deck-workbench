@@ -48,6 +48,7 @@ final class NativeAppDelegate: NSObject, NSApplicationDelegate {
 struct NativeWorkbenchApplication: App {
   @NSApplicationDelegateAdaptor(NativeAppDelegate.self) private var delegate
   @StateObject private var controller: NativeWorkbenchController
+  @StateObject private var updates = NativeUpdates()
   init() {
     do {
       let controller = try NativeWorkbenchController()
@@ -67,13 +68,17 @@ struct NativeWorkbenchApplication: App {
         Task { await controller.open(url) }
       }
     }.defaultSize(width: 1440, height: 900)
-      .commands { NativeWorkbenchCommands(controller: controller) }
+      .commands { NativeWorkbenchCommands(controller: controller, updates: updates) }
   }
 }
 struct NativeWorkbenchCommands: Commands {
   @ObservedObject var controller: NativeWorkbenchController
+  @ObservedObject var updates: NativeUpdates
   @Environment(\.openWindow) private var openWindow
   var body: some Commands {
+    CommandGroup(after: .appInfo) {
+      Button("Check for Updates…") { updates.checkForUpdates() }.disabled(!updates.canCheck)
+    }
     CommandGroup(replacing: .newItem) {
       Button("Import Final Copy…") {
         openWindow(id: "workbench")

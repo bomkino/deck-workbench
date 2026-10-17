@@ -1,6 +1,6 @@
 # Security policy
 
-Deck Workbench processes local documents and media and exposes a privileged native shell around a sandboxed workspace. Security reports are welcome through a private GitHub security advisory when available.
+Deck Workbench is a native Mac app that processes local documents and media. Its document kernel runs in JavaScriptCore inside the app, without a browser. Security reports are welcome through a private GitHub security advisory when available.
 
 Please include:
 
@@ -12,4 +12,4 @@ Please include:
 
 Do not include private client material in reports.
 
-High-priority areas include path traversal, symlink escape, malicious SVG/HTML, document migration, journal corruption, custom resource schemes, Electron preload/IPC, export staging and optional MCP/CLI permissions.
+High-priority areas include path traversal, symlink escape, malicious media files, document migration, journal corruption, crash-recovery repairs, export staging, the Adobe automation scripts, and in-app updates: the signed update feed and the release signing key ([docs/UPDATES.md](docs/UPDATES.md)). Never include the private update key in a report.

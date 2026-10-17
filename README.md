@@ -8,7 +8,7 @@ This guide covers v0.4.0 source. Find published builds and their verification re
 
 1. Choose the release's **.app.zip**, not GitHub's automatic source archive. Quit the old Workbench and unzip it.
 2. Drag **Deck Workbench.app** into **Applications**, replacing the old app.
-3. Open it. Keep an untouched copy of existing decks before migration.
+3. Open it. Keep an untouched copy of existing decks before migration. From the first release with in-app updates onward, later versions arrive through **Deck Workbench › Check for Updates…** instead.
 
 If macOS blocks the first launch, open **System Settings → Privacy & Security → Open Anyway** after attempting to open the app. Do not disable Gatekeeper globally. A malware warning is different: do not override it.
 
@@ -61,8 +61,8 @@ npm run verify:package
 
 Build produces an ad-hoc-signed `.app.zip` and SHA-256 file under `artifacts/`. The package journey runs the actual extracted app with synthetic decks and handoff cases. It does not establish every interactive, accessibility or performance property. Check the receipt associated with the exact release commit.
 
-Normal CI builds artifacts; only an explicit version tag publishes a release. No Electron installation, browser build, account, cloud service, model or telemetry is required.
+Normal CI builds artifacts; a release is published only by running the release workflow on `main` for an explicit version tag. Installed copies from the first release with updates onward offer newer versions themselves (**Deck Workbench › Check for Updates…**); each update is checked against pitch.dog's signing key before it installs. See [Updates](docs/UPDATES.md). No Electron installation, browser build, account, cloud service, model or telemetry is required.
 
-[Workflow](docs/MAC_APP.md) · [Limitations](docs/KNOWN_LIMITATIONS.md) · [Architecture](docs/NATIVE_ARCHITECTURE.md) · [Release notes](docs/RELEASE_NOTES.md) · [Documentation index](docs/README.md)
+[Workflow](docs/MAC_APP.md) · [Updates](docs/UPDATES.md) · [Limitations](docs/KNOWN_LIMITATIONS.md) · [Architecture](docs/NATIVE_ARCHITECTURE.md) · [Release notes](docs/RELEASE_NOTES.md) · [Documentation index](docs/README.md)
 
 AGPL-3.0. See LICENSE, NOTICE and THIRD_PARTY.md. The existing FontBlind v13.0.0 binary pin and notices are retained. Historical product/ticket documents are evidence, not current instructions.

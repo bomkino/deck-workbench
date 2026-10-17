@@ -8,6 +8,8 @@ Notes have draft generations. Acknowledgement clears only the generation actuall
 
 The controller caches slide/asset indexes, sorted/filtered media projections and resolved text layout. Preview scopes are explicit. NativeMediaIO provides bounded shared thumbnail work and byte caches; NativeAssetImage builds its NSImage once per completed request. Cache identity includes root access generation so reconnect cannot keep a stale missing preview. Text-only translation reuses Core Text layout; resize/copy/style changes resolve it again. These are bounded optimizations, not an alternate state store.
 
+NativeUpdates wraps Sparkle 2.10.0's standard updater for **Check for Updates…** and daily checks. Only the interactive app creates it; the self-test and parity probe never start an updater. Sparkle installs only a ZIP whose EdDSA signature matches `SUPublicEDKey`; the release workflow signs the exact CI artifact it publishes (docs/UPDATES.md).
+
 MediaCatalogSession performs progressive background scans and stores original identities/revisions. NativeSlideRenderer is shared by canvas and PDF. NativeHandoffExporter freezes one document snapshot, computes resources from selected outputs, stages originals once and verifies copies. Independent components report their actual results. Original filenames and source notes are retained in the portable media index; absolute machine paths are not included.
 
 Build: scripts/build-native-macos.sh. Verification: npm test and scripts/verify-native-package.sh. Normal CI builds artifacts. Explicit `v*` tags publish only the matching successful main-branch artifact; no publish-on-every-push, self-mutating source workflow or permanent acceptance waiver.

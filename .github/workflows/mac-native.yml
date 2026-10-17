@@ -13,7 +13,7 @@ concurrency:
 jobs:
   native:
     runs-on: macos-26
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -30,6 +30,9 @@ jobs:
         run: scripts/build-native-macos.sh
       - name: Exercise the extracted Mac application and handoff
         run: scripts/verify-native-package.sh
+      - name: Update a test copy from a signed local feed and refuse a tampered one
+        timeout-minutes: 10
+        run: scripts/test-update.sh
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
@@ -45,4 +48,4 @@ jobs:
             artifacts/evidence/handoffs/**/*.csv
             artifacts/evidence/handoffs/**/Export issues.txt
           if-no-files-found: warn
-          retention-days: 30
+          retention-days: 90

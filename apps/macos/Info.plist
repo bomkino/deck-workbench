@@ -47,6 +47,12 @@
   <true/>
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
+  <key>SUEnableAutomaticChecks</key>
+  <true/>
+  <key>SUFeedURL</key>
+  <string>https://github.com/bomkino/deck-workbench/releases/latest/download/appcast.xml</string>
+  <key>SUPublicEDKey</key>
+  <string>P43E8I+FgVyAW3QkS4J9bnDRRhAnsS4y3dT2WDce1lQ=</string>
   <key>UTExportedTypeDeclarations</key>
   <array>
     <dict>
