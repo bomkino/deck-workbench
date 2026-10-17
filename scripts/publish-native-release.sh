@@ -112,8 +112,12 @@ test "$(/usr/libexec/PlistBuddy -c 'Print :SUFeedURL' "$PLIST")" = "$FEED"
 test -d "$APP/Contents/Frameworks/Sparkle.framework"
 rm -rf "$OUT"; mkdir -p "$OUT"
 cp "$FOUND" "$FOUND.sha256" "$RECEIPT" "$OUT/"
-git show "$SHA:docs/RELEASE_NOTES.md" > "$OUT/release-notes.md"
-# The update window shows this version's section of the notes.
-awk -v v="v$VERSION" '$1 == "#" && $2 ~ /^v[0-9]/ { on = ($2 == v) } on' "$OUT/release-notes.md" > "$OUT/update-notes.md"
+# The update window and the release page show this version's section of the
+# notes; the release page adds how to install and a link to every version.
+git show "$SHA:docs/RELEASE_NOTES.md" | awk -v v="v$VERSION" '$1 == "#" && $2 ~ /^v[0-9]/ { on = ($2 == v) } on' > "$OUT/update-notes.md"
 test -s "$OUT/update-notes.md" || { echo "docs/RELEASE_NOTES.md has no section for v$VERSION" >&2; exit 1; }
+{
+  tail -n +2 "$OUT/update-notes.md" | sed '/./,$!d'
+  printf '\n---\n\n**Install:** download the `.app.zip` below, unzip it and move **Deck Workbench** into Applications (Apple Silicon, macOS 26 or later). Copies from v0.5.0 on update themselves through **Deck Workbench › Check for Updates…**.\n\n[All release notes](https://github.com/%s/blob/%s/docs/RELEASE_NOTES.md)\n' "$REPO" "$TAG"
+} > "$OUT/release-notes.md"
 echo "Staged $TAG ($SHA) in $OUT"

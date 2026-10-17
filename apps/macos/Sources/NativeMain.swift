@@ -75,7 +75,7 @@ struct NativeWorkbenchApplication: App {
     Window("Workbench", id: "workbench") {
       NativeWorkbenchRoot(controller: controller).onOpenURL { url in
         Task { await controller.open(url) }
-      }
+      }.environment(\.workbenchUpdates, updates)
     }.defaultSize(width: 1440, height: 900)
       .commands { NativeWorkbenchCommands(controller: controller, updates: updates) }
   }

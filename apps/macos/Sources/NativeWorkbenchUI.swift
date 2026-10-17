@@ -1577,6 +1577,7 @@ struct NativeImportSheet: View {
 }
 struct NativeSettingsView: View {
   @ObservedObject var controller: NativeWorkbenchController
+  @Environment(\.workbenchUpdates) private var updates
   var body: some View {
     NativeSheetScaffold(title: "Settings", subtitle: "Interface size does not change the canvas or exported deck.", systemImage: "gearshape") {
       Form {
@@ -1590,6 +1591,18 @@ struct NativeSettingsView: View {
             ForEach([0.9, 1.0, 1.1, 1.25, 1.5, 1.75], id: \.self) { Text("\(Int($0*100))%").tag($0) }
           }
           Toggle("Advance after choosing, shortlisting or rejecting", isOn: $controller.autoAdvance)
+        }
+        Section {
+          if let updates, updates.available {
+            NativeUpdateSettings(updates: updates)
+          } else {
+            Text("Updates are checked by the installed app.").workbenchText(.caption).foregroundStyle(.secondary)
+          }
+        } header: {
+          Text("Updates")
+        } footer: {
+          Text("Deck Workbench \(NativeUpdates.versionDescription). Updates come from this project's GitHub releases and install only when signed by pitch.dog.")
+            .workbenchText(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         Section {
           ForEach([(NativeAdobeAutomation.inDesignID, "Connect InDesign"), (NativeAdobeAutomation.photoshopID, "Connect Photoshop")], id: \.0) { id, title in
