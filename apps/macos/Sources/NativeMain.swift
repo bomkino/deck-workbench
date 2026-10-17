@@ -20,6 +20,15 @@ struct NativeMain {
       app.delegate = delegate
       app.setActivationPolicy(.regular)
       withExtendedLifetime(delegate) { app.run() }
+    } else if let index = CommandLine.arguments.firstIndex(of: "--native-ui-gallery"),
+      CommandLine.arguments.indices.contains(index + 1)
+    {
+      let app = NSApplication.shared
+      let delegate = NativeUIGalleryDelegate(
+        output: URL(fileURLWithPath: CommandLine.arguments[index + 1], isDirectory: true))
+      app.delegate = delegate
+      app.setActivationPolicy(.regular)
+      withExtendedLifetime(delegate) { app.run() }
     } else {
       NativeWorkbenchApplication.main()
     }

@@ -29,9 +29,14 @@ jobs:
       - name: Check the InDesign builder's bundle validators
         run: node tests/verify-indesign-bundle.mjs "apps/macos/Resources/StarterKit/Automation/InDesign/Deck Production.jsxinc"
       - name: Build exact native application
+        id: build
         run: scripts/build-native-macos.sh
       - name: Exercise the extracted Mac application and handoff
         run: scripts/verify-native-package.sh
+      - name: Capture every main screen and sheet for visual review
+        if: always() && steps.build.outcome == 'success'
+        timeout-minutes: 5
+        run: '"build/native/Deck Workbench.app/Contents/MacOS/DeckWorkbench" --native-ui-gallery "$PWD/artifacts/ui"'
       - name: Update a test copy from a signed local feed and refuse a tampered one
         timeout-minutes: 10
         run: scripts/test-update.sh
@@ -45,6 +50,8 @@ jobs:
             artifacts/evidence/native-acceptance.json
             artifacts/evidence/psd/PSD proof.json
             artifacts/evidence/*.png
+            artifacts/ui/*.png
+            artifacts/ui/gallery.json
             artifacts/evidence/handoffs/**/*.pdf
             artifacts/evidence/handoffs/**/*.md
             artifacts/evidence/handoffs/**/*.csv

@@ -380,6 +380,10 @@ private final class MacMediaGrantStore {
         if let injectedURL {
             fileURL = injectedURL
             rootURL = injectedURL.deletingLastPathComponent()
+        } else if CommandLine.arguments.contains("--native-self-test") || CommandLine.arguments.contains("--native-ui-gallery") {
+            // Packaged checks never read or change the person's folder permissions.
+            rootURL = FileManager.default.temporaryDirectory.appendingPathComponent("Deck Workbench checks \(getpid())", isDirectory: true)
+            fileURL = rootURL.appendingPathComponent("media-grants.json")
         } else {
             let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             rootURL = support.appendingPathComponent("Deck Workbench", isDirectory: true)
