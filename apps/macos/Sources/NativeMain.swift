@@ -39,6 +39,7 @@ final class NativeAppDelegate: NSObject, NSApplicationDelegate {
   weak var controller: NativeWorkbenchController?
   private var pending = false
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+    if controller?.confirmQuitWithParkedActions() == false { return .terminateCancel }
     guard controller?.document != nil || controller?.lifecycleBusy == true else { return .terminateNow }
     guard !pending else { return .terminateLater }
     pending = true
@@ -92,12 +93,13 @@ struct NativeWorkbenchCommands: Commands {
       Button("Import Final Copy…") {
         openWindow(id: "workbench")
         controller.importFile()
-      }.keyboardShortcut("n")
+      }.keyboardShortcut("n").disabled(controller.modalOpen)
       Button("Paste Final Copy") { openWindow(id: "workbench"); controller.pasteCopy() }.keyboardShortcut("v", modifiers: [.command, .shift])
+        .disabled(controller.modalOpen)
       Button("Open Deck…") {
         openWindow(id: "workbench")
         controller.openPanel()
-      }.keyboardShortcut("o")
+      }.keyboardShortcut("o").disabled(controller.modalOpen)
       Menu("Open Recent") {
         ForEach(controller.recentDocuments, id: \.path) { url in
           Button(url.deletingPathExtension().lastPathComponent) {
@@ -105,12 +107,12 @@ struct NativeWorkbenchCommands: Commands {
             Task { await controller.open(url) }
           }
         }
-      }
+      }.disabled(controller.modalOpen)
       Divider()
       Button("Recover Saved Copy…") {
         openWindow(id: "workbench")
         controller.recoverCopy()
-      }
+      }.disabled(controller.modalOpen)
     }
     CommandGroup(replacing: .saveItem) {
       Button("Save") { controller.save() }.keyboardShortcut("s").disabled(
@@ -120,14 +122,16 @@ struct NativeWorkbenchCommands: Commands {
       ).disabled(!controller.canExport)
     }
     CommandGroup(replacing: .undoRedo) {
-      Button("Undo") { controller.undo() }.keyboardShortcut("z").disabled(controller.document == nil)
+      // Text fields inside sheets keep their own Undo; the deck's waits.
+      Button("Undo") { controller.undo() }.keyboardShortcut("z").disabled(controller.document == nil && !controller.modalOpen)
       Button("Redo") { controller.undo(redo: true) }.keyboardShortcut(
         "z", modifiers: [.command, .shift]
-      ).disabled(controller.document == nil)
+      ).disabled(controller.document == nil && !controller.modalOpen)
     }
     CommandGroup(replacing: .appSettings) {
       // Sheets need the window; reopen it if it was closed.
       Button("Settings…") { openWindow(id: "workbench"); controller.showSettings = true }.keyboardShortcut(",")
+        .disabled(controller.modalOpen)
     }
     CommandMenu("Slide") {
       Button("Add Slide") { controller.addSlide() }.keyboardShortcut("n", modifiers: [.command, .shift])
@@ -166,7 +170,8 @@ struct NativeWorkbenchCommands: Commands {
       Button("Search media") { controller.searchMedia() }.keyboardShortcut("f")
       Button("Show / Hide context panel") { controller.showContext.toggle() }.keyboardShortcut("i", modifiers: [.command, .option])
       Button("Fit canvas") { controller.fitCanvas() }.keyboardShortcut("0")
-      Button("Review deck") { controller.startCleanPreview() }.keyboardShortcut("p", modifiers: [.command, .shift])
+      Button(controller.cleanPreview ? "End Review" : "Review deck") { controller.startCleanPreview() }.keyboardShortcut("p", modifiers: [.command, .shift])
+        .disabled(controller.document == nil || (controller.modalOpen && !controller.cleanPreview))
       Divider()
       Button("Reveal Focused Media in Finder") { controller.revealFocused() }.keyboardShortcut(
         "r", modifiers: [.command, .shift]
@@ -174,7 +179,7 @@ struct NativeWorkbenchCommands: Commands {
       Button("Retry Pending Actions") { controller.retryPending() }.disabled(
         controller.failedCommands.isEmpty)
       Button("Save Pending Actions…") { controller.savePending() }.disabled(controller.failedCommands.isEmpty)
-      Button("Discard Unsaved Actions…") { controller.discardPending() }.disabled(controller.failedCommands.isEmpty && controller.notesDrafts.isEmpty)
+      Button("Discard Unsaved Actions…") { controller.discardPending() }.disabled(controller.failedCommands.isEmpty && !controller.hasNoteDrafts)
       Button("Restore Pending Actions…") { controller.restorePending() }.disabled(controller.document == nil)
     }
     CommandGroup(replacing: .help) {
@@ -182,7 +187,7 @@ struct NativeWorkbenchCommands: Commands {
         openWindow(id: "workbench")
         controller.previewOpen = false
         controller.showShortcuts = true
-      }.keyboardShortcut("/")
+      }.keyboardShortcut("/").disabled(controller.modalOpen)
     }
   }
 }

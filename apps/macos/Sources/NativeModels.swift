@@ -280,7 +280,10 @@ struct NativeMediaSource: Codable, Sendable {
   var url: URL {
     URL(fileURLWithPath: rootPath, isDirectory: true).appendingPathComponent(relativePath)
   }
-  var cacheKey: String { "\(assetId):\(sourceRevisionId):\(fingerprint):\(rootPath):\(rootDevice):\(rootInode):\(accessGeneration ?? 0)" }
+  /// The original itself: previews stay cached across rescans and reconnects.
+  var cacheKey: String { "\(assetId):\(sourceRevisionId):\(fingerprint):\(rootPath):\(rootDevice):\(rootInode)" }
+  /// Also changes when folder access is renewed, so a preview that failed retries.
+  var reloadKey: String { "\(cacheKey):\(accessGeneration ?? 0)" }
 }
 extension String { var nonempty: String? { isEmpty ? nil : self } }
 func nativeJSON<T: Encodable>(_ value: T) throws -> Data {

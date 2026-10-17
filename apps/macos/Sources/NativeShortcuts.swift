@@ -31,6 +31,9 @@ enum NativeShortcuts {
       key: " ", shift: false, display: "Space", label: "Open / close image preview", scope: "curate",
       action: { if $0.previewOpen { $0.previewOpen = false } else { $0.preview() } }),
     .init(
+      key: "return", shift: false, display: "Return", label: "Preview the focused image", scope: "curate",
+      action: { if !$0.previewOpen { $0.preview() } }),
+    .init(
       key: "s", shift: false, display: "S", label: "Add image to this slide’s shortlist",
       scope: "curate", action: { $0.decide("shortlist") }),
     .init(
@@ -121,7 +124,9 @@ enum NativeShortcuts {
         return true
       }
       if name == "m" || name == "s" {
-        if !event.isARepeat { controller.decide(name == "m" ? "use" : "shortlist", assetID: ids[index]) }
+        // Shift-S removes from the shortlist here too, as in the grid.
+        let action = name == "m" ? "use" : flags.contains(.shift) ? "remove-shortlist" : "shortlist"
+        if !event.isARepeat { controller.decide(action, assetID: ids[index]) }
         return true
       }
       return false
@@ -131,7 +136,7 @@ enum NativeShortcuts {
       return true
     }
     let key: [UInt16: String] = [123: "left", 124: "right", 125: "down", 126: "up"]
-    let name = key[event.keyCode] ?? (event.charactersIgnoringModifiers ?? "").lowercased()
+    let name = key[event.keyCode] ?? ([36, 76].contains(event.keyCode) ? "return" : (event.charactersIgnoringModifiers ?? "").lowercased())
     if controller.phase == "assemble", !controller.previewOpen, !controller.cleanPreview, let arrow = key[event.keyCode],
       controller.selectedSlide != nil
     {
@@ -147,7 +152,7 @@ enum NativeShortcuts {
       let step = flags.contains(.shift) ? 10.0 : 1.0
       controller.nudge(
         dx: arrow == "left" ? -step : arrow == "right" ? step : 0,
-        dy: arrow == "up" ? -step : arrow == "down" ? step : 0, frame: PrototypeFrame(frame))
+        dy: arrow == "up" ? -step : arrow == "down" ? step : 0, frame: PrototypeFrame(frame), repeating: event.isARepeat)
       return true
     }
     guard

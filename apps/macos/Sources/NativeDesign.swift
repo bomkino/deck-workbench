@@ -23,6 +23,8 @@ enum NativeDesign {
   static let strongStroke = Color.primary.opacity(0.16)
   static let ready = Color(nsColor: .systemGreen)
   static let attention = Color(nsColor: .systemOrange)
+  /// Shortlisted candidates: distinct from the orange "needs attention" state.
+  static let shortlist = Color(nsColor: .systemIndigo)
   static let muted = Color.secondary
 }
 
@@ -202,6 +204,15 @@ final class NativeSlideThumbnails: ObservableObject {
   /// Slides whose copy does not fit their prototype layout.
   @Published private(set) var overflowing: Set<String> = []
   private var signatures: [String: Int] = [:]
+  /// Slides drawn with a missing image: renewed folder access redraws them.
+  private var incomplete: Set<String> = []
+  private var contentRevision: String?
+  private var contentHashes: [String: Int] = [:]
+  private lazy var encoder: JSONEncoder = {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    return encoder
+  }()
   private var pending: Task<Void, Never>?
   private weak var controller: NativeWorkbenchController?
   static let pixelWidth: CGFloat = 400
@@ -220,18 +231,36 @@ final class NativeSlideThumbnails: ObservableObject {
     }
   }
 
+  /// What the thumbnail draws from the slide itself (not its notes), encoded
+  /// once per document revision rather than on every catalogue poll.
+  private func content(_ slide: DeckSlide, controller: NativeWorkbenchController) -> Int {
+    let revision = controller.document.map { "\($0.deck.deckId):\($0.revision)" }
+    if contentRevision != revision { contentRevision = revision; contentHashes = [:] }
+    if let known = contentHashes[slide.id] { return known }
+    var hash = Hasher()
+    hash.combine(slide.intent)
+    hash.combine(try? encoder.encode(slide.settings.layout)); hash.combine(try? encoder.encode(slide.copyBlocks))
+    hash.combine(try? encoder.encode(slide.mediaAssignments)); hash.combine(try? encoder.encode(slide.legacyComposition))
+    let value = hash.finalize()
+    contentHashes[slide.id] = value
+    return value
+  }
+
   private func signature(_ slide: DeckSlide, canvas: DeckCanvas, controller: NativeWorkbenchController) -> Int {
     var hash = Hasher()
-    hash.combine(canvas.id); hash.combine(slide.intent)
-    hash.combine(try? nativeJSON(slide.settings.layout)); hash.combine(try? nativeJSON(slide.copyBlocks))
-    hash.combine(try? nativeJSON(slide.mediaAssignments)); hash.combine(try? nativeJSON(slide.legacyComposition))
-    for id in slide.chosenIDs.sorted() { hash.combine(id); hash.combine(controller.sources[id]?.cacheKey) }
+    hash.combine(canvas.id); hash.combine(content(slide, controller: controller))
+    let retry = incomplete.contains(slide.id)
+    for id in slide.chosenIDs.sorted() {
+      hash.combine(id)
+      let source = controller.sources[id]
+      hash.combine(retry ? source?.reloadKey : source?.cacheKey)
+    }
     return hash.finalize()
   }
 
   private func refresh() async {
     guard let controller, let canvas = controller.document?.deck.canvasPreset else {
-      images = [:]; signatures = [:]; overflowing = []; return
+      images = [:]; signatures = [:]; overflowing = []; incomplete = []; contentHashes = [:]; return
     }
     let slides = controller.slides
     let live = Set(slides.map(\.id))
@@ -239,6 +268,7 @@ final class NativeSlideThumbnails: ObservableObject {
       images = images.filter { live.contains($0.key) }
       signatures = signatures.filter { live.contains($0.key) }
     }
+    incomplete.formIntersection(live)
     if !overflowing.isSubset(of: live) { overflowing = overflowing.intersection(live) }
     // Finished thumbnails are published in small batches: every row observes
     // this store, so one publish per slide would redraw the list per slide.
@@ -257,15 +287,16 @@ final class NativeSlideThumbnails: ObservableObject {
       guard signatures[slide.id] != key else { continue }
       var decoded: [String: CGImage] = [:]
       var sizes: [String: CGSize] = [:]
+      var wanted = 0
       for id in slide.chosenIDs {
         guard let source = controller.sources[id] else { continue }
-        if let data = await NativeThumbnailService.shared.data(for: source, longestSide: 512),
-          let image = NativeSlideRenderer.decodedImage(data) { decoded[id] = image }
+        wanted += 1
+        if let image = await NativeThumbnailService.shared.image(for: source, longestSide: 512) { decoded[id] = image }
         if let asset = controller.assetIndex[id], let width = asset.width, let height = asset.height {
           sizes[id] = CGSize(width: width, height: height)
         }
       }
-      guard !Task.isCancelled, let current = controller.slides.first(where: { $0.id == slide.id }),
+      guard !Task.isCancelled, let current = controller.slideIndex[slide.id],
         signature(current, canvas: canvas, controller: controller) == key else { continue }
       // Typesetting shares Core Text state that is used on the main actor.
       let scene = NativeSlideRenderer.resolve(slide: current, canvas: canvas)
@@ -277,7 +308,8 @@ final class NativeSlideThumbnails: ObservableObject {
         images: decoded, sourceSizes: sizes, rasterizeGradient: false)
       guard let image = context.makeImage() else { continue }
       batch[slide.id] = NSImage(cgImage: image, size: NSSize(width: width / 2, height: height / 2))
-      signatures[slide.id] = key
+      if decoded.count < wanted { incomplete.insert(slide.id) } else { incomplete.remove(slide.id) }
+      signatures[slide.id] = signature(current, canvas: canvas, controller: controller)
       if Date().timeIntervalSince(lastFlush) > 0.15 { flush() }
       await Task.yield()
     }
@@ -306,7 +338,7 @@ struct NativePanelResizeHandle: View {
               width = min(range.upperBound, max(range.lowerBound, base - value.translation.width))
             }
             .onEnded { _ in start = nil })
-          .onTapGesture(count: 2) { width = 320 }
+          .onTapGesture(count: 2) { width = 310 }
       }
       .onDisappear { if hovering { NSCursor.pop(); hovering = false } }
       .accessibilityHidden(true)

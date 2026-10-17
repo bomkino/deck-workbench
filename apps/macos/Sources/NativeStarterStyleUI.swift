@@ -59,17 +59,16 @@ struct NativeStarterStyleSheet: View {
         Button(applyType && applyColours ? "Apply type & colours" : applyType ? "Apply type" : "Apply colours") {
           do {
             let typePatch: [String: Any] = applyType ? ["starterType": try nativeObject(type)] : [:]
-            let colourPatch: [String: Any] = applyColours ? ["palette": try nativeObject(palette)] : [:]
-            if typeAllSlides == colourAllSlides || typePatch.isEmpty || colourPatch.isEmpty {
-              controller.applyStarterStyle(typePatch.merging(colourPatch) { $1 }, allSlides: typePatch.isEmpty ? colourAllSlides : typeAllSlides)
-            } else {
-              controller.applyStarterStyle(typePatch, allSlides: typeAllSlides)
-              controller.applyStarterStyle(colourPatch, allSlides: colourAllSlides)
-            }
+            // Hex fields keep what was typed (no caret jumps); saved values are uppercase.
+            var saved = palette
+            for (role, pair) in saved.colors { saved.colors[role] = .init(dark: pair.dark.uppercased(), light: pair.light.uppercased()) }
+            let colourPatch: [String: Any] = applyColours ? ["palette": try nativeObject(saved)] : [:]
+            controller.applyStarterStyle(type: typePatch, typeAllSlides: typeAllSlides, colours: colourPatch, colourAllSlides: colourAllSlides)
           } catch { controller.failure = error.localizedDescription }
         }.buttonStyle(.borderedProminent).disabled((applyType && !type.unavailableFonts.isEmpty) || (applyColours && !validPalette))
     }.nativeSheetFrame(width: 690, height: 780)
       .onAppear {
+        NativeFontFamilies.refresh()
         type = controller.selectedSlide?.settings.layout.starterType ?? .standard
         palette = controller.selectedSlide?.settings.layout.palette ?? .standard
         initialType = type
@@ -158,7 +157,10 @@ private struct NativePaletteEditor: View {
       pairedSamples(role)
     }
   }
+  /// Swatches are drawn once per colour, not on every redraw of the sheet.
+  @MainActor private static var swatches: [String: NSImage] = [:]
   private func menuSwatch(_ hex: String) -> NSImage {
+    if let known = Self.swatches[hex] { return known }
     let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { bounds in
       let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 4, yRadius: 4)
       (NSColor(cgColor: NativeSlideRenderer.color(hex)) ?? .clear).setFill()
@@ -169,6 +171,7 @@ private struct NativePaletteEditor: View {
       return true
     }
     image.isTemplate = false
+    Self.swatches[hex] = image
     return image
   }
   private func colourField(_ role: String, light: Bool) -> some View {
@@ -177,7 +180,7 @@ private struct NativePaletteEditor: View {
       RoundedRectangle(cornerRadius: 4).fill(Color(nsColor: NSColor(cgColor: NativeSlideRenderer.color(hex)) ?? .clear)).frame(width: 24, height: 24)
       TextField(light ? "Light \(role)" : "Dark \(role)", text: Binding(get: { palette.hex(role, appearance: light ? "light" : "dark") }, set: {
         var pair = palette.colors[role] ?? NativeStarterPalette.standard.colors[role] ?? .init(dark: hex, light: hex)
-        if light { pair.light = $0.uppercased() } else { pair.dark = $0.uppercased() }
+        if light { pair.light = $0 } else { pair.dark = $0 }
         palette.colors[role] = pair
       })).textFieldStyle(.roundedBorder)
         .accessibilityLabel("\(light ? "Light" : "Dark") slide \(NativeStarterPalette.label(role)) hex colour")
@@ -243,7 +246,7 @@ private struct NativeTypeRoleEditor: View {
         })) {
           Text("SF Pro (system)").tag("System")
           Text("New York (system serif)").tag("System Serif")
-          ForEach(NSFontManager.shared.availableFontFamilies.sorted(), id: \.self) { Text($0).tag($0) }
+          ForEach(NativeFontFamilies.sorted, id: \.self) { Text($0).tag($0) }
         }.accessibilityLabel("\(title) family")
         if !role.isSystemFont {
           Picker("Face", selection: $role.fontName) { ForEach(faces, id: \.0) { Text($0.1).tag($0.0) } }.frame(maxWidth: 220)
@@ -270,4 +273,11 @@ private struct NativeTypeRoleEditor: View {
       }
     }
   }
+}
+
+/// Installed font families, sorted once per opening of the sheet rather than
+/// by each of its three pickers on every redraw.
+@MainActor enum NativeFontFamilies {
+  private(set) static var sorted: [String] = NSFontManager.shared.availableFontFamilies.sorted()
+  static func refresh() { sorted = NSFontManager.shared.availableFontFamilies.sorted() }
 }
