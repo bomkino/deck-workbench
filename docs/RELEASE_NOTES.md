@@ -1,3 +1,15 @@
+# v1.0.0 — fast, steady and ready for real decks
+
+Workbench 1.0 is a quality release: six audits of the whole app, every finding fixed or written down, and the slow paths made fast. Your decks open as before; nothing to migrate.
+
+**Faster with large libraries.** Previews are kept decoded in memory, so scrolling, previewing and the canvas no longer decode images on the main thread, and a rescan or reconnect keeps them instead of loading everything again. The canvas redraws only when the slide changes, typing notes no longer redraws the window, and each edit's document is read off the main thread. A new folder shows its first files within a second, the library re-sorts only what changed, and a folder over 12,000 media files says so plainly.
+
+**Undo that matches what you did.** Holding an arrow key to nudge, and a session of typing designer notes, each undo as one step. Applying type to one slide and colours to every slide is one step too. Undo waits while a sheet is open, so a sheet never works from a deck that changed underneath it, and undoing an added slide keeps you where you were.
+
+**Safer when something goes wrong.** Retry asks before repairing an interrupted save, as opening does, and keeps your queued actions to try again. Quitting with unsaved actions offers to save them to a file first. A deck whose lock could not be removed (a drive that dropped out) reopens without relaunching. Rename actions can be restored from a saved queue, and the recovery copy of a deck's checkpoint is never replaced by a damaged one.
+
+**Smaller things.** Double-clicking a tile previews that tile; Return previews the focused image; Shift-S removes from the shortlist in Compare too; shortlisted images have their own colour; side panels widen with Interface size; the Help menu links this version's guide and notes and a way to report a problem; accessibility labels name the image a button acts on.
+
 # v0.5.0 — a new workspace, PSD copy guides and in-app updates
 
 Install this version by hand once (it replaces 0.4.0 like any earlier release); from here on, Workbench updates itself.
