@@ -21,7 +21,7 @@ Pick the section you need. You do not need to learn everything before starting a
 
 Use the **matching Layout Kit** as your separate layout reference. Its ten pages demonstrate the styles, contents page, light slide and palette. The Workbench importer needs the one-page file. The 1920 files live together in the **1920x1080** folder.
 
-**INDD is your working file.** The Archive folder holds earlier builds, crash-recovery copies and IDML interchange exports. You do not need those for everyday work. The original v0.01 is preserved in `Archive/Earlier Builds/`; only current starter files remain in the working folders.
+**INDD is your working file.** The kit holds only the current starter files; keep your own earlier builds, crash-recovery copies and IDML exports outside it.
 
 Both versions use your **24 × 12** grid.
 
@@ -41,21 +41,15 @@ The five flat layers, front to back, are **TEXT → PSD - CHARACTERS → GRADIEN
 
 ## Bring in your Workbench copy
 
-For copy **and** numbered PSDs, run **Build Deck from Workbench.jsx** from Scripts → User; follow [Deck Production](<Start Here - Deck Production.md>). The steps below are your older copy-only importer. Both use the one-page starter.
+For copy **and** numbered PSDs, run **Build Deck from Workbench.jsx** from Scripts → User and follow [Deck Production](<Start Here - Deck Production.md>). Workbench's **Build InDesign automatically** option runs the same build for you.
 
-1. Put `workbench.md` and your existing `Workbench to InDesign.jsx` beside the saved project INDD.
-2. Open **Window → Utilities → Scripts → User**.
-3. Run your Workbench importer.
-4. Read its result. Review any pages it reports as overset.
-5. Save the populated deck.
+**You should see:** one slide for each Workbench slide, with your copy in the original frame. Review any pages the build reports as overset, then save.
 
-**You should see:** one slide for each Workbench slide, with your copy in the original frame.
-
-Run the importer before adding layouts or a contents page. It needs the original one-page `Head. / Sub. / Body.` setup. Your importer makes a dated backup and leaves the populated document unsaved for review.
+The build starts from the original one-page `Head. / Sub. / Body.` starter, so build before adding layouts or a contents page.
 
 If your Markdown includes a `Canvas:` line, use `widescreen-1920x1080` for the 1920 starter or `cinemascope-2576x1080` for the 2576 starter.
 
-If the importer is missing from Scripts → User, copy `Workbench to InDesign.jsx` into that installation's User Scripts folder. Your existing **Import Workbench.jsx** shortcut was installed in InDesign Beta; the regular InDesign installation has a separate folder.
+If the build script is missing from Scripts → User, copy the complete `Automation/InDesign` folder into that installation's User Scripts folder. Each InDesign installation (including a beta) has its own folder.
 
 ## Choose your fonts
 

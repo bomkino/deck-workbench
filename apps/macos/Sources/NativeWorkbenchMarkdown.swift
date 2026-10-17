@@ -35,6 +35,9 @@ struct WorkbenchProductionSlide: Codable, Sendable {
   var palette: NativeStarterPalette? = nil
   var colourRoles: [String: String]? = nil
   var notes: String
+  /// Whether this slide is the generated Contents (the InDesign builder used
+  /// to infer it from `intent`, which older decks can set without it).
+  var contents: Bool = false
   var blocks: [WorkbenchProductionBlock]
   var projection: [WorkbenchCopyProjection]
   var psd: WorkbenchProductionPSD? = nil
@@ -69,15 +72,20 @@ enum NativeWorkbenchMarkdown {
   static func sha256(_ data: Data) -> String {
     SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
   }
+  /// Prefixes compare UTF-16 code units, as the InDesign importer's indexOf
+  /// does: "State:" followed by a combining mark is still a reserved line.
+  static func reservedPrefix(_ line: String) -> String? {
+    reserved.first { line.utf16.starts(with: $0.utf16) }
+  }
   static func escapeCopy(_ value: String) -> String {
     value.components(separatedBy: "\n").map { line in
       let tail = String(line.drop { $0 == "\\" })
-      return reserved.contains(where: { tail.hasPrefix($0) }) ? "\\" + line : line
+      return reservedPrefix(tail) != nil ? "\\" + line : line
     }.joined(separator: "\n")
   }
   static func decodeCopyLine(_ line: String) -> String {
     let tail = String(line.drop { $0 == "\\" })
-    return line.hasPrefix("\\") && reserved.contains(where: { tail.hasPrefix($0) })
+    return line.hasPrefix("\\") && reservedPrefix(tail) != nil
       ? String(line.dropFirst()) : line
   }
   private static func nonblank(_ value: String) -> Bool {
@@ -97,6 +105,25 @@ enum NativeWorkbenchMarkdown {
       plan["format"] as? String == "pitchdog.workbench-plan",
       let values = plan["copyFieldStates"] as? [String: String] else { return [:] }
     return values.filter { states.contains($0.value) }
+  }
+  /// The original fields a projected field is made of: Headline and
+  /// Subheadline are their own role; Body is every other field, in order.
+  static func projectionGroup(_ role: String, in blocks: [DeckCopyBlock]) -> [DeckCopyBlock] {
+    blocks.filter { role == "body" ? !["headline", "subheadline"].contains($0.role) : $0.role == role }
+  }
+  /// The text and state `workbench.md` carries for one projected field, as
+  /// `project` writes it. Replacement compares against it to keep fields the
+  /// incoming file did not change.
+  static func projectedField(_ role: String, of slide: DeckSlide) -> (text: String, state: String) {
+    let legacy = legacyStates(slide)
+    let group = projectionGroup(role, in: slide.copyBlocks)
+    let text = group.filter { !$0.text.isEmpty }.map(\.text).joined(separator: "\n\n")
+    if !text.isEmpty { return (text, "present") }
+    if !group.isEmpty {
+      let resolved = group.map { $0.state ?? legacy[$0.role] ?? "unreviewed" }
+      return (text, resolved.allSatisfy { $0 == "intentionally-blank" } ? "intentionally-blank" : "unreviewed")
+    }
+    return (text, legacy[role] == "intentionally-blank" ? "intentionally-blank" : "unreviewed")
   }
   static func project(snapshot: DeckDocumentSnapshot, slides: [DeckSlide]) throws -> WorkbenchProductionCopy {
     guard !slides.isEmpty, slides.count <= 1000, Set(slides.map(\.id)).count == slides.count,
@@ -139,12 +166,9 @@ enum NativeWorkbenchMarkdown {
       }
       var projection: [WorkbenchCopyProjection] = []
       for role in roles {
-        let group = blocks.filter { role == "body" ? !["headline", "subheadline"].contains($0.role) : $0.role == role }
-        let text = group.filter { !$0.text.isEmpty }.map(\.text).joined(separator: "\n\n")
-        let state: String
-        if !text.isEmpty { state = "present" }
-        else if !group.isEmpty { state = group.allSatisfy { $0.resolvedState == "intentionally-blank" } ? "intentionally-blank" : "unreviewed" }
-        else { state = legacy[role] == "intentionally-blank" ? "intentionally-blank" : "unreviewed" }
+        let groupIDs = Set(projectionGroup(role, in: slide.copyBlocks).map(\.id))
+        let group = blocks.filter { groupIDs.contains($0.blockID) }
+        let (text, state) = projectedField(role, of: slide)
         projection.append(WorkbenchCopyProjection(role: role, state: state, text: text, sourceBlockIDs: group.map(\.blockID)))
         if group.count > 1 || group.contains(where: { $0.role != role }) {
           warnings.append("Slide \(index + 1): \(group.map(\.role).joined(separator: ", ")) projected into \(role), separated by paragraph breaks. Original fields remain in Copy.md and the manifest.")
@@ -163,9 +187,9 @@ enum NativeWorkbenchMarkdown {
       entries.append(WorkbenchProductionSlide(slideID: slide.id, sectionID: section.id,
         sourceOrdinal: ordinal + 1, exportOrdinal: index + 1, title: slide.title,
         intent: slide.intent, appearance: layout.appearance,
-        palette: carriesColours ? layout.palette ?? .standard : nil,
+        palette: carriesColours ? (layout.palette ?? .standard).complete : nil,
         colourRoles: carriesColours ? ["head": type.head.colorRole, "sub": type.sub.colorRole, "body": type.body.colorRole] : nil,
-        notes: slide.settings.notes, blocks: blocks, projection: projection))
+        notes: slide.settings.notes, contents: layout.contents == true, blocks: blocks, projection: projection))
     }
     let markdown = chunks.joined(separator: "\n\n") + "\n"
     guard markdown.utf8.count <= 1_048_576 else {
@@ -227,11 +251,12 @@ enum NativeWorkbenchMarkdown {
         guard !slides.isEmpty else { throw error("Each Part needs at least one Slide.") }
         parts.append(ImportedCopyPart(id: UUID().uuidString.lowercased(), title: name, slides: slides))
       }
-      guard !parts.isEmpty, parts.flatMap(\.slides).count <= 1000, title.count <= 240,
-        parts.flatMap(\.slides).allSatisfy({ $0.title.count <= 240 && $0.blocks.allSatisfy { $0.text.utf16.count <= 262144 } }) else {
+      guard !parts.isEmpty, parts.flatMap(\.slides).count <= 1000, NativeTitle.isValid(title),
+        parts.allSatisfy({ NativeTitle.isValid($0.title) }),
+        parts.flatMap(\.slides).allSatisfy({ NativeTitle.isValid($0.title) && $0.blocks.allSatisfy { $0.text.utf16.count <= 262144 } }) else {
         throw error("Use 1–1000 slides, titles up to 240 characters and fields up to 262144 characters.")
       }
-      return ImportedCopyDocument(title: title, canvasID: canvas, parts: parts)
+      return ImportedCopyDocument(title: title, canvasID: canvas, parts: parts, projected: true)
     }
     mutating func slide() throws -> ImportedCopySlide {
       let title = try value("### Slide:")
@@ -250,7 +275,7 @@ enum NativeWorkbenchMarkdown {
         var raw: [String] = []
         while cursor < lines.count {
           let line = lines[cursor]
-          if let prefix = reserved.first(where: { line.hasPrefix($0) }) {
+          if let prefix = reservedPrefix(line) {
             if roles.contains(where: { line == "#### \($0.capitalized)" }) || prefix == "### Slide:" || prefix == "## Part:" { break }
             throw error("Unexpected marker \(prefix); escape structural-looking copy.")
           }

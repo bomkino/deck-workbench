@@ -73,6 +73,13 @@ struct NativeStarterPalette: Codable, Equatable, Sendable {
     if role.hasPrefix("accent") { return "Accent \(role.suffix(1))" }
     return role.capitalized
   }
+  /// Every role the renderer can fall back to, so the InDesign builder (which
+  /// has no fallback) colours each slide exactly as Workbench drew it.
+  var complete: NativeStarterPalette {
+    var result = self
+    for (role, pair) in Self.standard.colors where result.colors[role] == nil { result.colors[role] = pair }
+    return result
+  }
   func hex(_ role: String, appearance: String) -> String {
     let pair = colors[role] ?? Self.standard.colors[role] ?? Self.standard.colors["text"]!
     return appearance == "light" ? pair.light : pair.dark

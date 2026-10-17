@@ -258,7 +258,9 @@ var WorkbenchInDesign = (function () {
         var text;
         try { text = file.read(); if (file.error) fail("Could not finish reading workbench.md: " + file.error); }
         finally { file.close(); }
-        if (/\u0000|\uFFFD/.test(text)) fail("workbench.md contains a NUL or replacement character. Save a valid UTF-8 plain-text export and run again.");
+        // A replacement character means a decoding failure, unless the build has
+        // just verified this file against Workbench's export hash.
+        if (/\u0000/.test(text) || (!$.global.pitchdogVerifiedCopy && /\uFFFD/.test(text))) fail("workbench.md contains a NUL or replacement character. Save a valid UTF-8 plain-text export and run again.");
         return text;
     }
     function backupDocument(doc) {

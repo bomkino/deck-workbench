@@ -13,7 +13,7 @@ concurrency:
 jobs:
   native:
     runs-on: macos-26
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -26,10 +26,20 @@ jobs:
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - name: Check document mutations and retained durability behavior
         run: npm test
+      - name: Check the InDesign builder's bundle validators
+        run: node tests/verify-indesign-bundle.mjs "apps/macos/Resources/StarterKit/Automation/InDesign/Deck Production.jsxinc"
       - name: Build exact native application
+        id: build
         run: scripts/build-native-macos.sh
       - name: Exercise the extracted Mac application and handoff
         run: scripts/verify-native-package.sh
+      - name: Capture every main screen and sheet for visual review
+        if: always() && steps.build.outcome == 'success'
+        timeout-minutes: 5
+        run: '"build/native/Deck Workbench.app/Contents/MacOS/DeckWorkbench" --native-ui-gallery "$PWD/artifacts/ui"'
+      - name: Update a test copy from a signed local feed and refuse a tampered one
+        timeout-minutes: 10
+        run: scripts/test-update.sh
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
@@ -39,10 +49,13 @@ jobs:
             artifacts/*.sha256
             artifacts/evidence/native-acceptance.json
             artifacts/evidence/psd/PSD proof.json
+            artifacts/evidence/psd/*.png
             artifacts/evidence/*.png
+            artifacts/ui/*.png
+            artifacts/ui/gallery.json
             artifacts/evidence/handoffs/**/*.pdf
             artifacts/evidence/handoffs/**/*.md
             artifacts/evidence/handoffs/**/*.csv
             artifacts/evidence/handoffs/**/Export issues.txt
           if-no-files-found: warn
-          retention-days: 30
+          retention-days: 90

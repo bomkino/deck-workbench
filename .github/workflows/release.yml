@@ -1,13 +1,24 @@
+# Publishes one version, run by hand from the Actions tab on main for an
+# existing vX.Y.Z tag: the exact successful CI artifact of the tag's commit
+# (never rebuilt), its acceptance receipt, and the update feed installed
+# copies read, signed with pitch.dog's update key (docs/UPDATES.md).
+#
+# The key is the SPARKLE_PRIVATE_KEY secret of the `release` environment,
+# which only main may use. Only the signing step receives it; it is written to
+# a file only the runner can read, used by Sparkle's generate_appcast and
+# deleted. Scripts run from main's checkout, never from the tagged commit.
 name: Publish tagged Mac release
 on:
-  push:
-    tags: ['v*']
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing version tag to publish
+        description: Existing version tag to publish (vX.Y.Z, on main)
         required: true
         type: string
+      rehearse:
+        description: Rehearse (find, check and sign the artifact, but don't publish)
+        type: boolean
+        default: false
 permissions:
   contents: write
   actions: read
@@ -17,14 +28,38 @@ concurrency:
 jobs:
   publish:
     runs-on: macos-26
-    timeout-minutes: 10
+    environment: release
+    timeout-minutes: 30
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      RELEASE_TAG: ${{ inputs.tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
-          ref: ${{ inputs.tag || github.ref_name }}
-      - name: Publish the exact verified artifact without rebuilding
-        run: scripts/publish-native-release.sh "$RELEASE_TAG"
+      - name: On main only
+        run: '[ "$GITHUB_REF" = refs/heads/main ] || { echo "::error::Run this from main."; exit 1; }'
+      - name: Find and check the exact artifact
+        run: scripts/publish-native-release.sh stage "$RELEASE_TAG" "$RUNNER_TEMP/release"
+      - name: Sign the update feed
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          [ -n "$SPARKLE_PRIVATE_KEY" ] || { echo "::error::The release environment has no SPARKLE_PRIVATE_KEY secret. docs/UPDATES.md has the one-time command that sets it."; exit 1; }
+          SPARKLE_BIN="$(scripts/fetch-sparkle.sh)/bin"
+          umask 077
+          printf '%s' "$SPARKLE_PRIVATE_KEY" | tr -d '[:space:]' > "$RUNNER_TEMP/update.key"
+          SPARKLE_BIN="$SPARKLE_BIN" SPARKLE_KEY="$RUNNER_TEMP/update.key" \
+            DOWNLOAD_URL="https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_TAG/" \
+            scripts/sign-release.sh "$RUNNER_TEMP/release" "$RUNNER_TEMP/release/update-notes.md"
+          rm -f "$RUNNER_TEMP/update.key"
+      - name: Publish the release
+        if: ${{ !inputs.rehearse }}
+        run: scripts/publish-native-release.sh publish "$RELEASE_TAG" "$RUNNER_TEMP/release"
+      - name: Update a copy of the release before from the live feed
+        if: ${{ !inputs.rehearse }}
+        timeout-minutes: 10
+        run: scripts/test-live-update.sh
+      - name: Forget the key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/update.key"

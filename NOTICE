@@ -5,13 +5,18 @@ Copyright contributors.
 Licensed under the GNU Affero General Public License, version 3. See LICENSE.
 
 Redistributed third-party materials include FontBlind v13 font binaries
-(CC0-1.0) and Phosphor Icons Web 2.1.2 (MIT). Exact provenance and licence
+(CC0-1.0), the starter kit's PD House v13.1.1 fonts (CC0-1.0) and Phosphor
+Icons Web 2.1.2 (MIT). Exact provenance and licence
 declarations/notices are retained under `legal/` and summarized in
 `THIRD_PARTY.md`.
 
 The offline PSD encoder includes ag-psd 31.0.2 (MIT), pako 2.1.0
 (MIT AND Zlib), and base64-js 1.5.1 (MIT). Their notices ship under
 `legal/psd-encoder/`. esbuild 0.28.2 (MIT) is a build tool only.
+
+In-app updates use Sparkle 2.10.0 (MIT, with the external licences of the
+code it includes), embedded unchanged as `Contents/Frameworks/Sparkle.framework`.
+Its full licence ships under `legal/sparkle/`.
 
 No promotional credit, logo placement, backlink or praise to pitch.dog is
 requested beyond legally required notices.

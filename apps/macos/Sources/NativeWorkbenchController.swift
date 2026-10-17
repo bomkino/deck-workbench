@@ -27,7 +27,7 @@ final class NativeWorkbenchController: ObservableObject {
     }
   }
   @Published var status = "Import final copy to begin."
-  @Published var failure: String?
+  @Published var failure: String? { didSet { if let failure, failure != oldValue { announce(failure) } } }
   @Published var assets: [NativeMediaAsset] = [] { didSet { indexAssets() } }
   @Published var roots: [NativeMediaRoot] = []
   @Published var sources: [String: NativeMediaSource] = [:]
@@ -82,6 +82,8 @@ final class NativeWorkbenchController: ObservableObject {
     }
   }
   @Published var viewportRevision = 0
+  /// Review deck shows the slide's designer notes beside it (N).
+  @Published var reviewNotes = false
   @Published var showContext = true
   @Published var contextWidth: Double = UserDefaults.standard.object(forKey: "native.contextWidth") as? Double ?? 310 {
     didSet { UserDefaults.standard.set(contextWidth, forKey: "native.contextWidth") }
@@ -129,6 +131,8 @@ final class NativeWorkbenchController: ObservableObject {
   @Published private(set) var failedCommands: [NativePendingCommand] = []
   private(set) var documentURL: URL?
   let session: NativeDocumentSession
+  /// Navigator thumbnails, observed separately so a render only redraws the slide list.
+  let thumbnails = NativeSlideThumbnails()
   private var writeTail: Task<Void, Never>?
   private var noteTasks: [String: Task<Void, Never>] = [:]
   private var scanTask: Task<Void, Never>?
@@ -184,6 +188,7 @@ final class NativeWorkbenchController: ObservableObject {
         name: "KernelUnavailable", message: "The bundled document engine is missing.")
     }
     session = try NativeDocumentSession(kernelURL: url)
+    thumbnails.attach(self)
     applyTheme()
   }
   var selectedSlide: DeckSlide? { selectedSlideID.flatMap { slideIndex[$0] } }
@@ -193,6 +198,7 @@ final class NativeWorkbenchController: ObservableObject {
     slideIndex = Dictionary(uniqueKeysWithValues: slides.map { ($0.id, $0) })
     slideOrdinals = Dictionary(uniqueKeysWithValues: slides.enumerated().map { ($0.element.id, $0.offset + 1) })
     refreshMediaScope()
+    thumbnails.schedule()
     if let slide = selectedSlide {
       if !slide.imageRoles.contains(curateRole) { curateRole = slide.imageRoles.first ?? "primary" }
       let preset = NativeSlideRenderer.resolvedPreset(slide: slide)
@@ -291,6 +297,26 @@ final class NativeWorkbenchController: ObservableObject {
     return pendingSearchFocus
   }
   func endCleanPreview() { cleanPreview = false }
+  /// The next included slide, after the selected one and wrapping round, that
+  /// still has an empty image slot.
+  func nextSlideNeedingImage() {
+    // A sheet works on the slide it opened with; never retarget it.
+    guard document != nil, !slides.isEmpty, !lifecycleBusy, !modalOpen else { return }
+    let start = slideOrdinals[selectedSlideID ?? ""] ?? 0
+    let ordered = Array(slides[min(start, slides.count)...]) + Array(slides[..<min(start, slides.count)])
+    guard let next = ordered.first(where: { NativeSlideReadiness($0).needsImage }) else {
+      status = "Every included slide has its images."
+      return
+    }
+    cleanPreview = false
+    selectSlide(next.id)
+    phase = "curate"
+  }
+  /// Any sheet that owns the keyboard; drops wait until it closes.
+  var modalOpen: Bool {
+    showShortcuts || showExport || showSettings || copyEditorOpen || imported != nil || showApplyLayout
+      || showStarterStyle || showMoodboard || showExportResult
+  }
   func startCleanPreview() {
     guard document != nil, !lifecycleBusy, !copyEditorOpen else { return }
     cleanPreview.toggle()
@@ -336,6 +362,8 @@ final class NativeWorkbenchController: ObservableObject {
     }
   }
   private func remember(_ url: URL) {
+    // The packaged self-test's temporary decks never join the person's recents.
+    guard !CommandLine.arguments.contains("--native-self-test") else { return }
     var urls = recentDocuments.filter { $0 != url }
     urls.insert(url, at: 0)
     UserDefaults.standard.set(Array(urls.prefix(12)).map(\.path), forKey: "native.recentDocuments")
@@ -361,11 +389,19 @@ final class NativeWorkbenchController: ObservableObject {
   func focusNext(_ delta: Int) {
     let ids = previewOpen ? previewIDs : filteredAssets.map(\.id)
     guard !ids.isEmpty else { return }
-    guard let index = ids.firstIndex(of: focusedAssetID ?? "") else {
+    if let index = ids.firstIndex(of: focusedAssetID ?? "") {
+      focusedAssetID = ids[min(ids.count - 1, max(0, index + delta))]
+    } else {
       focusedAssetID = delta < 0 ? ids.last : ids.first
-      return
     }
-    focusedAssetID = ids[min(ids.count - 1, max(0, index + delta))]
+    // Media focus is drawn, not a real focus, so VoiceOver is told the image.
+    if let id = focusedAssetID, let asset = assetIndex[id] { announce(asset.filename) }
+  }
+  /// Spoken by VoiceOver when it is running; ignored otherwise.
+  func announce(_ text: String) {
+    guard let window = NSApp.keyWindow ?? NSApp.mainWindow else { return }
+    NSAccessibility.post(element: window, notification: .announcementRequested,
+      userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue])
   }
   func preview(_ id: String? = nil) {
     previewUsesCandidates = false
@@ -427,7 +463,11 @@ final class NativeWorkbenchController: ObservableObject {
           // Definitive validation rejection did not touch the journal. Keep later
           // independent actions usable; only uncertain storage failures fence it.
           self.failure = "\(command.label) was not applied: \(rejected.message)"
-          if let id = command.noteSlideID { self.enqueuedNoteGenerations[id] = nil }
+          if let id = command.noteSlideID {
+            self.enqueuedNoteGenerations[id] = nil
+            // Notes for a slide that no longer exists can never be saved.
+            if self.slideIndex[id] == nil { self.notesDrafts[id] = nil; self.noteTasks.removeValue(forKey: id)?.cancel() }
+          }
           return
         }
         self.failedCommands.append(command)
@@ -460,6 +500,11 @@ final class NativeWorkbenchController: ObservableObject {
   private func commitNote(_ id: String) {
     guard let text = notesDrafts[id], let generation = noteGenerations[id],
       enqueuedNoteGenerations[id] != generation, let deckID = document?.deck.deckId else { return }
+    guard slideIndex[id] != nil || !failedCommands.isEmpty else {
+      // The slide was deleted (and its deletion saved); its draft has no destination.
+      notesDrafts[id] = nil
+      return
+    }
     if slideIndex[id]?.settings.notes == text && enqueuedNoteGenerations[id] == nil {
       notesDrafts[id] = nil
       return
@@ -569,7 +614,11 @@ final class NativeWorkbenchController: ObservableObject {
       await prior?.value
       guard let self else { return }
       defer { self.pendingCount -= 1 }
-      guard self.failedCommands.isEmpty, self.document?.deck.deckId == deckID else { return }
+      guard self.document?.deck.deckId == deckID else { return }
+      guard self.failedCommands.isEmpty else {
+        self.failure = "\(redo ? "Redo" : "Undo") waits until the pending actions are saved. Retry or discard them first."
+        return
+      }
       let history = self.document?.history
       guard redo ? history?.canRedo == true : history?.canUndo == true else { return }
       do { self.accept(try await self.session.history(redo: redo, deckID: deckID)) }
@@ -645,7 +694,7 @@ final class NativeWorkbenchController: ObservableObject {
       deckID == document?.deck.deckId, !lifecycleBusy else { return }
     do {
       var update: [String: Any] = ["slideId": target.id, "blocks": try nativeObject(blocks),
-        "expectedBlocks": try nativeObject(target.copyBlocks)]
+        "expectedCopyDigest": NativeCopyDigest.digest(target.copyBlocks)]
       if let title, title != target.title { update["title"] = title }
       let payload = try JSONSerialization.data(withJSONObject: ["slides": [update]], options: .sortedKeys)
       copyEditorSaving = true
@@ -736,10 +785,8 @@ final class NativeWorkbenchController: ObservableObject {
     guard let id = requestedID ?? selectedSlideID, let source = slideIndex[id],
       let section = document?.deck.sections.first(where: { $0.slides.contains(where: { $0.id == id }) }) else { return }
     let duplicateID = UUID().uuidString.lowercased()
-    var stem = String(source.title.prefix(450))
-    while stem.utf16.count > 450 { stem.removeLast() }
-    var title = "\(stem) — Copy", n = 2
-    while slides.contains(where: { $0.title == title }) { title = "\(stem) — Copy \(n)"; n += 1 }
+    var title = NativeTitle.withSuffix(source.title, " — Copy"), n = 2
+    while slides.contains(where: { $0.title == title }) { title = NativeTitle.withSuffix(source.title, " — Copy \(n)"); n += 1 }
     queueSlideEdit(type: "native.slide.duplicate", payload: ["slideId": duplicateID,
       "sourceSlideId": id, "sectionId": section.id, "afterSlideId": id, "title": title],
       label: "Duplicate Slide", selectedAfter: duplicateID)
@@ -755,9 +802,41 @@ final class NativeWorkbenchController: ObservableObject {
     alert.addButton(withTitle: "Rename"); alert.addButton(withTitle: "Cancel")
     alert.window.initialFirstResponder = field
     guard alert.runModal() == .alertFirstButtonReturn else { return }
-    let title = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !title.isEmpty && title.utf16.count <= 500 else { failure = "Use a slide name from 1 to 500 characters."; return }
+    let title = NativeTitle.clean(field.stringValue)
+    guard NativeTitle.isValid(title) else { failure = "Use a slide name of 1 to 240 characters."; return }
     renameSlide(id, to: title)
+  }
+  /// Deck and part names follow the same rule as slide names, so a name
+  /// imported before that rule (or with a stray space or tab) can be fixed
+  /// without re-importing.
+  func renameDeck() {
+    guard slideEditingAvailable, let deck = document?.deck,
+      let title = askForName("Rename deck", "This names the deck in Workbench and in handoff folders and production writing.", current: deck.title)
+    else { return }
+    guard title != deck.title else { return }
+    queueSlideEdit(type: "deck.rename", payload: ["title": title], label: "Rename Deck")
+  }
+  func renamePart(_ requestedID: String? = nil) {
+    guard slideEditingAvailable, let id = requestedID ?? selectedSlideID,
+      let section = document?.deck.sections.first(where: { $0.slides.contains(where: { $0.id == id }) }),
+      let title = askForName("Rename part", "Parts group slides in the sidebar and in production writing.", current: section.title)
+    else { return }
+    guard title != section.title else { return }
+    queueSlideEdit(type: "section.rename", payload: ["sectionId": section.id, "title": title], label: "Rename Part")
+  }
+  private func askForName(_ message: String, _ information: String, current: String) -> String? {
+    let alert = NSAlert()
+    alert.messageText = message
+    alert.informativeText = information
+    let field = NSTextField(string: current)
+    field.frame = NSRect(x: 0, y: 0, width: 320, height: 24)
+    alert.accessoryView = field
+    alert.addButton(withTitle: "Rename"); alert.addButton(withTitle: "Cancel")
+    alert.window.initialFirstResponder = field
+    guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+    let title = NativeTitle.clean(field.stringValue)
+    guard NativeTitle.isValid(title) else { failure = "Use a name of 1 to 240 characters."; return nil }
+    return title
   }
   func renameSlide(_ id: String, to title: String) {
     queueSlideEdit(type: "native.slide.rename", payload: ["slideId": id, "title": title], label: "Rename Slide")
@@ -814,6 +893,31 @@ final class NativeWorkbenchController: ObservableObject {
       self.beginImport { try NativeCopyImport.read(url) }
     }
   }
+  /// Files dropped on the window: a deck opens, writing is read for import
+  /// and a folder is added as media.
+  func handleDrop(_ urls: [URL]) -> Bool {
+    guard let url = urls.first, !lifecycleBusy else { return false }
+    guard !modalOpen else { status = "Finish or close the open sheet, then drop again."; return false }
+    var directory: ObjCBool = false
+    let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &directory)
+    switch url.pathExtension.lowercased() {
+    case "pitchdeck":
+      Task { await open(url) }
+    case "md", "markdown", "txt", "text":
+      guard !importRunning, !replacementSaving else { return false }
+      guard !copyEditorOpen else { copyEditorError = "Save or cancel this copy edit before importing more writing."; return false }
+      beginImport { try NativeCopyImport.read(url) }
+    default:
+      guard exists, directory.boolValue, document != nil, !scanRunning else {
+        status = document == nil ? "Drop final copy (.md or .txt) or a .pitchdeck to begin."
+          : scanRunning ? "A media scan is running. Drop the folder again when it finishes."
+          : "Drop a folder of media, final copy or a deck."
+        return false
+      }
+      startScan(url: url, rootID: nil)
+    }
+    return true
+  }
   private func beginImport(_ operation: @escaping @Sendable () throws -> ImportedCopyDocument) {
     guard !lifecycleBusy, !importRunning else { return }
     importRunning = true; importError = nil; importGeneration += 1
@@ -864,24 +968,49 @@ final class NativeWorkbenchController: ObservableObject {
     }
   }
   func open(_ url: URL) async {
-    guard !lifecycleBusy else { return }
+    guard !lifecycleBusy else { status = "Workbench is finishing the previous action. Try again in a moment."; return }
     if documentURL?.standardizedFileURL == url.standardizedFileURL { return }
     lifecycleBusy = true
     defer { lifecycleBusy = false }
     guard await closeCurrentDocument() else { return }
     do {
-      try apply(await session.open(at: url))
+      try apply(await openWithConsent(url))
       documentURL = url
       remember(url)
       status = "Deck opened"
       await refreshCatalog()
+    } catch is CancellationError {
+      status = "The deck was not opened and was not changed."
     } catch {
-      failure =
-        "\(error.localizedDescription) Use Recover Saved Copy for a crash-left lock; the original will not be changed."
+      let name = (error as? WorkbenchFailure)?.name
+      failure = name == "JournalCorruption" || name == "UnsupportedSchema" || name == "MissingAttachment"
+        ? "\(error.localizedDescription) Use Recover Saved Copy to make a working copy; the original will not be changed."
+        : error.localizedDescription
     }
   }
+  /// A deck left by a crash may need its stale lock replaced or an interrupted
+  /// final journal line set aside. Both happen only after the person agrees,
+  /// for the exact bytes they were told about, with the originals kept inside
+  /// the deck's recovery folder.
+  private func openWithConsent(_ url: URL) async throws -> Data {
+    var repairs = PitchDeckOpenRepairs()
+    for _ in 0..<3 {
+      do { return try await session.open(at: url, repairs: repairs) }
+      catch let failure as WorkbenchFailure where ["StaleWriterLock", "InterruptedJournal"].contains(failure.name) && failure.detail != nil {
+        let lock = failure.name == "StaleWriterLock"
+        let alert = NSAlert()
+        alert.messageText = lock ? "Open a deck that was not closed properly?" : "Open without the interrupted change?"
+        alert.informativeText = failure.message + "\n\nTo leave this deck exactly as it is, choose Cancel and use File → Recover Saved Copy instead."
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: lock ? "Open Deck" : "Open Without It")
+        guard alert.runModal() == .alertSecondButtonReturn else { throw CancellationError() }
+        if lock { repairs.staleLockDigest = failure.detail } else { repairs.interruptedJournalDigest = failure.detail }
+      }
+    }
+    throw WorkbenchFailure(name: "DocumentBusy", message: "The deck changed while Workbench was checking it. Nothing was changed; try opening it again.")
+  }
   @discardableResult func closeForSwitch() async -> Bool {
-    guard !lifecycleBusy else { return false }
+    guard !lifecycleBusy else { status = "Workbench is finishing the previous action. Try again in a moment."; return false }
     lifecycleBusy = true
     defer { lifecycleBusy = false }
     return await closeCurrentDocument()
@@ -894,10 +1023,21 @@ final class NativeWorkbenchController: ObservableObject {
       return false
     }
     await flush()
-    guard failedCommands.isEmpty && notesDrafts.isEmpty else {
+    guard failedCommands.isEmpty else {
       failure =
-        "Some notes or actions are not saved. Retry them, or save the pending-actions file and explicitly discard the queue before closing."
+        "Some actions are not saved. Use Retry Pending Actions, or Save Pending Actions… and then Discard Unsaved Actions… before closing."
       return false
+    }
+    if !notesDrafts.isEmpty {
+      // Everything that could be saved was; what remains was refused (a note
+      // over the length limit, say). Never leave the deck impossible to close.
+      let alert = NSAlert()
+      alert.messageText = "Discard notes that could not be saved?"
+      alert.informativeText = "Notes on \(notesDrafts.count == 1 ? "one slide" : "\(notesDrafts.count) slides") were refused when saving. The rest of the deck is saved. Copy the notes first if you need them."
+      alert.addButton(withTitle: "Keep Deck Open")
+      alert.addButton(withTitle: "Discard and Close")
+      guard alert.runModal() == .alertSecondButtonReturn else { return false }
+      notesDrafts = [:]
     }
     if exportRunning || exportChoosingDestination {
       failure = "Cancel or finish the handoff before closing this deck."
@@ -910,30 +1050,35 @@ final class NativeWorkbenchController: ObservableObject {
     prefetchTask?.cancel(); prefetchTask = nil
     if let media = try? await session.mediaSession() { await media.cancelNativeScans() }
     do {
-      try await session.close()
-      document = nil
-      documentURL = nil
-      selectedSlideID = nil
-      notesDrafts = [:]
-      noteGenerations = [:]
-      enqueuedNoteGenerations = [:]
-      previewOpen = false; previewIDs = []; previewUsesCandidates = false
-      compareOpen = false; comparedAssetID = nil; compareIDs = []
-      focusedAssetID = nil; cleanPreview = false; exportResult = nil; showExportResult = false
-      showExport = false; showApplyLayout = false; showStarterStyle = false; showMoodboard = false; imported = nil; importError = nil
-      pendingSearchFocus = false
-      query = ""; collection = "all"; selectedRootID = nil
+      let closeWarning = try await session.close()
+      clearDocumentState()
       failure = nil
-      assets = []
-      roots = []
-      sources = [:]
-      catalogRevision = -1
-      status = "Import final copy to begin."
+      status = closeWarning ?? "Import final copy to begin."
       return true
     } catch {
       failure = error.localizedDescription
       return false
     }
+  }
+  /// The window state of no open deck. Parked actions are kept.
+  private func clearDocumentState() {
+    document = nil
+    documentURL = nil
+    selectedSlideID = nil
+    notesDrafts = [:]
+    noteGenerations = [:]
+    enqueuedNoteGenerations = [:]
+    previewOpen = false; previewIDs = []; previewUsesCandidates = false
+    compareOpen = false; comparedAssetID = nil; compareIDs = []
+    focusedAssetID = nil; cleanPreview = false; exportResult = nil; showExportResult = false
+    showExport = false; showApplyLayout = false; showStarterStyle = false; showMoodboard = false; imported = nil; importError = nil
+    pendingSearchFocus = false
+    query = ""; collection = "all"; selectedRootID = nil
+    assets = []
+    roots = []
+    sources = [:]
+    catalogRevision = -1
+    status = "Import final copy to begin."
   }
   func save() {
     guard !lifecycleBusy, let deckID = document?.deck.deckId else { return }
@@ -950,23 +1095,35 @@ final class NativeWorkbenchController: ObservableObject {
   func retryPending() {
     guard !lifecycleBusy, !exportRunning, !exportChoosingDestination, !copyEditorOpen else { return }
     lifecycleBusy = true
+    // Note drafts join the parked queue first, so no debounce can slip a note
+    // in while the deck reopens and then be cleared with the old queue.
+    for task in noteTasks.values { task.cancel() }
+    noteTasks = [:]
+    for id in Array(notesDrafts.keys) { commitNote(id) }
     Task {
       defer { lifecycleBusy = false }
       await writeTail?.value
       guard let url = documentURL else { return }
-      let pending = failedCommands
       scanTask?.cancel(); scanTask = nil; scanRunning = false
       catalogGeneration += 1; catalogRefreshToken = nil
       do {
         try await session.close()
+      } catch { failure = error.localizedDescription; return }
+      do {
         try apply(await session.open(at: url))
-        catalogRevision = -1
-        catalogGeneration += 1
-        await refreshCatalog()
-        failedCommands = []
-        failure = nil
-        for command in pending { submit(command) }
-      } catch { failure = error.localizedDescription }
+      } catch {
+        // The deck is closed now; showing it would park every new edit.
+        clearDocumentState()
+        failure = "Retry could not reopen the deck: \(error.localizedDescription) Its unsaved actions are kept here: choose Save Pending Actions… to keep them, then reopen the deck or use File → Recover Saved Copy."
+        return
+      }
+      catalogRevision = -1
+      catalogGeneration += 1
+      await refreshCatalog()
+      let pending = failedCommands
+      failedCommands = []
+      failure = nil
+      for command in pending { submit(command) }
     }
   }
   func savePending() {
@@ -1103,6 +1260,8 @@ final class NativeWorkbenchController: ObservableObject {
       catalogRefreshToken = nil
       if Task.isCancelled {
         status = "Scan cancelled; discovered media remains available."
+        // This task is cancelled, so the final catalogue is fetched outside it.
+        Task { [weak self] in await self?.refreshCatalog() }
         return
       }
       await refreshCatalog()
@@ -1111,10 +1270,14 @@ final class NativeWorkbenchController: ObservableObject {
       let scan = object?["scan"] as? [String: Any]
       status =
         scan?["status"] as? String == "incomplete"
-        ? "Scan stopped with partial results; nothing was marked missing."
+        ? "Scan stopped with partial results; only files confirmed gone were marked missing."
         : "\(assets.count) media files available"
     } catch is CancellationError {
-      if generation == catalogGeneration { status = "Scan cancelled; discovered media remains available." }
+      if generation == catalogGeneration {
+        status = "Scan cancelled; discovered media remains available."
+        catalogRevision = -1
+        Task { [weak self] in await self?.refreshCatalog() }
+      }
     } catch { if generation == catalogGeneration { failure = error.localizedDescription } }
   }
   func rescan(_ id: String) { startScan(url: nil, rootID: id) }
@@ -1135,6 +1298,7 @@ final class NativeWorkbenchController: ObservableObject {
       sources = resolved
       roots = update.catalog.roots
       assets = update.catalog.assets
+      thumbnails.schedule()
       catalogRevision = update.catalog.revision
       prefetchAdjacent()
     } catch {
@@ -1186,11 +1350,18 @@ final class NativeWorkbenchController: ObservableObject {
     exportRunning = true; exportProgress = 0; exportGeneration += 1
     let generation = exportGeneration
     defer { exportRunning = false; exportGeneration += 1 }
-    await flush()
+    // Notes typed while the first flush runs are saved by the next one.
+    for _ in 0..<3 {
+      await flush()
+      if notesDrafts.isEmpty || !failedCommands.isEmpty { break }
+    }
     guard document?.deck.deckId == expectedDeckID else { return }
-    guard failedCommands.isEmpty && notesDrafts.isEmpty else {
-      failure =
-        "Pending notes and actions must be saved or explicitly discarded before taking the handoff snapshot."
+    guard failedCommands.isEmpty else {
+      failure = "Pending actions must be saved before the handoff snapshot. Use Retry Pending Actions, or Save Pending Actions… and Discard Unsaved Actions…."
+      return
+    }
+    guard notesDrafts.isEmpty else {
+      failure = "Notes on \(notesDrafts.count == 1 ? "one slide" : "\(notesDrafts.count) slides") could not be saved, so the handoff was not started. Shorten them, or choose Workbench → Discard Unsaved Actions…, then export again."
       return
     }
     do {
@@ -1218,12 +1389,12 @@ final class NativeWorkbenchController: ObservableObject {
           result = NativeAdobeAutomation.withIssue(result, "InDesign was not built because its production files or starter kit could not be exported.")
         } else {
           status = "Building InDesign · macOS may ask for Automation permission…"
-          let handoff = result.url, width = Int(frozen.deck.canvasPreset.width), count = result.slideCount
+          let handoff = result.url, width = Int(frozen.deck.canvasPreset.width), height = Int(frozen.deck.canvasPreset.height), count = result.slideCount
           let cancellation = handoff.appendingPathComponent("Automation/cancel")
           do {
             try FileManager.default.createDirectory(at: cancellation.deletingLastPathComponent(), withIntermediateDirectories: true)
             let overflow = try await NativeAdobeAutomation.waitForBuild(cancellation: cancellation) {
-              try NativeAdobeAutomation.build(in: handoff, width: width, slideCount: count, cancellation: cancellation)
+              try NativeAdobeAutomation.build(in: handoff, width: width, height: height, slideCount: count, cancellation: cancellation)
             }
             result.produced.append("InDesign/Deck.indd")
             if !overflow.isEmpty {

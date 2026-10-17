@@ -350,6 +350,8 @@ type AssetReferenceRemovePayload = {
 type MediaAssignmentInsertPayload = {
   slideId: string
   assignment: MediaAssignment
+  // Optional prior position, so Undo restores order as well as role.
+  index?: number
 }
 
 type MediaAssignmentRemovePayload = {
@@ -1549,6 +1551,29 @@ function appendOperationPair(
   inverseOperations.unshift(inverseOperation)
 }
 
+// Tracks a slide's assignment order through a sequence of operations. Each
+// removal's inverse records the position at that point in the sequence, so
+// the inverses, applied in reverse, restore the exact previous order.
+function assignmentOrder(slide: Slide) {
+  const ids = (slide.mediaAssignments ?? []).map((item) => item.id)
+  return {
+    remove(assignment: MediaAssignment): HistoryOperation {
+      const index = ids.indexOf(assignment.id)
+      if (index >= 0) ids.splice(index, 1)
+      return {
+        type: 'asset.assignment.insert',
+        payload: { slideId: slide.id, assignment: clone(assignment), ...(index >= 0 ? { index } : {}) },
+      }
+    },
+    insert(id: string): void { ids.push(id) },
+  }
+}
+
+// The inverse of removing one assignment restores its role and its position.
+function assignmentRestore(slide: Slide, assignment: MediaAssignment): HistoryOperation {
+  return assignmentOrder(slide).remove(assignment)
+}
+
 function appendCurateEnvelopeScaffold(
   deck: DeckSnapshot,
   forwardOperations: HistoryOperation[],
@@ -2284,6 +2309,7 @@ function applyHistoryOperation(deck: DeckSnapshot, operation: HistoryOperation, 
     )
     if (isCurated) throw new Error('Asset Reference has durable Curate decisions')
     assetReferences.splice(assetIndex, 1)
+    if (assetReferences.length === 0) delete next.assetReferences
     return next
   }
   if (operation.type === 'asset.assignment.insert') {
@@ -2300,7 +2326,12 @@ function applyHistoryOperation(deck: DeckSnapshot, operation: HistoryOperation, 
       throw new Error('Media role already has an assignment')
     }
     slide.mediaAssignments = mediaAssignments
-    mediaAssignments.push(clone(operation.payload.assignment))
+    const index = operation.payload.index
+    if (typeof index === 'number' && Number.isInteger(index) && index >= 0 && index < mediaAssignments.length) {
+      mediaAssignments.splice(index, 0, clone(operation.payload.assignment))
+    } else {
+      mediaAssignments.push(clone(operation.payload.assignment))
+    }
     return next
   }
   if (operation.type === 'asset.assignment.remove') {
@@ -2312,6 +2343,7 @@ function applyHistoryOperation(deck: DeckSnapshot, operation: HistoryOperation, 
     )
     if (assignmentIndex < 0) throw new Error('Media Assignment does not exist')
     mediaAssignments.splice(assignmentIndex, 1)
+    if (mediaAssignments.length === 0) delete slide.mediaAssignments
     return next
   }
   if (operation.type === 'asset.assignment.asset.set') {
@@ -2634,16 +2666,41 @@ function assertCheckpointHistory(checkpoint: Checkpoint): void {
     }
   }
 
+  // Each working deck is private to this check, so history applies in place
+  // rather than cloning the whole deck once per entry.
   let undoDeck = clone(checkpoint.deck)
   for (let index = checkpoint.undoStack.length - 1; index >= 0; index -= 1) {
-    undoDeck = applyHistoryOperation(undoDeck, checkpoint.undoStack[index].inverse)
+    undoDeck = applyHistoryOperation(undoDeck, checkpoint.undoStack[index].inverse, true)
     assertDeckIntegrity(undoDeck)
   }
   let redoDeck = clone(checkpoint.deck)
   for (let index = checkpoint.redoStack.length - 1; index >= 0; index -= 1) {
-    redoDeck = applyHistoryOperation(redoDeck, checkpoint.redoStack[index].forward)
+    redoDeck = applyHistoryOperation(redoDeck, checkpoint.redoStack[index].forward, true)
     assertDeckIntegrity(redoDeck)
   }
+}
+
+// History and duplicate-command memory are bounded so each edit, save and
+// reopen costs the same however long a deck has been worked on. Trimming is a
+// pure function of the stored state, so journal replay reproduces it exactly.
+const HISTORY_LIMIT = 500
+const PROCESSED_COMMAND_LIMIT = 5000
+
+function boundedHistory(stack: HistoryEntry[]): HistoryEntry[] {
+  return stack.length > HISTORY_LIMIT ? stack.slice(stack.length - HISTORY_LIMIT) : stack
+}
+
+function boundedProcessedCommands(processed: Record<string, JsonObject>): Record<string, JsonObject> {
+  const entries = Object.entries(processed)
+  if (entries.length <= PROCESSED_COMMAND_LIMIT) return processed
+  // Keep the most recent acknowledgements by revision; key order is not
+  // stable once a checkpoint has been written with sorted keys.
+  const ranked = entries
+    .map(([id, ack], position) => ({ id, ack, revision: Number.isSafeInteger(ack.revision) ? ack.revision as number : -1, position }))
+    .sort((a, b) => a.revision - b.revision || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+  const kept: Record<string, JsonObject> = {}
+  for (const item of ranked.slice(ranked.length - PROCESSED_COMMAND_LIMIT)) kept[item.id] = item.ack
+  return kept
 }
 
 function validateCheckpoint(input: unknown): Checkpoint | KernelError {
@@ -4225,12 +4282,13 @@ function prepare(session: KernelSession, command: CommandEnvelope): PrepareResul
     baseRevision: session.checkpoint.revision,
     nextRevision,
     nextDeck,
-    nextUndoStack: [...clone(session.checkpoint.undoStack), entry],
+    // History entries are never mutated after creation, so stacks share them.
+    nextUndoStack: boundedHistory([...session.checkpoint.undoStack, entry]),
     nextRedoStack: [],
-    nextProcessedCommands: {
-      ...clone(session.checkpoint.processedCommands),
+    nextProcessedCommands: boundedProcessedCommands({
+      ...session.checkpoint.processedCommands,
       [command.commandId]: acknowledgement,
-    },
+    }),
     journalOperation: {
       operation: 'command',
       command: clone(command),
@@ -4255,9 +4313,9 @@ function prepareUndo(session: KernelSession): PrepareResult {
       baseRevision: session.checkpoint.revision,
       nextRevision,
       nextDeck,
-      nextUndoStack: clone(stack.slice(0, -1)),
-      nextRedoStack: [...clone(session.checkpoint.redoStack), entry],
-      nextProcessedCommands: clone(session.checkpoint.processedCommands),
+      nextUndoStack: stack.slice(0, -1),
+      nextRedoStack: boundedHistory([...session.checkpoint.redoStack, entry]),
+      nextProcessedCommands: session.checkpoint.processedCommands,
       journalOperation: { operation: 'undo', historyEntryId: entry.id },
       projectionHints: ['story', 'sequence', 'asset.catalog', 'curate.queue', 'curate.slide', 'curate.assetStates', 'slide.activeProjection', 'history'],
     }
@@ -4282,9 +4340,9 @@ function prepareRedo(session: KernelSession): PrepareResult {
       baseRevision: session.checkpoint.revision,
       nextRevision,
       nextDeck,
-      nextUndoStack: [...clone(session.checkpoint.undoStack), entry],
-      nextRedoStack: clone(stack.slice(0, -1)),
-      nextProcessedCommands: clone(session.checkpoint.processedCommands),
+      nextUndoStack: boundedHistory([...session.checkpoint.undoStack, entry]),
+      nextRedoStack: stack.slice(0, -1),
+      nextProcessedCommands: session.checkpoint.processedCommands,
       journalOperation: { operation: 'redo', historyEntryId: entry.id },
       projectionHints: ['story', 'sequence', 'asset.catalog', 'curate.queue', 'curate.slide', 'curate.assetStates', 'slide.activeProjection', 'history'],
     }
@@ -4293,7 +4351,9 @@ function prepareRedo(session: KernelSession): PrepareResult {
   }
 }
 
-function commit(session: KernelSession, prepared: PreparedChange): JsonObject | KernelError {
+// `owned` is true only for a change this kernel prepared and never exposed,
+// so its fresh deck and shared immutable history entries need no copy.
+function commit(session: KernelSession, prepared: PreparedChange, owned = false): JsonObject | KernelError {
   if (!prepared || prepared.ok !== true || prepared.duplicate === true) {
     return failure('InvalidCommand', 'Only a prepared non-duplicate change can commit')
   }
@@ -4304,10 +4364,10 @@ function commit(session: KernelSession, prepared: PreparedChange): JsonObject | 
     format: 'pitchdog.deck-checkpoint',
     schemaVersion: 1,
     revision: prepared.nextRevision,
-    deck: clone(prepared.nextDeck),
-    undoStack: clone(prepared.nextUndoStack),
-    redoStack: clone(prepared.nextRedoStack),
-    processedCommands: clone(prepared.nextProcessedCommands),
+    deck: owned ? prepared.nextDeck : clone(prepared.nextDeck),
+    undoStack: owned ? prepared.nextUndoStack : clone(prepared.nextUndoStack),
+    redoStack: owned ? prepared.nextRedoStack : clone(prepared.nextRedoStack),
+    processedCommands: owned ? prepared.nextProcessedCommands : clone(prepared.nextProcessedCommands),
   }
   return {
     commandId: prepared.commandId,
@@ -4353,7 +4413,40 @@ function replayRecord(session: KernelSession, record: JsonObject): JsonObject | 
   if (prepared.nextRevision !== record.revision) {
     return failure('JournalCorruption', 'Prepared revision does not match journal')
   }
-  return commit(session, prepared)
+  return commit(session, prepared, true)
+}
+
+// Mirrors the reader-schema rule the native store applies before journaling:
+// starter fields or copy states anywhere in the next deck or in history need
+// the schema 3 reader guard. Typed fields are inspected, never copy strings.
+function nativeLayoutNeedsStarterSchema(native: unknown): boolean {
+  const layout = native && typeof native === 'object' ? (native as JsonObject).layout as JsonObject | undefined : undefined
+  if (!layout || typeof layout !== 'object') return false
+  if (layout.preset === 'moodboard') return true
+  return ['starterType', 'palette', 'appearance', 'imageCount', 'contents'].some((key) => layout[key] !== undefined && layout[key] !== null)
+}
+function slideNeedsStarterSchema(slide: unknown): boolean {
+  if (!slide || typeof slide !== 'object') return false
+  const value = slide as Slide
+  if (value.native && nativeLayoutNeedsStarterSchema(value.native)) return true
+  return Array.isArray(value.contentBlocks) && value.contentBlocks.some((block) => typeof block?.state === 'string')
+}
+function operationNeedsStarterSchema(operation: unknown, depth = 0): boolean {
+  if (!operation || typeof operation !== 'object') return false
+  const { type, payload } = operation as { type?: unknown; payload?: JsonObject }
+  if (!payload || typeof payload !== 'object') return false
+  if (depth >= 64) return true
+  if (type === 'compound') return Array.isArray(payload.operations) && payload.operations.some((item) => operationNeedsStarterSchema(item, depth + 1))
+  if (type === 'native.slide.set') return payload.value !== null && nativeLayoutNeedsStarterSchema(payload.value)
+  if (type === 'slide.insert') return slideNeedsStarterSchema(payload.slide)
+  if (type === 'section.insert') return Array.isArray((payload.section as Section | undefined)?.slides) && (payload.section as Section).slides.some(slideNeedsStarterSchema)
+  if (type === 'content.insert') return typeof (payload.block as ContentBlock | undefined)?.state === 'string'
+  return false
+}
+function preparedNeedsStarterSchema(prepared: PreparedChange): boolean {
+  if (prepared.nextDeck.sections.some((section) => section.slides.some(slideNeedsStarterSchema))) return true
+  return [...prepared.nextUndoStack, ...prepared.nextRedoStack].some((entry) =>
+    operationNeedsStarterSchema(entry.forward) || operationNeedsStarterSchema(entry.inverse))
 }
 
 const DeckKernel = Object.freeze({
@@ -4369,9 +4462,32 @@ const DeckKernel = Object.freeze({
 })
 
 let adapterSession: KernelSession | undefined
+// The native host journals a prepared change and then commits it. The full
+// next deck and history stay here; the host receives only what it persists.
+let adapterPending: { token: string; prepared: PreparedChange } | undefined
+let adapterPendingCounter = 0
 
 function adapterResult(value: unknown): string {
   return JSON.stringify(value)
+}
+
+function adapterPrepared(result: PrepareResult): string {
+  adapterPending = undefined
+  if (!result.ok || result.duplicate === true) return adapterResult(result)
+  adapterPendingCounter += 1
+  const token = `pending-${adapterPendingCounter}`
+  adapterPending = { token, prepared: result }
+  return adapterResult({
+    ok: true,
+    operation: result.operation,
+    commandId: result.commandId,
+    baseRevision: result.baseRevision,
+    nextRevision: result.nextRevision,
+    journalOperation: result.journalOperation,
+    projectionHints: result.projectionHints,
+    requiresStarterSchema: preparedNeedsStarterSchema(result),
+    pendingToken: token,
+  })
 }
 
 const DeckKernelJSON = Object.freeze({
@@ -4387,6 +4503,7 @@ const DeckKernelJSON = Object.freeze({
       const result = DeckKernel.open(JSON.parse(checkpointJSON))
       if ('ok' in result && result.ok === false) return adapterResult(result)
       adapterSession = result as KernelSession
+      adapterPending = undefined
       return adapterResult({ ok: true, revision: adapterSession.checkpoint.revision })
     } catch (error) {
       return adapterResult(failure('InvalidCommand', `Checkpoint JSON is invalid: ${(error as Error).message}`))
@@ -4403,23 +4520,33 @@ const DeckKernelJSON = Object.freeze({
   prepare(commandJSON: string): string {
     if (!adapterSession) return adapterResult(failure('KernelUnavailable', 'No Deck session is open'))
     try {
-      return adapterResult(DeckKernel.prepare(adapterSession, JSON.parse(commandJSON)))
+      return adapterPrepared(DeckKernel.prepare(adapterSession, JSON.parse(commandJSON)))
     } catch (error) {
+      adapterPending = undefined
       return adapterResult(failure('InvalidCommand', `Command JSON is invalid: ${(error as Error).message}`))
     }
   },
   prepareUndo(): string {
     if (!adapterSession) return adapterResult(failure('KernelUnavailable', 'No Deck session is open'))
-    return adapterResult(DeckKernel.prepareUndo(adapterSession))
+    return adapterPrepared(DeckKernel.prepareUndo(adapterSession))
   },
   prepareRedo(): string {
     if (!adapterSession) return adapterResult(failure('KernelUnavailable', 'No Deck session is open'))
-    return adapterResult(DeckKernel.prepareRedo(adapterSession))
+    return adapterPrepared(DeckKernel.prepareRedo(adapterSession))
   },
   commit(preparedJSON: string): string {
     if (!adapterSession) return adapterResult(failure('KernelUnavailable', 'No Deck session is open'))
     try {
-      return adapterResult(DeckKernel.commit(adapterSession, JSON.parse(preparedJSON)))
+      const prepared = JSON.parse(preparedJSON)
+      if (prepared && typeof prepared === 'object' && typeof prepared.pendingToken === 'string') {
+        const pending = adapterPending
+        if (!pending || pending.token !== prepared.pendingToken || pending.prepared.nextRevision !== prepared.nextRevision) {
+          return adapterResult(failure('StaleRevision', 'Prepared change is no longer pending'))
+        }
+        adapterPending = undefined
+        return adapterResult(DeckKernel.commit(adapterSession, pending.prepared, true))
+      }
+      return adapterResult(DeckKernel.commit(adapterSession, prepared))
     } catch (error) {
       return adapterResult(failure('InvalidCommand', `Prepared change JSON is invalid: ${(error as Error).message}`))
     }

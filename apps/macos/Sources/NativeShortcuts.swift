@@ -72,10 +72,22 @@ enum NativeShortcuts {
     {
       return false
     }
-    if let text = NSApp.keyWindow?.firstResponder as? NSTextView, text.isEditable { return false }
-    if NSApp.keyWindow?.firstResponder is NSSlider || NSApp.keyWindow?.firstResponder is NSPopUpButton || NSApp.keyWindow?.firstResponder is NSComboBox { return false }
-    if event.keyCode == 49 && NSApp.keyWindow?.firstResponder is NSButton { return false }
+    let responder = NSApp.keyWindow?.firstResponder
+    if let text = responder as? NSTextView, text.isEditable { return false }
+    if responder is NSSlider || responder is NSPopUpButton || responder is NSComboBox || responder is NSStepper { return false }
+    if event.keyCode == 49 && responder is NSButton { return false }
+    // A focused list or segmented control keeps its own navigation keys: the
+    // slide list's arrows change slide, not the selected frame or image.
+    let navigation: Set<UInt16> = [123, 124, 125, 126, 115, 119, 116, 121, 36, 76]
+    if (responder is NSTableView || responder is NSSegmentedControl) && (navigation.contains(event.keyCode) || event.keyCode == 49) { return false }
     let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
+    // Some layouts (German, for example) type [ and ] with Option.
+    if flags.contains(.option), !flags.contains(.command), !flags.contains(.control),
+      let typed = event.characters, typed == "[" || typed == "]"
+    {
+      controller.moveSlide(typed == "[" ? -1 : 1)
+      return true
+    }
     guard !flags.contains(.command), !flags.contains(.control), !flags.contains(.option) else {
       return false
     }
@@ -87,7 +99,10 @@ enum NativeShortcuts {
       case 115: if let id = controller.slides.first?.id { controller.selectSlide(id) }
       case 119: if let id = controller.slides.last?.id { controller.selectSlide(id) }
       case 53: controller.endCleanPreview()
-      default: return false
+      default:
+        // N by character, so it follows the keyboard layout.
+        guard (event.charactersIgnoringModifiers ?? "").lowercased() == "n" else { return false }
+        if !event.isARepeat { controller.reviewNotes.toggle() }
       }
       return true
     }
@@ -148,64 +163,69 @@ enum NativeShortcuts {
 }
 struct NativeShortcutSheet: View {
   @ObservedObject var controller: NativeWorkbenchController
+  private static let groups: [(String, [(String, String)])] = [
+    ("Slides", [
+      ("⇧⌘N", "Add a slide after the selected slide"),
+      ("⌘D", "Duplicate slide, copy, layout, choices and notes"),
+      ("⌘E", "Edit slide copy"),
+      ("⌘J", "Go to the next slide that still needs an image"),
+      ("⌥⌘↑ / ⌥⌘↓", "Move slide earlier / later"),
+      ("⇧⌘Delete", "Delete slide with confirmation; original files stay untouched"),
+      ("Double-click / Return", "On a slide: edit its copy. On an image: preview it"),
+    ]),
+    ("Canvas and review", [
+      ("Assemble: arrows", "Nudge selected text/frame; Shift moves ten units"),
+      ("Space-drag", "Pan canvas; pinch to zoom"),
+      ("Escape", "Cancel a canvas drag or close preview"),
+      ("⇧⌘P", "Review the deck: arrows, Space / Shift-Space, Home and End browse; N shows notes; Escape returns to editing"),
+      ("⌘0 · ⌥⌘I", "Fit the canvas · show or hide the context panel"),
+    ]),
+    ("Deck and workspace", [
+      ("⌘Z / ⇧⌘Z", "Undo / redo a saved decision or gesture"),
+      ("⌘S", "Save pending notes and the deck"),
+      ("⇧⌘E", "Export designer handoff"),
+      ("⌘1 / ⌘2", "Curate / Assemble"),
+      ("⌘F", "Switch to Curate and search media"),
+      ("⌘N · ⇧⌘V · ⌘O", "Import final copy · paste final copy · open a deck"),
+      ("⇧⌘R", "Reveal the focused media in Finder"),
+      ("⌘/", "Open this keyboard reference"),
+    ]),
+  ]
   var body: some View {
-    VStack(alignment: .leading, spacing: 16) {
-      HStack {
-        Text("Keyboard Shortcuts").workbenchText(.sectionTitle)
-        Spacer()
-        Button("Done") { controller.showShortcuts = false }.keyboardShortcut(.cancelAction)
-      }
-      Text(
-        "Curation commands are identical in the grid and preview. They pause while you type copy, notes or search text."
-      ).foregroundStyle(.secondary)
+    NativeSheetScaffold(title: "Keyboard Shortcuts",
+      subtitle: "Curation commands are identical in the grid and preview. They pause while you type copy, notes or search text.",
+      systemImage: "keyboard") {
       ScrollView {
-        Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 12) {
-          ForEach(Array(NativeShortcuts.definitions.enumerated()), id: \.offset) { _, item in
-            if !["right", "down", "]"].contains(item.key) {
-              GridRow {
-                Text(item.display).workbenchText(.code)
-                Text(item.label)
-              }
+        VStack(alignment: .leading, spacing: 18) {
+          group("Curate and slides") {
+            ForEach(Array(NativeShortcuts.definitions.enumerated()), id: \.offset) { _, item in
+              if !["right", "down", "]"].contains(item.key) { row(item.display, item.label) }
             }
           }
-          Divider()
-          GridRow { Text("⇧⌘N").monospaced(); Text("Add a slide after the selected slide") }
-          GridRow { Text("⌘D").monospaced(); Text("Duplicate slide, copy, layout, choices and notes") }
-          GridRow { Text("⌘E").monospaced(); Text("Edit slide copy") }
-          GridRow { Text("⌥⌘↑ / ⌥⌘↓").monospaced(); Text("Move slide earlier / later") }
-          GridRow { Text("⇧⌘Delete").monospaced(); Text("Delete slide with confirmation; original files stay untouched") }
-          GridRow {
-            Text("⌘Z / ⇧⌘Z").monospaced()
-            Text("Undo / redo a saved decision or gesture")
+          ForEach(Self.groups, id: \.0) { title, rows in
+            group(title) { ForEach(rows, id: \.0) { row($0.0, $0.1) } }
           }
-          GridRow {
-            Text("⌘S").monospaced()
-            Text("Save pending notes and the deck")
-          }
-          GridRow {
-            Text("⇧⌘E").monospaced()
-            Text("Export designer handoff")
-          }
-          GridRow {
-            Text("⌘/").monospaced()
-            Text("Open this keyboard reference")
-          }
-          GridRow {
-            Text("Assemble: arrows").monospaced()
-            Text("Nudge selected text/frame; Shift moves ten units")
-          }
-          GridRow {
-            Text("Space-drag").monospaced()
-            Text("Pan canvas; pinch to zoom")
-          }
-          GridRow { Text("⇧⌘P").monospaced(); Text("Review the deck: arrows browse, Escape returns to editing") }
-          GridRow {
-            Text("Escape").monospaced()
-            Text("Cancel a canvas drag or close preview")
-          }
-        }
+        }.padding(22)
       }
-    }.padding(24).nativeSheetFrame(width: 720, height: 620)
+    } footer: {
+      Spacer()
+      Button("Done") { controller.showShortcuts = false }.keyboardShortcut(.cancelAction).buttonStyle(.borderedProminent)
+    }.nativeSheetFrame(width: 740, height: 680)
+  }
+  private func group<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+      NativeEyebrow(title)
+      VStack(alignment: .leading, spacing: 0) { content() }.nativeCard(padding: 4)
+    }
+  }
+  private func row(_ keys: String, _ label: String) -> some View {
+    HStack(alignment: .firstTextBaseline, spacing: 16) {
+      Text(keys).workbenchText(.code).padding(.horizontal, 7).padding(.vertical, 3)
+        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+        .frame(width: 190, alignment: .leading)
+      Text(label).workbenchText(.bodyCompact).fixedSize(horizontal: false, vertical: true)
+      Spacer(minLength: 0)
+    }.padding(.horizontal, 10).padding(.vertical, 6).accessibilityElement(children: .combine)
   }
 }
 struct NativeKeyboardRouter: NSViewRepresentable {

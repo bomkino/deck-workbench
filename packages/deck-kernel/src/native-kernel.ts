@@ -117,6 +117,36 @@ function nativeMutation(deck: DeckSnapshot, slide: Slide, next: NativeSlideState
 function nativeCopySignature(blocks: ContentBlock[]): string {
   return JSON.stringify(blocks.map((b) => [b.id, b.semanticKey, b.role, richTextToPlainText(b.value), b.state ?? null]))
 }
+// A compact stand-in for sending the editor's original blocks back with every
+// save. It must match NativeCopyDigest in NativeWorkbenchMarkdown.swift: two
+// 32-bit FNV-1a variants over UTF-16 code units, plus the unit count.
+function nativeCopyDigest(blocks: ContentBlock[]): string {
+  let a = 0x811c9dc5, b = 0x050c5d1f, length = 0
+  const feed = (text: string) => {
+    for (let i = 0; i < text.length; i++) {
+      const unit = text.charCodeAt(i)
+      a = Math.imul(a ^ unit, 0x01000193) >>> 0
+      b = Math.imul(b ^ unit, 0x01000193) >>> 0
+      b = (b ^ (b >>> 13)) >>> 0
+      length += 1
+    }
+  }
+  for (const block of blocks) {
+    for (const part of [block.id, block.semanticKey, block.role, richTextToPlainText(block.value), block.state ?? '']) { feed(part); feed('\u0000') }
+    feed('\u0001')
+  }
+  return `v1:${length}:${a.toString(16).padStart(8, '0')}:${b.toString(16).padStart(8, '0')}`
+}
+// Palette hex may be either case; stored gradient colours are canonical lowercase.
+function canonicalGradient(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value
+  const gradient = clone(value) as JsonObject
+  const colors = gradient.colors as JsonObject | undefined
+  if (colors && typeof colors === 'object' && !Array.isArray(colors)) {
+    for (const key of ['start', 'end']) if (typeof colors[key] === 'string') colors[key] = (colors[key] as string).toLowerCase()
+  }
+  return gradient
+}
 function nativeSlideInsertion(deck: DeckSnapshot, command: CommandEnvelope): NativeMutation {
   const id = assertIdentity(command.payload.slideId, 'slideId', 160)
   if (findSlide(deck, id)) throw new Error('Slide identity already exists')
@@ -255,10 +285,14 @@ function prepareNativeCommand(deck: DeckSnapshot, command: CommandEnvelope): Nat
       seen.add(id)
       const metadata = (b: ContentBlock) => b.role === 'workbench-plan' || b.semanticKey === 'workbench.plan.v1'
       const oldBlocks = slide.contentBlocks.filter((b) => !metadata(b))
+      const stale = 'This slide’s copy changed while the editor was open. Your draft is still available; reopen the editor before replacing the newer copy.'
       if (update.expectedBlocks !== undefined) {
         if (!Array.isArray(update.expectedBlocks) || nativeCopySignature(update.expectedBlocks as ContentBlock[]) !== nativeCopySignature(oldBlocks)) {
-          throw new Error('This slide’s copy changed while the editor was open. Your draft is still available; reopen the editor before replacing the newer copy.')
+          throw new Error(stale)
         }
+      }
+      if (update.expectedCopyDigest !== undefined) {
+        if (typeof update.expectedCopyDigest !== 'string' || update.expectedCopyDigest !== nativeCopyDigest(oldBlocks)) throw new Error(stale)
       }
       const blocks = clone(update.blocks as ContentBlock[])
       if (update.title !== undefined) {
@@ -305,7 +339,8 @@ function prepareNativeCommand(deck: DeckSnapshot, command: CommandEnvelope): Nat
     for (const k of ['included', 'copyLocked'] as const) if (patch[k] !== undefined) { if (typeof patch[k] !== 'boolean') throw new Error(`${k} must be boolean`); state[k] = patch[k] as boolean }
     const forward: HistoryOperation[] = [], inverse: HistoryOperation[] = []
     if (patch.layout !== undefined) {
-      const layout = assertRecord(patch.layout, 'layout patch')
+      const layout = { ...assertRecord(patch.layout, 'layout patch') }
+      if (layout.gradient !== undefined && layout.gradient !== null) layout.gradient = canonicalGradient(layout.gradient)
       if (Object.keys(layout).some((k) => !['preset', 'columns', 'bodySize', 'fitCopy', 'textFrame', 'frames', 'crops', 'imageFits', 'gradient', 'starterType', 'palette', 'appearance', 'imageCount', 'contents'].includes(k))) throw new Error('Unsupported layout property')
       const previousPreset = state.layout.preset
       const previousRoles = nativeImageRoles(slide, state)
@@ -339,13 +374,15 @@ function prepareNativeCommand(deck: DeckSnapshot, command: CommandEnvelope): Nat
       if (roles.length && previousRoles.length && ((layout.preset !== undefined && (previousPreset !== next.preset || next.preset !== 'legacy')) || layout.imageCount !== undefined)) {
         const assignments = slide.mediaAssignments ?? []
         const occupied = new Set(assignments.filter((a) => roles.includes(a.role)).map((a) => a.role))
+        const order = assignmentOrder(slide)
         for (const assignment of assignments.filter((a) => !roles.includes(a.role))) {
           const vacant = roles.find((role) => !occupied.has(role))
           appendOperationPair(forward, inverse,
             { type: 'asset.assignment.remove', payload: { slideId: id, mediaAssignmentId: assignment.id } },
-            { type: 'asset.assignment.insert', payload: { slideId: id, assignment: clone(assignment) } })
+            order.remove(assignment))
           if (vacant) {
             occupied.add(vacant)
+            order.insert(assignment.id)
             appendOperationPair(forward, inverse,
               { type: 'asset.assignment.insert', payload: { slideId: id, assignment: { ...assignment, role: vacant } } },
               { type: 'asset.assignment.remove', payload: { slideId: id, mediaAssignmentId: assignment.id } })
@@ -363,7 +400,7 @@ function prepareNativeCommand(deck: DeckSnapshot, command: CommandEnvelope): Nat
     const dx = nativeNumber(command.payload.dx, 'dx', -10000, 10000), dy = nativeNumber(command.payload.dy, 'dy', -10000, 10000)
     if (target === 'gradient') {
       const frame = assertElementFrame(command.payload.frame)
-      const gradient = clone(state.layout.gradient ?? assertElementGradient(command.payload.gradient))
+      const gradient = clone(state.layout.gradient ?? assertElementGradient(canonicalGradient(command.payload.gradient)))
       const x = Math.min(1 - Math.max(gradient.start.x, gradient.end.x), Math.max(-Math.min(gradient.start.x, gradient.end.x), dx / frame.width))
       const y = Math.min(1 - Math.max(gradient.start.y, gradient.end.y), Math.max(-Math.min(gradient.start.y, gradient.end.y), dy / frame.height))
       gradient.start.x += x; gradient.end.x += x; gradient.start.y += y; gradient.end.y += y
@@ -389,7 +426,7 @@ function prepareNativeCommand(deck: DeckSnapshot, command: CommandEnvelope): Nat
   else if (action === 'reject' || action === 'unassign') {
     if (action === 'unassign') candidate(assetId)
     if (action === 'reject') { if (!state.rejected.includes(assetId)) state.rejected.push(assetId); state.shortlist = state.shortlist.filter((a) => a !== assetId) }
-    for (const a of slide.mediaAssignments ?? []) if (a.assetReferenceId === assetId) appendOperationPair(forward, inverse, { type: 'asset.assignment.remove', payload: { slideId: id, mediaAssignmentId: a.id } }, { type: 'asset.assignment.insert', payload: { slideId: id, assignment: clone(a) } })
+    for (const a of slide.mediaAssignments ?? []) if (a.assetReferenceId === assetId) appendOperationPair(forward, inverse, { type: 'asset.assignment.remove', payload: { slideId: id, mediaAssignmentId: a.id } }, assignmentRestore(slide, a))
   } else if (action === 'use') {
     const role = assertIdentity(command.payload.role ?? 'primary', 'role', 512)
     if (!nativeImageRoles(slide, state).includes(role)) throw new Error('Choose a visible image slot for this layout')
@@ -403,7 +440,7 @@ function prepareNativeCommand(deck: DeckSnapshot, command: CommandEnvelope): Nat
       } else {
         appendOperationPair(forward, inverse,
           { type: 'asset.assignment.remove', payload: { slideId: id, mediaAssignmentId: other.id } },
-          { type: 'asset.assignment.insert', payload: { slideId: id, assignment: clone(other) } })
+          assignmentRestore(slide, other))
       }
     }
     if (old && old.assetReferenceId !== assetId) {

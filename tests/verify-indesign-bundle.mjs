@@ -100,4 +100,15 @@ const legacyTOCPlan = production.preflightFormatting(own({ slides: [emptyTOC] })
 assert.equal(legacyTOCPlan.styles.contents.title.name, 'TOC - Title (light)')
 assert.equal(legacyTOCPlan.setAppearance, false)
 assert.throws(() => production.preflightFormatting(own({ slides: [emptyTOC] }), { ...styleDoc, allObjectStyles: [] }), /missing Contents/)
+// Workbench's explicit flag wins over the intent: an older slide whose intent
+// says "contents" without being the generated Contents is ordinary copy, and is
+// still listed in a real Contents.
+const notContents = { ...tocRows[3], contents: false }
+assert.equal(production.preflightFormatting(own({ slides: [{ ...notContents, blocks: [], projection: [] }] }), styleDoc)[0], null)
+const flaggedRows = [tocRows[0], { ...tocRows[1], contents: true }, tocRows[2], notContents]
+assert.throws(() => production.contentsPlan(own(flaggedRows[1]), own(flaggedRows)), /frozen slide order/)
+const listedBody = `${tocBody}\nContents again\t04`
+const listed = { ...flaggedRows[1], blocks: tocBlocks.map(b => b.blockID === 'toc:contents' ? { ...b, text: listedBody } : b),
+  projection: [tocRows[1].projection[0], tocRows[1].projection[1], { role: 'body', state: 'present', text: `A note above.\n\n${listedBody}\n\nA credit.\nA forced line.` }] }
+assert.ok(production.contentsPlan(own(listed), own([flaggedRows[0], listed, flaggedRows[2], notContents])).text.includes('Contents again\t04'))
 console.log('PASS: actual ES3 hashes, bundle binding, PSD guards, frozen Contents order/copy, mixed appearances and required native styles. Native placement/rendering not exercised.')

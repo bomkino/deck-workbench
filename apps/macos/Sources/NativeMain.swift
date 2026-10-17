@@ -20,6 +20,15 @@ struct NativeMain {
       app.delegate = delegate
       app.setActivationPolicy(.regular)
       withExtendedLifetime(delegate) { app.run() }
+    } else if let index = CommandLine.arguments.firstIndex(of: "--native-ui-gallery"),
+      CommandLine.arguments.indices.contains(index + 1)
+    {
+      let app = NSApplication.shared
+      let delegate = NativeUIGalleryDelegate(
+        output: URL(fileURLWithPath: CommandLine.arguments[index + 1], isDirectory: true))
+      app.delegate = delegate
+      app.setActivationPolicy(.regular)
+      withExtendedLifetime(delegate) { app.run() }
     } else {
       NativeWorkbenchApplication.main()
     }
@@ -48,6 +57,7 @@ final class NativeAppDelegate: NSObject, NSApplicationDelegate {
 struct NativeWorkbenchApplication: App {
   @NSApplicationDelegateAdaptor(NativeAppDelegate.self) private var delegate
   @StateObject private var controller: NativeWorkbenchController
+  @StateObject private var updates = NativeUpdates()
   init() {
     do {
       let controller = try NativeWorkbenchController()
@@ -67,13 +77,17 @@ struct NativeWorkbenchApplication: App {
         Task { await controller.open(url) }
       }
     }.defaultSize(width: 1440, height: 900)
-      .commands { NativeWorkbenchCommands(controller: controller) }
+      .commands { NativeWorkbenchCommands(controller: controller, updates: updates) }
   }
 }
 struct NativeWorkbenchCommands: Commands {
   @ObservedObject var controller: NativeWorkbenchController
+  @ObservedObject var updates: NativeUpdates
   @Environment(\.openWindow) private var openWindow
   var body: some Commands {
+    CommandGroup(after: .appInfo) {
+      Button("Check for Updates…") { updates.checkForUpdates() }.disabled(!updates.canCheck)
+    }
     CommandGroup(replacing: .newItem) {
       Button("Import Final Copy…") {
         openWindow(id: "workbench")
@@ -112,7 +126,8 @@ struct NativeWorkbenchCommands: Commands {
       ).disabled(controller.document == nil)
     }
     CommandGroup(replacing: .appSettings) {
-      Button("Settings…") { controller.showSettings = true }.keyboardShortcut(",")
+      // Sheets need the window; reopen it if it was closed.
+      Button("Settings…") { openWindow(id: "workbench"); controller.showSettings = true }.keyboardShortcut(",")
     }
     CommandMenu("Slide") {
       Button("Add Slide") { controller.addSlide() }.keyboardShortcut("n", modifiers: [.command, .shift])
@@ -124,8 +139,12 @@ struct NativeWorkbenchCommands: Commands {
       Button("Duplicate Slide") { controller.duplicateSlide() }.keyboardShortcut("d")
         .disabled(!controller.slideEditingAvailable)
       Button("Rename Slide…") { controller.renameSlide() }.disabled(!controller.slideEditingAvailable)
+      Button("Rename Part…") { controller.renamePart() }.disabled(!controller.slideEditingAvailable)
+      Button("Rename Deck…") { controller.renameDeck() }.disabled(!controller.slideEditingAvailable)
       Button("Edit Copy…") { controller.beginEditCopy() }.keyboardShortcut("e")
         .disabled(!controller.slideEditingAvailable)
+      Button("Next Slide Needing an Image") { controller.nextSlideNeedingImage() }.keyboardShortcut("j")
+        .disabled(controller.document == nil || controller.lifecycleBusy || controller.modalOpen)
       Divider()
       Menu("Layout") {
         ForEach(NativeLayoutChoice.all) { choice in
@@ -155,10 +174,12 @@ struct NativeWorkbenchCommands: Commands {
       Button("Retry Pending Actions") { controller.retryPending() }.disabled(
         controller.failedCommands.isEmpty)
       Button("Save Pending Actions…") { controller.savePending() }.disabled(controller.failedCommands.isEmpty)
+      Button("Discard Unsaved Actions…") { controller.discardPending() }.disabled(controller.failedCommands.isEmpty && controller.notesDrafts.isEmpty)
       Button("Restore Pending Actions…") { controller.restorePending() }.disabled(controller.document == nil)
     }
     CommandGroup(replacing: .help) {
       Button("Keyboard Shortcuts") {
+        openWindow(id: "workbench")
         controller.previewOpen = false
         controller.showShortcuts = true
       }.keyboardShortcut("/")

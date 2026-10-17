@@ -8,7 +8,6 @@ private let mediaCatalogVersion = 1
 private let mediaGrantFormat = "pitchdog.workbench-media-grants"
 private let mediaGrantVersion = 1
 private let maximumCatalogBytes = 64 * 1024 * 1024
-private let maximumControlFrameBytes = 1_048_576
 private let maximumCatalogRevision = 9_007_199_254_740_991
 private let maximumFingerprintBytes = 256 * 1024 * 1024
 private let maximumReconnectFileBytes = 128 * 1024 * 1024
@@ -116,6 +115,22 @@ private struct MediaObservation: Sendable {
     }
 }
 
+/// What a previous scan learned about a file, reused while its size,
+/// modification time and file identity are unchanged instead of re-reading it.
+private struct KnownMediaFile: Sendable {
+    let byteSize: Int
+    let modifiedAt: Int64
+    let platformIdentity: String
+    let fingerprint: String
+    let width: Int?
+    let height: Int?
+
+    func matches(_ metadata: FileMetadata) -> Bool {
+        metadata.byteSize == byteSize && metadata.modifiedAt == modifiedAt
+            && metadata.linkCount == 1 && "\(metadata.device):\(metadata.inode)" == platformIdentity
+    }
+}
+
 struct AuthorizedMediaRoot: Sendable {
     let path: String
     let displayName: String
@@ -127,6 +142,8 @@ private struct NativeScanResult: Sendable {
     let observations: [MediaObservation]
     let complete: Bool
     let warningCount: Int
+    let fingerprintsReused: Int
+    let fingerprintsComputed: Int
 }
 
 private final class MediaSessionLease: @unchecked Sendable {
@@ -363,6 +380,10 @@ private final class MacMediaGrantStore {
         if let injectedURL {
             fileURL = injectedURL
             rootURL = injectedURL.deletingLastPathComponent()
+        } else if CommandLine.arguments.contains("--native-self-test") || CommandLine.arguments.contains("--native-ui-gallery") {
+            // Packaged checks never read or change the person's folder permissions.
+            rootURL = FileManager.default.temporaryDirectory.appendingPathComponent("Deck Workbench checks \(getpid())", isDirectory: true)
+            fileURL = rootURL.appendingPathComponent("media-grants.json")
         } else {
             let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             rootURL = support.appendingPathComponent("Deck Workbench", isDirectory: true)
@@ -426,15 +447,17 @@ private final class MacMediaGrantStore {
 }
 
 actor MediaCatalogSession {
-    private static let javaScriptURIComponentAllowed = CharacterSet(
-        charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.!~*'()"
-    )
-
     private let packageURL: URL
     private let deckId: String
     private let grants: MacMediaGrantStore
     private let lease = MediaSessionLease()
     private var catalog: PortableMediaCatalog
+    /// The catalogue as last saved. Scan batches are saved at most every two
+    /// seconds, and always before the app reads the catalogue, so no asset
+    /// identity is ever shown (and assigned) before it is durable.
+    private var persisted: PortableMediaCatalog?
+    private var catalogDirty = false
+    private var lastPersist = Date.distantPast
     private var nativeScans: [String: Task<NativeScanResult, Error>] = [:]
 
     init(packageURL: URL, deckId: String, grantStoreURL: URL? = nil) throws {
@@ -484,23 +507,11 @@ actor MediaCatalogSession {
         } catch {
             throw WorkbenchFailure(name: "UnsupportedSchema", message: "The Deck media catalogue is invalid or unsupported")
         }
+        persisted = catalog
     }
 
     nonisolated func revoke() {
         lease.revoke()
-    }
-
-    func catalogRevisionValue() throws -> Int {
-        try requireOpen()
-        return catalog.revision
-    }
-
-    func queryJSON(name: String, paramsJSON: Data) throws -> Data {
-        try requireOpen()
-        let params = (try JSONSerialization.jsonObject(with: paramsJSON) as? [String: Any]) ?? [:]
-        if name == "media.roots" { return try queryRoots(params) }
-        if name == "media.assets" { return try queryAssets(params) }
-        throw WorkbenchFailure(name: "InvalidCommand", message: "Unknown media query: \(name)")
     }
 
     func authorizeRootJSON(_ url: URL) async throws -> Data {
@@ -511,17 +522,14 @@ actor MediaCatalogSession {
         }) else {
             throw WorkbenchFailure(name: "RootAlreadyAuthorized", message: "That folder is already attached to this Deck")
         }
-        let previousCatalog = catalog
+        try refuseNestedRoot(authorized, except: nil)
+        try flushCatalog()
         let rootId = Self.makeId("root")
         let revision = try Self.nextCatalogRevision(catalog.revision)
         catalog.roots.append(PortableMediaRoot(id: rootId, label: Self.safeDisplay(authorized.displayName)))
         catalog.revision = revision
-        do {
-            try persistCatalog()
-        } catch {
-            catalog = previousCatalog
-            throw error
-        }
+        catalogDirty = true
+        try flushCatalog()
         try grants.set(MediaGrant(
             deckId: deckId,
             rootId: rootId,
@@ -543,13 +551,14 @@ actor MediaCatalogSession {
         _ = try requireRoot(rootId)
         let previous = grants.get(deckId: deckId, rootId: rootId)
         let authorized = try verifyReconnect(url: url, previous: previous, rootId: rootId)
+        try refuseNestedRoot(authorized, except: rootId)
         try grants.set(MediaGrant(
             deckId: deckId,
             rootId: rootId,
             authorizedPath: authorized.path,
             rootDevice: authorized.device,
             rootInode: authorized.inode,
-            fileIdentities: previous?.fileIdentities ?? [:],
+            fileIdentities: [:],
             bookmark: try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
         ))
         let scan = try await scanAuthorized(rootId: rootId, root: authorized)
@@ -575,52 +584,9 @@ actor MediaCatalogSession {
         ])
     }
 
-    func resourceData(nonce: String, assetId: String, profile: String) throws -> Data {
-        try requireOpen()
-        guard lease.matches(nonce) else {
-            throw WorkbenchFailure(name: "StaleMediaSession", message: "This media resource session is no longer active")
-        }
-        guard ["grid_standard", "preview_standard"].contains(profile) else {
-            throw WorkbenchFailure(name: "UnsupportedMediaPreview", message: "Unknown media preview profile")
-        }
-        guard let asset = catalog.assets.first(where: { $0.id == assetId }) else {
-            throw WorkbenchFailure(name: "MissingMedia", message: "Media Asset does not exist")
-        }
-        guard asset.availability == "available",
-              ["still-image", "animated-image"].contains(asset.previewCapability)
-        else {
-            throw WorkbenchFailure(name: "UnsupportedMediaPreview", message: "This Media Asset has no safe preview")
-        }
-        guard let grant = grants.get(deckId: deckId, rootId: asset.rootId) else {
-            throw WorkbenchFailure(name: "MediaRootNeedsPermission", message: "This media Root needs permission")
-        }
-        let authorized = try MediaFilesystem.authorizeDirectory(URL(fileURLWithPath: grant.authorizedPath))
-        guard authorized.device == grant.rootDevice, authorized.inode == grant.rootInode else {
-            throw WorkbenchFailure(name: "MediaRootNeedsPermission", message: "This media Root must be reconnected")
-        }
-        let ext = URL(fileURLWithPath: asset.relativePath).pathExtension.lowercased()
-        guard ["jpg", "jpeg", "png", "webp", "gif"].contains(ext) else {
-            throw WorkbenchFailure(name: "UnsupportedMediaPreview", message: "This media type is catalogue-only")
-        }
-        let data = try MediaFilesystem.readContainedFile(
-            rootPath: authorized.path,
-            relativePath: asset.relativePath,
-            maximumBytes: maximumResourceBytes
-        )
-        guard let dimensions = Self.imageDimensions(data, extension: ext),
-              Self.safeDimensions(dimensions)
-        else {
-            throw WorkbenchFailure(name: "UnsupportedMediaPreview", message: "Image dimensions are invalid or outside preview limits")
-        }
-        try requireOpen()
-        guard lease.matches(nonce) else {
-            throw WorkbenchFailure(name: "StaleMediaSession", message: "This media resource session is no longer active")
-        }
-        return data
-    }
-
     func nativeCatalogUpdate(after revision: Int) throws -> NativeCatalogUpdate? {
         try requireOpen()
+        try flushCatalog()
         guard catalog.revision != revision else { return nil }
         let snapshot = NativeCatalogSnapshot(revision: catalog.revision,
             roots: catalog.roots.map { NativeMediaRoot(id: $0.id, label: $0.label) },
@@ -635,22 +601,9 @@ actor MediaCatalogSession {
             })
         return NativeCatalogUpdate(catalog: snapshot, sources: try nativeSources(assetIds: snapshot.assets.map(\.id)))
     }
-    func nativeCatalogData() throws -> Data {
-        try requireOpen()
-        let encoder = JSONEncoder()
-        return try encoder.encode(catalog)
-    }
-    func nativeSource(assetId: String) throws -> NativeMediaSource {
-        try requireOpen()
-        guard let asset = catalog.assets.first(where: { $0.id == assetId }), let grant = grants.get(deckId: deckId, rootId: asset.rootId) else {
-            throw WorkbenchFailure(name: "MediaRootNeedsPermission", message: "Reconnect the folder containing this image.")
-        }
-        return NativeMediaSource(assetId: asset.id, sourceRevisionId: asset.sourceRevisionId, rootPath: grant.authorizedPath,
-            relativePath: asset.relativePath, filename: asset.filename, fingerprint: asset.fingerprint,
-            byteSize: asset.byteSize, mediaKind: asset.mediaKind, rootDevice: grant.rootDevice, rootInode: grant.rootInode, bookmark: grant.bookmark, note: asset.note)
-    }
     func nativeSources(assetIds: [String]) throws -> [String: NativeMediaSource] {
         try requireOpen()
+        try flushCatalog()
         let wanted = Set(assetIds)
         let byRoot = Dictionary(uniqueKeysWithValues: grants.list(deckId: deckId).map { ($0.rootId, $0) })
         var result: [String: NativeMediaSource] = [:]
@@ -667,10 +620,36 @@ actor MediaCatalogSession {
     func cancelNativeScans() { for work in nativeScans.values { work.cancel() } }
     private func publishNativeBatch(_ observations: [MediaObservation], rootId: String) throws {
         try requireOpen()
-        let previous = catalog
-        let summary = try reconcile(rootId: rootId, observations: observations, completed: false)
-        if summary.changed {
-            do { try persistCatalog() } catch { catalog = previous; throw error }
+        if try reconcile(rootId: rootId, observations: observations, completed: false).changed { catalogDirty = true }
+        // Rewriting the whole catalogue for every batch made large scans
+        // quadratic; reads still flush first (see `persisted`).
+        if Date().timeIntervalSince(lastPersist) >= 2 { try flushCatalog() }
+    }
+
+    /// Saves pending catalogue changes. A failed save drops them and returns to
+    /// the saved catalogue, which is all the app has ever been shown.
+    private func flushCatalog() throws {
+        guard catalogDirty else { return }
+        do {
+            try persistCatalog()
+        } catch {
+            if let persisted { catalog = persisted }
+            catalogDirty = false
+            throw error
+        }
+    }
+
+    /// Two attached folders where one contains the other would catalogue the
+    /// same originals twice, under different identities.
+    private func refuseNestedRoot(_ candidate: AuthorizedMediaRoot, except rootId: String?) throws {
+        for grant in grants.list(deckId: deckId) where grant.rootId != rootId {
+            if MediaFilesystem.isContained(rootPath: grant.authorizedPath, candidatePath: candidate.path)
+                || MediaFilesystem.isContained(rootPath: candidate.path, candidatePath: grant.authorizedPath) {
+                throw WorkbenchFailure(
+                    name: "NestedMediaRoot",
+                    message: "That folder is inside, or contains, a media folder already attached to this deck. Attach only one of them."
+                )
+            }
         }
     }
     private static func nativeImageDimensions(_ url: URL) -> (width: Int, height: Int)? {
@@ -685,9 +664,10 @@ actor MediaCatalogSession {
     private func scanAuthorized(rootId: String, root: AuthorizedMediaRoot) async throws -> [String: Any] {
         guard nativeScans[rootId] == nil else { throw WorkbenchFailure(name: "ScanBusy", message: "This folder is already being scanned.") }
         let lease = self.lease
+        let known = Self.knownFiles(catalog.assets.filter { $0.rootId == rootId })
         let work = Task.detached(priority: .utility) { [weak self] in
             guard let session = self else { throw CancellationError() }
-            return try await Self.discover(root, lease: lease) { batch in
+            return try await Self.discover(root, known: known, lease: lease) { batch in
                 try await session.publishNativeBatch(batch, rootId: rootId)
             }
         }
@@ -695,33 +675,30 @@ actor MediaCatalogSession {
         defer { nativeScans[rootId] = nil }
         let discovery = try await withTaskCancellationHandler(operation: { try await work.value }, onCancel: { work.cancel() })
         try requireOpen()
-        let previousCatalog = catalog
         let summary = try reconcile(
             rootId: rootId,
             observations: discovery.observations,
-            completed: discovery.complete
+            completed: discovery.complete,
+            finalRootPath: root.path
         )
-        if summary.changed {
-            do {
-                try persistCatalog()
-            } catch {
-                catalog = previousCatalog
-                throw error
+        if summary.changed { catalogDirty = true }
+        try flushCatalog()
+        // Per-file identities were never read back; stored ones are dropped.
+        if var grant = grants.get(deckId: deckId, rootId: rootId) {
+            if !grant.fileIdentities.isEmpty {
+                grant.fileIdentities = [:]
+                try grants.set(grant)
             }
+        } else {
+            try grants.set(MediaGrant(
+                deckId: deckId,
+                rootId: rootId,
+                authorizedPath: root.path,
+                rootDevice: root.device,
+                rootInode: root.inode,
+                fileIdentities: [:]
+            ))
         }
-        var grant = grants.get(deckId: deckId, rootId: rootId) ?? MediaGrant(
-            deckId: deckId,
-            rootId: rootId,
-            authorizedPath: root.path,
-            rootDevice: root.device,
-            rootInode: root.inode,
-            fileIdentities: [:]
-        )
-        let byPath = Dictionary(uniqueKeysWithValues: discovery.observations.map { ($0.relativePath, $0.identity) })
-        for asset in catalog.assets where asset.rootId == rootId {
-            if let identity = byPath[asset.relativePath] { grant.fileIdentities[asset.id] = identity }
-        }
-        try grants.set(grant)
         return [
             "status": discovery.complete ? "completed" : "incomplete",
             "changed": summary.changed,
@@ -732,19 +709,38 @@ actor MediaCatalogSession {
             "deferred": summary.deferred,
             "discovered": discovery.observations.count,
             "warningCount": discovery.warningCount,
+            "fingerprintsReused": discovery.fingerprintsReused,
+            "fingerprintsComputed": discovery.fingerprintsComputed,
         ]
     }
 
-    private static func discover(_ root: AuthorizedMediaRoot, lease: MediaSessionLease, publish: @Sendable ([MediaObservation]) async throws -> Void) async throws -> NativeScanResult {
+    private static func knownFiles(_ assets: [PortableMediaAsset]) -> [String: KnownMediaFile] {
+        var known: [String: KnownMediaFile] = [:]
+        for asset in assets {
+            guard let modifiedAt = asset.modifiedAt, let identity = asset.platformIdentity,
+                  asset.platformIdentityKind == "macos-dev-inode", asset.linkCount == 1,
+                  !asset.fingerprint.hasPrefix("unavailable:") else { continue }
+            known[asset.relativePath] = KnownMediaFile(
+                byteSize: asset.byteSize, modifiedAt: modifiedAt, platformIdentity: identity,
+                fingerprint: asset.fingerprint, width: asset.width, height: asset.height)
+        }
+        return known
+    }
+
+    private static func discover(_ root: AuthorizedMediaRoot, known: [String: KnownMediaFile], lease: MediaSessionLease, publish: @Sendable ([MediaObservation]) async throws -> Void) async throws -> NativeScanResult {
         let manager = FileManager.default
         var complete = true
         var warningCount = 0
+        var reused = 0
+        var computed = 0
         var observations: [MediaObservation] = []
         let rootURL = URL(fileURLWithPath: root.path, isDirectory: true)
+        // Packages (Photos libraries, apps, bundles) are single documents to
+        // the person; their internal files are not media to choose.
         guard let enumerator = manager.enumerator(
             at: rootURL,
             includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey],
-            options: [],
+            options: [.skipsPackageDescendants],
             errorHandler: { _, _ in
                 complete = false
                 warningCount += 1
@@ -794,7 +790,9 @@ actor MediaCatalogSession {
                     }
                     continue
                 }
-                guard metadata.isRegular,
+                // Hidden files include the "._" companions macOS leaves on
+                // other volumes, which share an image's extension but not its data.
+                guard metadata.isRegular, !candidate.lastPathComponent.hasPrefix("."),
                       let kind = supported[candidate.pathExtension.lowercased()]
                 else { continue }
                 let canonical = try MediaFilesystem.canonicalPath(path)
@@ -803,7 +801,16 @@ actor MediaCatalogSession {
                     warningCount += 1
                     continue
                 }
-                let dimensions = kind != "video" ? Self.nativeImageDimensions(URL(fileURLWithPath: canonical)) : nil
+                let previous = known[relativePath].flatMap { $0.matches(metadata) ? $0 : nil }
+                let dimensions: (width: Int, height: Int)?
+                if let previous {
+                    if let width = previous.width, let height = previous.height { dimensions = (width: width, height: height) }
+                    else { dimensions = nil }
+                } else {
+                    dimensions = kind != "video" ? Self.nativeImageDimensions(URL(fileURLWithPath: canonical)) : nil
+                }
+                let fingerprint = try previous?.fingerprint ?? MediaFilesystem.fingerprint(canonical, byteSize: metadata.byteSize)
+                if previous != nil { reused += 1 } else if fingerprint != nil { computed += 1 }
                 let validImage = dimensions.map(Self.safeDimensions) == true
                 let safePreview = validImage
                     && metadata.byteSize > 0
@@ -824,7 +831,7 @@ actor MediaCatalogSession {
                     availability: "available",
                     previewCapability: safePreview ? (kind == "gif" ? "animated-image" : "still-image") : "unsupported",
                     previewReason: previewReason,
-                    fingerprint: try MediaFilesystem.fingerprint(canonical, byteSize: metadata.byteSize),
+                    fingerprint: fingerprint,
                     identity: MediaFileIdentity(device: metadata.device, inode: metadata.inode),
                     linkCount: max(1, metadata.linkCount)
                 ))
@@ -836,7 +843,8 @@ actor MediaCatalogSession {
         }
         let remainder = observations.count % 128
         if remainder > 0 { try await publish(Array(observations.suffix(remainder))) }
-        return NativeScanResult(observations: observations, complete: complete, warningCount: warningCount)
+        return NativeScanResult(observations: observations, complete: complete, warningCount: warningCount,
+                                fingerprintsReused: reused, fingerprintsComputed: computed)
     }
 
     private struct ReconcileSummary {
@@ -848,10 +856,17 @@ actor MediaCatalogSession {
         var deferred = 0
     }
 
-    private func reconcile(rootId: String, observations: [MediaObservation], completed: Bool) throws -> ReconcileSummary {
+    /// `finalRootPath` marks the end of a scan. When that scan was incomplete,
+    /// files it never reached are checked directly at their saved paths: a move
+    /// is applied once its old path is gone, and only a gone file is missing.
+    private func reconcile(rootId: String, observations: [MediaObservation], completed: Bool, finalRootPath: String? = nil) throws -> ReconcileSummary {
         var summary = ReconcileSummary()
         let existingRootAssets = catalog.assets.filter { $0.rootId == rootId }
-        let existingByPath = Dictionary(uniqueKeysWithValues: existingRootAssets.map { ($0.relativePath, $0) })
+        // Paths compare as Swift strings do, by canonical equivalence, so a
+        // folder reported in another Unicode normalization keeps its assets.
+        // Two such names in one folder share one asset rather than trapping.
+        var existingByPath: [String: PortableMediaAsset] = [:]
+        for asset in existingRootAssets { existingByPath[asset.relativePath] = asset }
         var existingByIdentity: [String: [PortableMediaAsset]] = [:]
         for asset in existingRootAssets {
             if let key = Self.identityKey(asset) { existingByIdentity[key, default: []].append(asset) }
@@ -864,6 +879,7 @@ actor MediaCatalogSession {
         var seen = Set<String>()
         var nextCatalog = catalog
         var indexByID = Dictionary(uniqueKeysWithValues: nextCatalog.assets.enumerated().map { ($0.element.id, $0.offset) })
+        let directlyChecked = !completed ? finalRootPath : nil
 
         for observation in observations {
             if let existing = existingByPath[observation.relativePath],
@@ -893,31 +909,36 @@ actor MediaCatalogSession {
                 && matches[0].fingerprint == Self.fingerprint(observation)
                 ? matches[0]
                 : nil
-            if let candidate, completed,
+            let moveConfirmed = candidate.map { moved in
+                completed || directlyChecked.map { Self.isGone(rootPath: $0, relativePath: moved.relativePath) } == true
+            } ?? false
+            if let candidate, moveConfirmed,
                let index = indexByID[candidate.id] {
                 nextCatalog.assets[index] = Self.refreshed(candidate, with: observation)
                 seen.insert(candidate.id)
                 summary.changed = true
                 summary.moved += 1
-            } else if candidate != nil, !completed {
+            } else if candidate != nil {
                 summary.deferred += 1
             } else {
                 let asset = Self.newAsset(rootId: rootId, observation: observation)
                 indexByID[asset.id] = nextCatalog.assets.count
+                existingByPath[asset.relativePath] = asset
+                seen.insert(asset.id)
                 nextCatalog.assets.append(asset)
                 nextCatalog.sourceRevisions.append(Self.sourceRevision(for: asset))
                 summary.changed = true
                 summary.created += 1
             }
         }
-        if completed {
+        if completed || directlyChecked != nil {
             for existing in existingRootAssets where !seen.contains(existing.id) {
-                guard let index = indexByID[existing.id] else { continue }
-                if nextCatalog.assets[index].availability != "missing" {
-                    nextCatalog.assets[index].availability = "missing"
-                    summary.changed = true
-                    summary.missing += 1
-                }
+                guard let index = indexByID[existing.id],
+                      nextCatalog.assets[index].availability != "missing" else { continue }
+                if let rootPath = directlyChecked, !Self.isGone(rootPath: rootPath, relativePath: existing.relativePath) { continue }
+                nextCatalog.assets[index].availability = "missing"
+                summary.changed = true
+                summary.missing += 1
             }
         }
         if summary.changed {
@@ -925,6 +946,15 @@ actor MediaCatalogSession {
             catalog = nextCatalog
         }
         return summary
+    }
+
+    /// True only when nothing exists at the saved path any more.
+    private static func isGone(rootPath: String, relativePath: String) -> Bool {
+        guard let segments = try? MediaFilesystem.safeSegments(relativePath) else { return false }
+        let path = (rootPath == "/" ? "" : rootPath) + "/" + segments.joined(separator: "/")
+        do { _ = try MediaFilesystem.metadata(path); return false }
+        catch let error as POSIXError { return error.code == .ENOENT || error.code == .ENOTDIR }
+        catch { return false }
     }
 
     private func verifyReconnect(url: URL, previous: MediaGrant?, rootId: String) throws -> AuthorizedMediaRoot {
@@ -942,7 +972,7 @@ actor MediaCatalogSession {
             .sorted { $0.relativePath < $1.relativePath }
             .prefix(8)
         let required = min(2, evidence.count)
-        if required == 0 { return candidate }
+        if required == 0 { return try verifyReconnectByMetadata(candidate, rootId: rootId) }
         let started = Date()
         var inspectedBytes = 0
         var matched = 0
@@ -969,148 +999,26 @@ actor MediaCatalogSession {
         throw WorkbenchFailure(name: "MediaRootMismatch", message: "The selected folder does not match this media Root")
     }
 
-    private func queryRoots(_ params: [String: Any]) throws -> Data {
-        let allowed = Set([
-            "offset",
-            "limit",
-            "expectedCatalogRevision",
-            "expectedAvailabilityRevision",
-        ])
-        guard params.keys.allSatisfy({ allowed.contains($0) }) else {
-            throw WorkbenchFailure(
-                name: "InvalidCommand",
-                message: "media.roots accepts only bounded pagination and generation parameters"
-            )
+    /// When no original is small enough to compare by content (or none was
+    /// fingerprinted), the folder must still hold known files at their saved
+    /// paths with their saved sizes. Only a root with no known files is
+    /// accepted without evidence.
+    private func verifyReconnectByMetadata(_ candidate: AuthorizedMediaRoot, rootId: String) throws -> AuthorizedMediaRoot {
+        let evidence = catalog.assets
+            .filter { $0.rootId == rootId && $0.availability != "missing" }
+            .sorted { $0.relativePath < $1.relativePath }
+            .prefix(16)
+        let required = min(2, evidence.count)
+        if required == 0 { return candidate }
+        var matched = 0
+        for asset in evidence {
+            guard let segments = try? MediaFilesystem.safeSegments(asset.relativePath),
+                  let metadata = try? MediaFilesystem.metadata((candidate.path == "/" ? "" : candidate.path) + "/" + segments.joined(separator: "/")),
+                  metadata.isRegular, metadata.byteSize == asset.byteSize else { continue }
+            matched += 1
+            if matched >= required { return candidate }
         }
-        try requireExpectedRevision(params)
-        let (offset, limit) = try pageRequest(params)
-        if offset > 0 && params["expectedCatalogRevision"] as? Int == nil {
-            throw WorkbenchFailure(name: "InvalidCommand", message: "expectedCatalogRevision is required after the first media page")
-        }
-        let availability = try rootAvailabilitySnapshot()
-        let availabilityRevision = Self.rootAvailabilityRevision(availability)
-        try requireAvailabilityRevision(params, offset: offset, current: availabilityRevision)
-        let end = min(catalog.roots.count, offset + limit)
-        let page = offset < catalog.roots.count ? Array(catalog.roots[offset..<end]) : []
-        var items = try page.map { try publicRoot($0.id, availability: availability[$0.id]) }
-        while true {
-            let deliveredEnd = offset + items.count
-            let nextOffset: Any
-            if deliveredEnd < catalog.roots.count { nextOffset = deliveredEnd }
-            else { nextOffset = NSNull() }
-            let result: [String: Any] = [
-                "catalogRevision": catalog.revision,
-                "availabilityRevision": availabilityRevision,
-                "offset": offset,
-                "limit": limit,
-                "total": catalog.roots.count,
-                "nextOffset": nextOffset,
-                "items": items,
-            ]
-            let encoded = try encodeResult(result)
-            if encoded.count <= maximumControlFrameBytes { return encoded }
-            guard items.count > 1 else {
-                throw WorkbenchFailure(name: "ResultTooLarge", message: "One media Root summary exceeds the 1 MiB control-frame limit")
-            }
-            items.removeLast()
-        }
-    }
-
-    private func queryAssets(_ params: [String: Any]) throws -> Data {
-        try requireExpectedRevision(params)
-        let assetIds = try requestedAssetIds(params)
-        let (offset, limit) = try pageRequest(params, defaultLimit: assetIds?.count ?? 100)
-        if offset > 0 && params["expectedCatalogRevision"] as? Int == nil {
-            throw WorkbenchFailure(name: "InvalidCommand", message: "expectedCatalogRevision is required after the first media page")
-        }
-        let rootAvailability = try rootAvailabilitySnapshot()
-        let availabilityRevision = Self.rootAvailabilityRevision(rootAvailability)
-        try requireAvailabilityRevision(params, offset: offset, current: availabilityRevision)
-        let search = (params["search"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let oneRoot = params["rootId"] as? String
-        let rootIds = Set((params["rootIds"] as? [String]) ?? (oneRoot.map { [$0] } ?? []))
-        var matched = catalog.assets.filter { asset in
-            if let assetIds, !assetIds.contains(asset.id) { return false }
-            if !rootIds.isEmpty && !rootIds.contains(asset.rootId) { return false }
-            if search.isEmpty { return true }
-            return "\(asset.filename)\n\(asset.folder)\n\(asset.relativePath)\n\(asset.title)\n\(asset.note)"
-                .lowercased().contains(search)
-        }
-        matched.sort {
-            let filenameOrder = Self.compareUTF16($0.filename, $1.filename)
-            return filenameOrder == 0
-                ? Self.compareUTF16($0.id, $1.id) < 0
-                : filenameOrder < 0
-        }
-        let end = min(matched.count, offset + limit)
-        let page = offset < matched.count ? Array(matched[offset..<end]) : []
-        let nonce = lease.current()
-        var items = try page.map { asset -> [String: Any] in
-            let availability = effectiveAvailability(asset, rootAvailability: rootAvailability)
-            let grid = ["still-image", "animated-image"].contains(asset.previewCapability)
-            let gridRendition: Any
-            let previewRendition: Any
-            if grid && availability == "available", let nonce {
-                guard let encodedAssetId = asset.id.addingPercentEncoding(
-                    withAllowedCharacters: Self.javaScriptURIComponentAllowed
-                ) else {
-                    throw WorkbenchFailure(
-                        name: "InvalidMediaCatalog",
-                        message: "Media Asset identity could not be encoded for preview"
-                    )
-                }
-                gridRendition = "pitchdog-asset://\(nonce)/\(encodedAssetId)/grid_standard"
-                previewRendition = "pitchdog-asset://\(nonce)/\(encodedAssetId)/preview_standard"
-            } else {
-                gridRendition = NSNull()
-                previewRendition = NSNull()
-            }
-            return [
-                "id": asset.id,
-                "locationId": asset.locationId,
-                "rootId": asset.rootId,
-                "filename": Self.safeDisplay(asset.filename),
-                "label": Self.safeDisplay(asset.filename),
-                "folder": Self.safeDisplay(asset.folder),
-                "displayPath": Self.safeDisplay(asset.relativePath),
-                "relativeDisplayPath": Self.safeDisplay(asset.relativePath),
-                "title": Self.safeDisplay(asset.title),
-                "note": Self.safeDisplay(asset.note),
-                "mediaKind": asset.mediaKind,
-                "orientation": Self.jsonValue(asset.orientation),
-                "width": Self.jsonValue(asset.width),
-                "height": Self.jsonValue(asset.height),
-                "byteSize": asset.byteSize,
-                "availability": availability,
-                "previewCapability": grid ? "grid" : "catalog_only",
-                "previewReason": Self.jsonValue(asset.previewReason),
-                "renditions": [
-                    "gridStandard": gridRendition,
-                    "previewStandard": previewRendition,
-                ],
-            ]
-        }
-        while true {
-            let deliveredEnd = offset + items.count
-            let nextOffset: Any
-            if deliveredEnd < matched.count { nextOffset = deliveredEnd }
-            else { nextOffset = NSNull() }
-            let result: [String: Any] = [
-                "catalogRevision": catalog.revision,
-                "availabilityRevision": availabilityRevision,
-                "offset": offset,
-                "limit": limit,
-                "total": matched.count,
-                "nextOffset": nextOffset,
-                "items": items,
-            ]
-            let encoded = try encodeResult(result)
-            if encoded.count <= maximumControlFrameBytes { return encoded }
-            guard items.count > 1 else {
-                throw WorkbenchFailure(name: "ResultTooLarge", message: "One media Asset summary exceeds the 1 MiB control-frame limit")
-            }
-            items.removeLast()
-        }
+        throw WorkbenchFailure(name: "MediaRootMismatch", message: "The selected folder does not match this media Root")
     }
 
     private func publicRoot(_ rootId: String, availability: String? = nil) throws -> [String: Any] {
@@ -1141,127 +1049,6 @@ actor MediaCatalogSession {
         }
     }
 
-    private func effectiveAvailability(
-        _ asset: PortableMediaAsset,
-        rootAvailability: [String: String]
-    ) -> String {
-        let rootState = rootAvailability[asset.rootId] ?? "available"
-        return rootState == "available" ? asset.availability : rootState
-    }
-
-    private func rootAvailabilitySnapshot() throws -> [String: String] {
-        Dictionary(uniqueKeysWithValues: try catalog.roots.map { root in
-            (root.id, try rootAvailability(root.id))
-        })
-    }
-
-    private static func rootAvailabilityRevision(_ availability: [String: String]) -> String {
-        let snapshot = availability.map { rootId, state in
-            "\(rootId)\0\(state)"
-        }.sorted().joined(separator: "\u{1}")
-        var hash: UInt32 = 0x811c9dc5
-        for codeUnit in snapshot.utf16 {
-            hash ^= UInt32(codeUnit)
-            hash = hash &* 0x01000193
-        }
-        return String(format: "root-availability-%08x", hash)
-    }
-
-    private func requireExpectedRevision(_ params: [String: Any]) throws {
-        guard let raw = params["expectedCatalogRevision"] else { return }
-        guard let expected = raw as? Int, expected >= 0, expected <= maximumCatalogRevision else {
-            throw WorkbenchFailure(name: "InvalidCommand", message: "expectedCatalogRevision must be a non-negative integer")
-        }
-        if expected != catalog.revision {
-            throw WorkbenchFailure(
-                name: "QuerySnapshotChanged",
-                message: "Expected media catalogue revision \(expected); current revision is \(catalog.revision)"
-            )
-        }
-    }
-
-    private func requestedAssetIds(_ params: [String: Any]) throws -> Set<String>? {
-        guard let raw = params["assetIds"] else { return nil }
-        guard let values = raw as? [Any], !values.isEmpty, values.count <= 250 else {
-            throw WorkbenchFailure(
-                name: "InvalidCommand",
-                message: "assetIds must contain between 1 and 250 opaque identities"
-            )
-        }
-        var ids = Set<String>()
-        for value in values {
-            guard let id = value as? String,
-                  !id.isEmpty,
-                  id.count <= 200,
-                  !id.contains("/"),
-                  !id.contains("\\"),
-                  !id.contains("\0"),
-                  ids.insert(id).inserted
-            else {
-                throw WorkbenchFailure(
-                    name: "InvalidCommand",
-                    message: "assetIds must contain unique opaque identities"
-                )
-            }
-        }
-        return ids
-    }
-
-    private func pageRequest(
-        _ params: [String: Any],
-        defaultLimit: Int = 100
-    ) throws -> (offset: Int, limit: Int) {
-        let offset: Int
-        if let raw = params["offset"] {
-            guard let value = raw as? Int else {
-                throw WorkbenchFailure(name: "InvalidCommand", message: "Media query offset must be an integer")
-            }
-            offset = value
-        } else { offset = 0 }
-        let limit: Int
-        if let raw = params["limit"] {
-            guard let value = raw as? Int else {
-                throw WorkbenchFailure(name: "InvalidCommand", message: "Media query limit must be an integer")
-            }
-            limit = value
-        } else { limit = defaultLimit }
-        guard offset >= 0,
-              offset <= maximumCatalogRevision,
-              limit > 0,
-              limit <= 250 else {
-            throw WorkbenchFailure(name: "InvalidCommand", message: "Media query pagination is invalid or exceeds 250")
-        }
-        return (offset, limit)
-    }
-
-    private func requireAvailabilityRevision(
-        _ params: [String: Any],
-        offset: Int,
-        current: String
-    ) throws {
-        guard let raw = params["expectedAvailabilityRevision"] else {
-            if offset > 0 {
-                throw WorkbenchFailure(
-                    name: "InvalidCommand",
-                    message: "expectedAvailabilityRevision is required after the first media page"
-                )
-            }
-            return
-        }
-        guard let expected = raw as? String, !expected.isEmpty, expected.count <= 100 else {
-            throw WorkbenchFailure(
-                name: "InvalidCommand",
-                message: "expectedAvailabilityRevision must be a bounded generation identity"
-            )
-        }
-        if expected != current {
-            throw WorkbenchFailure(
-                name: "QuerySnapshotChanged",
-                message: "Live media Root availability changed during the paged query"
-            )
-        }
-    }
-
     private func requireRoot(_ rootId: String) throws -> PortableMediaRoot {
         guard !rootId.isEmpty, let root = catalog.roots.first(where: { $0.id == rootId }) else {
             throw WorkbenchFailure(name: "UnknownRoot", message: "Root does not exist: \(rootId)")
@@ -1278,6 +1065,9 @@ actor MediaCatalogSession {
     private func persistCatalog() throws {
         try Self.validate(catalog, expectedDeckId: deckId)
         try Self.persist(catalog, packageURL: packageURL)
+        persisted = catalog
+        catalogDirty = false
+        lastPersist = Date()
     }
 
     private func encodeResult(_ value: [String: Any]) throws -> Data {
@@ -1449,24 +1239,6 @@ actor MediaCatalogSession {
         }.joined()
     }
 
-    private static func compareUTF16(_ left: String, _ right: String) -> Int {
-        let leftUnits = Array(left.utf16)
-        let rightUnits = Array(right.utf16)
-        let shared = min(leftUnits.count, rightUnits.count)
-        for index in 0..<shared {
-            if leftUnits[index] != rightUnits[index] {
-                return leftUnits[index] < rightUnits[index] ? -1 : 1
-            }
-        }
-        if leftUnits.count == rightUnits.count { return 0 }
-        return leftUnits.count < rightUnits.count ? -1 : 1
-    }
-
-    private static func jsonValue<T>(_ value: T?) -> Any {
-        if let value { return value }
-        return NSNull()
-    }
-
     private static func fingerprint(_ observation: MediaObservation) -> String {
         observation.fingerprint ?? "unavailable:\(observation.byteSize):\(observation.modifiedAt)"
     }
@@ -1550,50 +1322,6 @@ actor MediaCatalogSession {
         dimensions.width > 0 && dimensions.height > 0
             && dimensions.width <= maximumDimension && dimensions.height <= maximumDimension
             && dimensions.width * dimensions.height <= maximumDecodedPixels
-    }
-
-    private static func imageDimensions(_ data: Data, extension ext: String) -> (width: Int, height: Int)? {
-        let bytes = [UInt8](data)
-        func u16BE(_ offset: Int) -> Int { Int(bytes[offset]) << 8 | Int(bytes[offset + 1]) }
-        func u16LE(_ offset: Int) -> Int { Int(bytes[offset]) | Int(bytes[offset + 1]) << 8 }
-        func u24LE(_ offset: Int) -> Int {
-            Int(bytes[offset]) | Int(bytes[offset + 1]) << 8 | Int(bytes[offset + 2]) << 16
-        }
-        func ascii(_ range: Range<Int>) -> String { String(bytes: bytes[range], encoding: .ascii) ?? "" }
-        if ext == "png", bytes.count >= 24, ascii(1..<4) == "PNG" {
-            let width = bytes[16..<20].reduce(0) { ($0 << 8) | Int($1) }
-            let height = bytes[20..<24].reduce(0) { ($0 << 8) | Int($1) }
-            return (width, height)
-        }
-        if ext == "gif", bytes.count >= 10, ascii(0..<3) == "GIF" {
-            return (u16LE(6), u16LE(8))
-        }
-        if ["jpg", "jpeg"].contains(ext), bytes.count >= 4, bytes[0] == 0xff, bytes[1] == 0xd8 {
-            var offset = 2
-            let startsOfFrame: Set<UInt8> = [0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf]
-            while offset + 9 < bytes.count {
-                if bytes[offset] != 0xff { offset += 1; continue }
-                let marker = bytes[offset + 1]
-                if startsOfFrame.contains(marker) { return (u16BE(offset + 7), u16BE(offset + 5)) }
-                if marker == 0xd8 || marker == 0xd9 { offset += 2; continue }
-                guard offset + 3 < bytes.count else { return nil }
-                let length = u16BE(offset + 2)
-                if length < 2 { return nil }
-                offset += 2 + length
-            }
-        }
-        if ext == "webp", bytes.count >= 30, ascii(0..<4) == "RIFF", ascii(8..<12) == "WEBP" {
-            let kind = ascii(12..<16)
-            if kind == "VP8X" { return (1 + u24LE(24), 1 + u24LE(27)) }
-            if kind == "VP8L", bytes[20] == 0x2f {
-                let packed = Int(bytes[21]) | Int(bytes[22]) << 8 | Int(bytes[23]) << 16 | Int(bytes[24]) << 24
-                return (1 + (packed & 0x3fff), 1 + ((packed >> 14) & 0x3fff))
-            }
-            if kind == "VP8 ", bytes[23] == 0x9d, bytes[24] == 0x01, bytes[25] == 0x2a {
-                return (u16LE(26) & 0x3fff, u16LE(28) & 0x3fff)
-            }
-        }
-        return nil
     }
 }
 

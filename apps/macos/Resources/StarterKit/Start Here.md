@@ -10,7 +10,7 @@ Use **2576 × 1080** for cinemascope. Use the **1920x1080** folder for standard 
 4. Choose a folder. Review the export result.
 5. Open **InDesign/Deck.indd** to polish your deck, or use **Production/workbench.md** with your existing Figma importer.
 
-**First use on each Mac:** Workbench → Settings → Connect InDesign. Accept the macOS Automation prompt. Photoshop setup is optional; PSD generation itself does not need Photoshop. The PNG exporter runs inside Photoshop. File access comes from the folders you choose; Full Disk Access and Accessibility access are not required by this workflow.
+**First use on each Mac:** Deck Workbench → Settings… (Command-,) → Connect InDesign. Accept the macOS Automation prompt. Photoshop setup is optional; PSD generation itself does not need Photoshop. The PNG exporter runs inside Photoshop. File access comes from the folders you choose; Full Disk Access and Accessibility access are not required by this workflow.
 
 ## What is here
 

@@ -1,4 +1,4 @@
-/* pitch.dog deck production 1.3.0. ES3; local files only. */
+/* pitch.dog deck production 1.3.1. ES3; local files only. */
 var PitchdogDeckProduction = (function () {
     var moduleFolder = File($.fileName).parent;
     $.evalFile(File(moduleFolder.fsName + '/WorkbenchImportCore.jsxinc'));
@@ -7,12 +7,12 @@ var PitchdogDeckProduction = (function () {
     function fail(message) { throw new Error(message); }
     function pad(n) { return n < 10 ? '0' + n : String(n); }
     function stamp() { var d = new Date(); return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) + '-' + pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds()); }
-    function quote(s) { return '"' + String(s).replace(/\\/g,'\\\\').replace(/"/g,'\\"').replace(/\r/g,'\\r').replace(/\n/g,'\\n').replace(/\t/g,'\\t') + '"'; }
+    function quote(s) { return '"' + String(s).replace(/[\\"\x00-\x1f\u2028\u2029]/g,function(c){if(c==='\\')return '\\\\';if(c==='"')return '\\"';return '\\u'+('0000'+c.charCodeAt(0).toString(16)).slice(-4);}) + '"'; }
     function json(x) { if(x === null) return 'null'; if(typeof x === 'string') return quote(x); if(typeof x === 'number' || typeof x === 'boolean') return String(x); var a=[], k; if(x instanceof Array) { for(k=0;k<x.length;k++) a.push(json(x[k])); return '['+a.join(',')+']'; } for(k in x) if(x.hasOwnProperty(k)) a.push(quote(k)+':'+json(x[k])); return '{'+a.join(',')+'}'; }
     function write(file, text) { file.encoding='UTF-8'; if(!file.open('w')) fail('Cannot write '+file.fsName); try { file.write(text); if(file.error) fail(file.error); } finally { file.close(); } }
     function mkdir(folder) { if(!folder.exists && !folder.create()) fail('Cannot create '+folder.fsName); return folder; }
     function copy(source, destination) { source=File(source.fsName);destination=File(destination.fsName);if(!source.exists || source.length===0) fail('Missing or empty source: '+source.fsName); if(destination.exists) fail('A file already exists: '+destination.fsName); if(!source.copy(destination.fsName))fail('File copy failed: '+destination.fsName);var check=File(destination.fsName);if(!check.exists||check.length!==source.length)fail('File copy failed: '+destination.fsName); }
-    function readMarkdown(file) { if(!file || !file.exists) fail('Choose a Workbench Markdown file.'); if(file.length>16*1024*1024) fail('Workbench file exceeds 16 MiB.'); file.encoding='UTF-8'; if(!file.open('r')) fail('Cannot read '+file.fsName); var s;try{s=file.read();}finally{file.close();} if(/[\u0000\uFFFD]/.test(s)) fail('Save the Workbench file as valid UTF-8 text.'); return s; }
+    function readMarkdown(file,allowReplacement) { if(!file || !file.exists) fail('Choose a Workbench Markdown file.'); if(file.length>16*1024*1024) fail('Workbench file exceeds 16 MiB.'); file.encoding='UTF-8'; if(!file.open('r')) fail('Cannot read '+file.fsName); var s;try{s=file.read();}finally{file.close();} if(/\u0000/.test(s)||(!allowReplacement&&/\uFFFD/.test(s))) fail('Save the Workbench file as valid UTF-8 text.'); return s; }
     // Hash every source and copied byte. On macOS, a built-in local hash process
     // avoids millions of interpreted ES3 rounds; no cache or metadata shortcut.
     // The file path is an escaped AppleScript string, then quoted form handles
@@ -70,6 +70,7 @@ var PitchdogDeckProduction = (function () {
         var formatting=preflightFormatting(m,doc);
         return {manifest:m,file:file,files:files.length?files:null,formatting:formatting};
     }
+    function isContents(row) { return row.contents===true||(row.contents===undefined&&row.intent==='contents'); }
     function nativeCopyText(field) { if(field&&field.state==='intentionally-blank')return '';return field&&field.state==='present'&&/\S/.test(field.text)?field.text.replace(/\n\n/g,'\r'):'-'; }
     function namedStyle(doc,collection,name) {
         var styles=doc[collection],found=null;
@@ -99,7 +100,7 @@ var PitchdogDeckProduction = (function () {
             }
         }
         if(!synthetic||body.join('\n\n')!==row.projection[2].text)fail('Contents copy blocks do not match the exported Markdown. Export a fresh bundle.');
-        for(i=0;i<rows.length;i++)if(rows[i].intent!=='contents')expected.push(rows[i].title+'\t'+pad(i+1));
+        for(i=0;i<rows.length;i++)if(!isContents(rows[i]))expected.push(rows[i].title+'\t'+pad(i+1));
         if(synthetic.text!==expected.join('\n'))fail('Contents entries do not match the frozen slide order. Export a fresh bundle.');
         function add(value,kind){if(value==='')return;var parts=value.split('\r');for(var n=0;n<parts.length;n++)paragraphs.push({text:parts[n],kind:kind});}
         add(nativeCopyText(row.projection[0]),'title');add(nativeCopyText(row.projection[1]),'sub');
@@ -149,11 +150,11 @@ var PitchdogDeckProduction = (function () {
         for(i=0;i<rows.length;i++){
             row=rows[i];appearance=row.appearance;colours=palettePlan(row);
             if(appearance!==undefined&&appearance!==null&&appearance!=='dark'&&appearance!=='light')fail('Unknown slide appearance. Export a fresh bundle.');
-            if(row.intent!=='contents'&&!appearance&&!colours){plans.push(null);continue;}
+            if(!isContents(row)&&!appearance&&!colours){plans.push(null);continue;}
             if(!appearance)appearance=doc.pages[0].appliedMaster&&doc.pages[0].appliedMaster.name==='L-Light'?'light':'dark';
             styles=cache[appearance];
             if(!styles){styles=appearanceStyles(doc,appearance);cache[appearance]=styles;}
-            if(row.intent==='contents'&&!styles.contents){
+            if(isContents(row)&&!styles.contents){
                 light=appearance==='light';styles.contents={frame:namedStyle(doc,'allObjectStyles','Contents - Two columns'),
                     title:namedStyle(doc,'allParagraphStyles',light?'TOC - Title (light)':'TOC - Title'),
                     entry:namedStyle(doc,'allParagraphStyles',light?'TOC - Entry (light)':'TOC - Entry'),
@@ -161,7 +162,7 @@ var PitchdogDeckProduction = (function () {
                 var prefs=styles.contents.frame.textFramePreferences;
                 if(prefs.textColumnCount!==2||!prefs.verticalBalanceColumns)fail('Contents - Two columns must retain two balanced columns.');
             }
-            plans.push({styles:styles,setAppearance:!!row.appearance,appearance:appearance,colour:colours,contents:row.intent==='contents'?contentsPlan(row,rows):null});
+            plans.push({styles:styles,setAppearance:!!row.appearance,appearance:appearance,colour:colours,contents:isContents(row)?contentsPlan(row,rows):null});
         }
         return plans;
     }
@@ -305,13 +306,14 @@ var PitchdogDeckProduction = (function () {
     }
     function build(options) {
         options=options||{};var doc=options.document||app.activeDocument,oldUnits=app.scriptPreferences.measurementUnit,oldUI=app.scriptPreferences.userInteractionLevel,newDoc=null,ui=null,manifest=null,manifestFile=null,progressStep=0;
-        var advance=function(message){if(ui)ui.set(++progressStep,message);},pulse=function(message){if(ui)ui.message(message);};
+        var report=typeof options.onProgress==='function'?options.onProgress:null;
+        var advance=function(message){if(report)report(message);if(ui)ui.set(++progressStep,message);},pulse=function(message){if(report)report(message);if(ui)ui.message(message);};
         try {
             app.scriptPreferences.measurementUnit=MeasurementUnits.POINTS;
             if(options.interactive===false)app.scriptPreferences.userInteractionLevel=UserInteractionLevels.NEVER_INTERACT;
             ensureFreshStarter(doc);var size=dimensions(doc);assertCanvas(size);
             if(options.stack && options.stack!=='text-over-character')fail('New decks use TEXT above PSD - CHARACTERS. You can rearrange those layers after building.');
-            var input=options.markdownFile instanceof File?options.markdownFile:File(options.markdownFile),raw=readMarkdown(input),parsed=WorkbenchMarkdown.parse(raw);
+            var input=options.markdownFile instanceof File?options.markdownFile:File(options.markdownFile),raw=readMarkdown(input,true),parsed=WorkbenchMarkdown.parse(raw);
             if(parsed.canvas!=='cinemascope-2576x1080'&&parsed.canvas!=='widescreen-1920x1080')fail('Choose a cinemascope or widescreen Workbench export for this slide builder.');
             if(!parsed.slides.length||parsed.slides.length>1000)fail('Use a Workbench file containing 1–1000 slides.');
             var parent=options.outputParent instanceof Folder?options.outputParent:Folder(options.outputParent);if(!parent.exists)fail('Choose an existing parent folder.');
@@ -320,6 +322,8 @@ var PitchdogDeckProduction = (function () {
             if(options.interactive!==false){ui=progress('Building deck',parsed.slides.length*4+4);ui.set(0,'Checking the production bundle');}
             var templateRoot=moduleFolder.parent.parent,psd=File(templateRoot.fsName+(size.width===1920?'/1920x1080':'')+'/slide-00 - '+size.width+'x1080.psd');
             var bundle=productionBundle(input,parsed,size,doc,advance,pulse);if(!bundle||!bundle.files)assertPSD(psd,size);
+            // U+FFFD is accepted only in writing whose hash matches Workbench's export.
+            if(!bundle&&/\uFFFD/.test(raw))fail('Save the Workbench file as valid UTF-8 text.');
             mkdir(folder);var links=mkdir(Folder(folder.fsName+'/Links')),psdFolder=mkdir(Folder(links.fsName+'/PSD'));
             manifest={format:'pitchdog-deck-production/1',status:'building',created:stamp(),title:parsed.title,width:size.width,height:size.height,sourceCanvas:parsed.canvas,slideCount:parsed.slides.length,stack:'text-over-character',files:[],sourceWorkbench:input.fsName,sourceStarter:doc.fullName.fsName,sourcePSD:psd.fsName};
             manifestFile=File(folder.fsName+'/deck-production.json');write(manifestFile,json(manifest)+'\n');copy(input,File(folder.fsName+'/workbench.md'));
@@ -328,7 +332,8 @@ var PitchdogDeckProduction = (function () {
             advance('Placing writing and formatting Contents');
             doc.saveACopy(buildingFile);newDoc=app.open(buildingFile);app.activeDocument=newDoc;
             PitchdogStarterLayers.apply(newDoc);
-            var textLayer=findCopyLayer(newDoc),imported=WorkbenchInDesign.run();if(!imported.ok)fail(imported.message);
+            $.global.pitchdogVerifiedCopy=!!bundle;
+            var textLayer,imported;try{textLayer=findCopyLayer(newDoc);imported=WorkbenchInDesign.run();}finally{$.global.pitchdogVerifiedCopy=false;}if(!imported.ok)fail(imported.message);
             if(newDoc.pages.length!==parsed.slides.length)fail('Page count does not match Workbench.');
             // Re-resolve document styles: preflight references belong to the
             // untouched starter, while formatting must target the saved copy.
@@ -479,5 +484,5 @@ var PitchdogDeckProduction = (function () {
         var folder=null;if(returned.value){folder=Folder.selectDialog('Choose the returned folder containing Slide 01.psd, etc.');if(!folder)return null;}
         return refresh({returnedFolder:folder?folder.fsName:null});
     }
-    return {build:build,chooseBuild:chooseBuild,refresh:refresh,chooseRefresh:chooseRefresh,getSlots:getSlots,setRole:setRole,psdHeader:psdHeader,sha256File:sha256File,parseJSON:parseJSON,productionBundle:productionBundle,contentsPlan:contentsPlan,preflightFormatting:preflightFormatting,version:'1.3.0'};
+    return {build:build,chooseBuild:chooseBuild,refresh:refresh,chooseRefresh:chooseRefresh,getSlots:getSlots,setRole:setRole,psdHeader:psdHeader,sha256File:sha256File,parseJSON:parseJSON,productionBundle:productionBundle,contentsPlan:contentsPlan,preflightFormatting:preflightFormatting,version:'1.3.1'};
 }());

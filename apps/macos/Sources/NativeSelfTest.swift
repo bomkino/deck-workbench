@@ -36,6 +36,8 @@ enum NativeAcceptance {
   static func run(output: URL) async throws {
     try await NativeAdobeAutomationChecks.run()
     try await NativeCompatibilityChecks.run()
+    try await NativeMediaChecks.run()
+    try NativeRenderingChecks.run()
     try NativeProductionCopyChecks.run(output: output)
     try NativeStarterStyleChecks.run()
     let manager = FileManager.default
@@ -361,6 +363,7 @@ enum NativeAcceptance {
       "reviewNavigation": true, "cropZoomUndo": true, "notesTargetIdentity": true,
       "catalogRevisionReuse": true, "boundedImport": true, "lifecycleSerialization": true,
       "copyOnlyIndependent": true, "literalCopy": true, "safeFilenames": true, "thumbnailCache": true,
+      "crashRecovery": true, "mediaCatalog": true, "renderingGeometry": true,
       "nativeBurstAndSaveSeconds": inputAndSaveSeconds,
       "manualAccessibility": "not performed", "targetMachinePerformance": "not measured",
       "windowCaptures": captureMethods,

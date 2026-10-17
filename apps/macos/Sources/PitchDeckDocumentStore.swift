@@ -22,6 +22,14 @@ struct LoadedPitchDeck {
     let repairedJournalHead: Bool
 }
 
+/// Repairs the person has explicitly agreed to for one open. Each names the
+/// digest of the exact bytes they were shown, so a file that changed in the
+/// meantime is never repaired on their behalf.
+struct PitchDeckOpenRepairs: Sendable {
+    var staleLockDigest: String? = nil
+    var interruptedJournalDigest: String? = nil
+}
+
 final class PitchDeckDocumentStore {
     static let zeroHash = String(repeating: "0", count: 64)
     static let writerLockFile = ".deck-workbench-writer.lock"
@@ -95,13 +103,13 @@ final class PitchDeckDocumentStore {
         }
     }
 
-    static func open(at packageURL: URL) throws -> (PitchDeckDocumentStore, LoadedPitchDeck) {
+    static func open(at packageURL: URL, repairs: PitchDeckOpenRepairs = PitchDeckOpenRepairs()) throws -> (PitchDeckDocumentStore, LoadedPitchDeck) {
         let files = FileManager.default
         var isDirectory: ObjCBool = false
         guard files.fileExists(atPath: packageURL.path, isDirectory: &isDirectory), isDirectory.boolValue else {
             throw WorkbenchFailure(name: "MissingAttachment", message: "Selected .pitchdeck package does not exist")
         }
-        let writerLockToken = try acquireWriterLock(in: packageURL)
+        let writerLockToken = try acquireWriterLock(in: packageURL, replacingStaleLock: repairs.staleLockDigest)
         do {
         do {
             try requireContainedDirectory("attachments", in: packageURL)
@@ -133,7 +141,10 @@ final class PitchDeckDocumentStore {
             recoveredPreviousCheckpoint = true
         }
 
-        let journalData = try readRequired("journal.ndjson", in: packageURL)
+        var journalData = try readRequired("journal.ndjson", in: packageURL)
+        if let last = journalData.last, last != 0x0A {
+            journalData = try setAsideInterruptedTail(journalData, in: packageURL, consent: repairs.interruptedJournalDigest)
+        }
         let validated = try validateJournal(journalData)
         guard manifest.checkpointRevision <= validated.lastRevision else {
             throw WorkbenchFailure(name: "JournalCorruption", message: "Checkpoint revision is ahead of journal history")
@@ -208,10 +219,7 @@ final class PitchDeckDocumentStore {
                 defer { try? handle.close() }
                 try Self.requireRegularFile(descriptor)
                 try handle.write(contentsOf: line)
-                try handle.synchronize()
-                guard Darwin.fsync(handle.fileDescriptor) == 0 else {
-                    throw Self.posixError()
-                }
+                try Self.fullSync(handle.fileDescriptor)
             }
         } catch {
             requiresReopen = true
@@ -456,8 +464,10 @@ final class PitchDeckDocumentStore {
 
     func close() throws {
         guard ownsWriterLock else { return }
+        // Ownership ends either way: a lock that is missing or now belongs to
+        // someone else must not be retried or removed later by deinit.
+        defer { ownsWriterLock = false }
         try Self.releaseWriterLock(in: packageURL, ownerToken: writerLockToken)
-        ownsWriterLock = false
     }
 
     deinit {
@@ -557,7 +567,7 @@ final class PitchDeckDocumentStore {
         return try encoder.encode(manifest)
     }
 
-    private static func acquireWriterLock(in packageURL: URL, now: Date = Date()) throws -> String {
+    private static func acquireWriterLock(in packageURL: URL, now: Date = Date(), replacingStaleLock consentDigest: String? = nil) throws -> String {
         let ownerToken = UUID().uuidString.lowercased()
         let payload: [String: Any] = [
             "format": writerLockFormat,
@@ -565,20 +575,48 @@ final class PitchDeckDocumentStore {
             "ownerToken": ownerToken,
             "processId": ProcessInfo.processInfo.processIdentifier,
             "createdAt": iso8601(now),
+            // Additive fields; older readers only check format, version and token.
+            "hostId": currentHostID(),
+            "bootSession": currentBootSession(),
         ]
         let data = try JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
         try withContainedParent(of: writerLockFile, in: packageURL) { parentDescriptor, name in
-            let descriptor = Darwin.openat(
+            var descriptor = Darwin.openat(
                 parentDescriptor,
                 name,
                 O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW,
                 S_IRUSR | S_IWUSR
             )
+            if descriptor < 0 && errno == EEXIST {
+                let existing = try lockBytes(parentDescriptor: parentDescriptor, name: name)
+                guard let reason = staleLockReason(existing) else {
+                    throw WorkbenchFailure(
+                        name: "DocumentBusy",
+                        message: "This deck is open in Workbench, possibly on another Mac. Close it there first. If that Mac stopped unexpectedly, use Recover Saved Copy."
+                    )
+                }
+                let digest = sha256(existing)
+                guard consentDigest == digest else {
+                    throw WorkbenchFailure(
+                        name: "StaleWriterLock",
+                        message: "This deck was not closed properly: its lock was \(reason). If the deck is not open anywhere else, Workbench can open it here and keep the old lock in the deck’s recovery folder.",
+                        detail: digest
+                    )
+                }
+                // The person agreed to replace exactly these bytes. Keep them.
+                let recovery = Darwin.openat(parentDescriptor, "recovery", O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+                guard recovery >= 0 else { throw posixError() }
+                defer { Darwin.close(recovery) }
+                let kept = "stale-writer-lock-\(UUID().uuidString.lowercased()).json"
+                guard Darwin.renameatx_np(parentDescriptor, name, recovery, kept, UInt32(RENAME_EXCL)) == 0 else { throw posixError() }
+                guard Darwin.fsync(recovery) == 0, Darwin.fsync(parentDescriptor) == 0 else { throw posixError() }
+                descriptor = Darwin.openat(parentDescriptor, name, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, S_IRUSR | S_IWUSR)
+            }
             guard descriptor >= 0 else {
                 if errno == EEXIST {
                     throw WorkbenchFailure(
                         name: "DocumentBusy",
-                        message: "This Deck already has a writer lock. Close the other writer; a crash-stale lock requires explicit recovery."
+                        message: "Another Workbench window opened this deck at the same time. Nothing was changed."
                     )
                 }
                 throw posixError()
@@ -586,8 +624,7 @@ final class PitchDeckDocumentStore {
             let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
             do {
                 try handle.write(contentsOf: data)
-                try handle.synchronize()
-                guard Darwin.fsync(handle.fileDescriptor) == 0 else { throw posixError() }
+                try fullSync(handle.fileDescriptor)
                 try handle.close()
                 guard Darwin.fsync(parentDescriptor) == 0 else { throw posixError() }
             } catch {
@@ -597,6 +634,71 @@ final class PitchDeckDocumentStore {
             }
         }
         return ownerToken
+    }
+
+    private static func lockBytes(parentDescriptor: Int32, name: String) throws -> Data {
+        let descriptor = Darwin.openat(parentDescriptor, name, O_RDONLY | O_NOFOLLOW)
+        guard descriptor >= 0 else { throw posixError() }
+        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        defer { try? handle.close() }
+        try requireRegularFile(descriptor)
+        return try handle.read(upToCount: 64 * 1024) ?? Data()
+    }
+
+    /// Why an existing lock cannot belong to a running writer, or nil if it may.
+    /// A lock from another Mac is never presumed stale.
+    static func staleLockReason(_ data: Data) -> String? {
+        guard let payload = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              payload["format"] as? String == writerLockFormat
+        else { return "left incomplete or unreadable" }
+        let host = payload["hostId"] as? String
+        if let host, !host.isEmpty, host != currentHostID() { return nil }
+        if let boot = payload["bootSession"] as? String, !boot.isEmpty, host != nil, boot != currentBootSession() {
+            return "left before this Mac last restarted"
+        }
+        guard let pid = (payload["processId"] as? NSNumber)?.int32Value, pid > 0 else {
+            return "left by an earlier Workbench session"
+        }
+        if Darwin.kill(pid, 0) == 0 || errno == EPERM { return nil }
+        return "left by a Workbench session that is no longer running"
+    }
+
+    static func currentHostID() -> String {
+        var bytes = [UInt8](repeating: 0, count: 16)
+        var wait = timespec(tv_sec: 0, tv_nsec: 0)
+        guard Darwin.gethostuuid(&bytes, &wait) == 0 else { return "" }
+        return bytes.map { String(format: "%02x", $0) }.joined()
+    }
+
+    static func currentBootSession() -> String {
+        var size = 0
+        guard Darwin.sysctlbyname("kern.bootsessionuuid", nil, &size, nil, 0) == 0, size > 0 else { return "" }
+        var buffer = [CChar](repeating: 0, count: size)
+        guard Darwin.sysctlbyname("kern.bootsessionuuid", &buffer, &size, nil, 0) == 0 else { return "" }
+        return String(cString: buffer)
+    }
+
+    /// A crash while appending can leave a partial final line. The complete
+    /// records before it are kept; the partial bytes are only set aside with
+    /// consent for these exact journal bytes, and a full copy is kept first.
+    private static func setAsideInterruptedTail(_ journal: Data, in packageURL: URL, consent: String?) throws -> Data {
+        let end = journal.lastIndex(of: 0x0A).map { journal.index(after: $0) } ?? journal.startIndex
+        let prefix = journal.subdata(in: journal.startIndex..<end)
+        guard (try? validateJournal(prefix)) != nil else {
+            throw WorkbenchFailure(name: "JournalCorruption", message: "Journal has a partial or non-UTF-8 record")
+        }
+        let digest = sha256(journal)
+        guard consent == digest else {
+            throw WorkbenchFailure(
+                name: "InterruptedJournal",
+                message: "The last change before Workbench stopped was not completely saved. Workbench can open the deck without that one change and keep the interrupted bytes in the deck’s recovery folder.",
+                detail: digest
+            )
+        }
+        try requireContainedDirectory("recovery", in: packageURL)
+        try writeDurable(journal, relativePath: "recovery/interrupted-journal-\(UUID().uuidString.lowercased()).ndjson", in: packageURL)
+        try writeDurable(prefix, relativePath: "journal.ndjson", in: packageURL)
+        return prefix
     }
 
     private static func requireWriterLock(in packageURL: URL, ownerToken: String) throws {
@@ -667,8 +769,7 @@ final class PitchDeckDocumentStore {
             let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
             do {
                 try handle.write(contentsOf: data)
-                try handle.synchronize()
-                guard Darwin.fsync(handle.fileDescriptor) == 0 else { throw posixError() }
+                try fullSync(handle.fileDescriptor)
                 try handle.close()
                 guard Darwin.renameat(parentDescriptor, temporary, parentDescriptor, name) == 0 else {
                     throw posixError()
@@ -735,6 +836,14 @@ final class PitchDeckDocumentStore {
             return
         }
         guard errno == ENOENT else { throw posixError() }
+    }
+
+    /// fsync on macOS can leave data in the drive's cache; F_FULLFSYNC asks the
+    /// drive to commit it. Some file systems (network shares) refuse the request,
+    /// so fall back to fsync rather than fail the write.
+    private static func fullSync(_ descriptor: Int32) throws {
+        if Darwin.fcntl(descriptor, F_FULLFSYNC) == 0 { return }
+        guard Darwin.fsync(descriptor) == 0 else { throw posixError() }
     }
 
     private static func posixError() -> POSIXError {

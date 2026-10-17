@@ -2,7 +2,7 @@
 
 Use **Build**, **Refresh**, then **Export**. Each tool asks for folders; there is no code to edit.
 
-This guide matches **InDesign production helper 1.2.1**. Native Build and save/reopen were verified in both slide sizes on 15 September 2026, including headline styles and the two-column Contents leaders. Returned-PSD Refresh was also verified.
+This guide matches **InDesign production helper 1.3.1**. Native Build and save/reopen were last verified in InDesign, in both slide sizes, on 15 September 2026 with helper 1.2.1, including headline styles and the two-column Contents leaders; returned-PSD Refresh was also verified then. The later changes (project colour roles; stopping an automatic build when it is cancelled; accepting a replacement character that Workbench itself exported; the explicit Contents flag) have not yet been run in InDesign.
 
 To install the InDesign tools, open **Window → Utilities → Scripts**, right-click **User**, then choose **Reveal in Finder**. Copy the complete `Automation/InDesign` folder there, keeping its `.jsxinc` files beside the scripts. Photoshop uses **File → Scripts → Browse…**.
 

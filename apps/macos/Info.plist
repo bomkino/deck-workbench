@@ -34,9 +34,9 @@
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.4.0</string>
+  <string>0.5.0</string>
   <key>CFBundleVersion</key>
-  <string>400</string>
+  <string>500</string>
   <key>NSAppleEventsUsageDescription</key>
   <string>Workbench builds your optional InDesign deck and checks the Adobe apps you choose during setup. Your original documents and images stay unchanged.</string>
   <key>ATSApplicationFontsPath</key>
@@ -47,6 +47,12 @@
   <true/>
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
+  <key>SUEnableAutomaticChecks</key>
+  <true/>
+  <key>SUFeedURL</key>
+  <string>https://github.com/bomkino/deck-workbench/releases/latest/download/appcast.xml</string>
+  <key>SUPublicEDKey</key>
+  <string>P43E8I+FgVyAW3QkS4J9bnDRRhAnsS4y3dT2WDce1lQ=</string>
   <key>UTExportedTypeDeclarations</key>
   <array>
     <dict>

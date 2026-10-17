@@ -10,6 +10,12 @@ struct NativeStarterStyleSheet: View {
   @State private var tab = "type"
   @State private var typeAllSlides = false
   @State private var colourAllSlides = true
+  @State private var initialType = NativeStarterType.standard
+  @State private var initialPalette = NativeStarterPalette.standard
+  /// Apply applies the visible tab, and the other tab too when it was edited,
+  /// so switching tabs never silently drops changes.
+  private var applyType: Bool { tab == "type" || type != initialType }
+  private var applyColours: Bool { tab == "colours" || palette != initialPalette }
   private var allSlides: Bool { tab == "type" ? typeAllSlides : colourAllSlides }
   private var scope: Binding<Bool> {
     Binding(get: { allSlides }, set: { if tab == "type" { typeAllSlides = $0 } else { colourAllSlides = $0 } })
@@ -18,9 +24,10 @@ struct NativeStarterStyleSheet: View {
     palette.colors.values.allSatisfy { pair in [pair.dark, pair.light].allSatisfy(NativeColourLibrary.validHex) }
   }
   var body: some View {
-    VStack(alignment: .leading, spacing: 16) {
-      Text("Type & colours").workbenchText(.sectionTitle)
-      Picker("Edit", selection: $tab) { Text("Type").tag("type"); Text("Colours").tag("colours") }.pickerStyle(.segmented)
+    NativeSheetScaffold(title: "Type & colours", subtitle: "Starter fonts, sizes and a four-accent palette for the prototype and handoff.", systemImage: "textformat") {
+      VStack(alignment: .leading, spacing: 14) {
+      Picker("Edit", selection: $tab) { Text("Type").tag("type"); Text("Colours").tag("colours") }.pickerStyle(.segmented).labelsHidden()
+        .fixedSize()
       ScrollView {
         VStack(alignment: .leading, spacing: 20) {
           if tab == "type" {
@@ -30,9 +37,9 @@ struct NativeStarterStyleSheet: View {
               Button("pitch.dog Head + Body") { type.useFonts(head: "pd-head-Medium", sub: "pd-body-600", body: "pd-body-400") }
               Button("SF Pro throughout") { type.useFonts(head: "System", sub: "System", body: "System") }
             }.workbenchText(.action).help("Sets the three font faces. Your size steps, alignment and colours stay as chosen.")
-            NativeTypeRoleEditor(title: "Head", roleName: "headline", role: $type.head)
-            NativeTypeRoleEditor(title: "Sub", roleName: "subheadline", role: $type.sub)
-            NativeTypeRoleEditor(title: "Body", roleName: "body", role: $type.body)
+            NativeTypeRoleEditor(title: "Head", roleName: "headline", role: $type.head).nativeCard(padding: 12)
+            NativeTypeRoleEditor(title: "Sub", roleName: "subheadline", role: $type.sub).nativeCard(padding: 12)
+            NativeTypeRoleEditor(title: "Body", roleName: "body", role: $type.body).nativeCard(padding: 12)
             Text("Step 0 is Head 48, Sub 40 and Body 32. The same sizes apply at both slide widths. Review wrapping after changing fonts; Fit copy can reduce the rendered size.").workbenchText(.caption).foregroundStyle(.secondary)
             if !type.unavailableFonts.isEmpty { Text("Choose installed replacements for: " + type.unavailableFonts.joined(separator: ", ")).foregroundStyle(.orange) }
           } else {
@@ -40,23 +47,33 @@ struct NativeStarterStyleSheet: View {
           }
         }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 4)
       }
-      Divider()
-      Toggle(tab == "type" ? "Apply type to every slide" : "Apply colours to every slide", isOn: scope)
-      Text(allSlides ? "One Undo restores the previous settings. Each slide keeps its dark or light appearance." : "Changes apply to the current slide. One Undo restores its previous settings.").workbenchText(.caption).foregroundStyle(.secondary)
-      HStack {
+      }.padding(.horizontal, 24).padding(.top, 16)
+    } footer: {
+      VStack(alignment: .leading, spacing: 2) {
+        Toggle(tab == "type" ? "Apply type to every slide" : "Apply colours to every slide", isOn: scope)
+        Text(allSlides ? "One Undo restores the previous settings. Each slide keeps its dark or light appearance." : "Changes apply to the current slide. One Undo restores its previous settings.").workbenchText(.caption).foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      Spacer()
         Button("Cancel") { controller.showStarterStyle = false }.keyboardShortcut(.cancelAction)
-        Spacer()
-        Button(tab == "type" ? "Apply type" : "Apply colours") {
+        Button(applyType && applyColours ? "Apply type & colours" : applyType ? "Apply type" : "Apply colours") {
           do {
-            let patch: [String: Any] = tab == "type" ? ["starterType": try nativeObject(type)] : ["palette": try nativeObject(palette)]
-            controller.applyStarterStyle(patch, allSlides: allSlides)
+            let typePatch: [String: Any] = applyType ? ["starterType": try nativeObject(type)] : [:]
+            let colourPatch: [String: Any] = applyColours ? ["palette": try nativeObject(palette)] : [:]
+            if typeAllSlides == colourAllSlides || typePatch.isEmpty || colourPatch.isEmpty {
+              controller.applyStarterStyle(typePatch.merging(colourPatch) { $1 }, allSlides: typePatch.isEmpty ? colourAllSlides : typeAllSlides)
+            } else {
+              controller.applyStarterStyle(typePatch, allSlides: typeAllSlides)
+              controller.applyStarterStyle(colourPatch, allSlides: colourAllSlides)
+            }
           } catch { controller.failure = error.localizedDescription }
-        }.buttonStyle(.borderedProminent).disabled(tab == "type" ? !type.unavailableFonts.isEmpty : !validPalette)
-      }.workbenchText(.action)
-    }.padding(24).nativeSheetFrame(width: 670, height: 770)
+        }.buttonStyle(.borderedProminent).disabled((applyType && !type.unavailableFonts.isEmpty) || (applyColours && !validPalette))
+    }.nativeSheetFrame(width: 690, height: 780)
       .onAppear {
         type = controller.selectedSlide?.settings.layout.starterType ?? .standard
         palette = controller.selectedSlide?.settings.layout.palette ?? .standard
+        initialType = type
+        initialPalette = palette
         do { library = try NativeColourLibrary.bundled() }
         catch { libraryError = "The colour library could not be loaded. Your saved colours and custom hex editing are available." }
       }
@@ -227,9 +244,10 @@ private struct NativeTypeRoleEditor: View {
           Text("SF Pro (system)").tag("System")
           Text("New York (system serif)").tag("System Serif")
           ForEach(NSFontManager.shared.availableFontFamilies.sorted(), id: \.self) { Text($0).tag($0) }
-        }
+        }.accessibilityLabel("\(title) family")
         if !role.isSystemFont {
           Picker("Face", selection: $role.fontName) { ForEach(faces, id: \.0) { Text($0.1).tag($0.0) } }.frame(maxWidth: 220)
+            .accessibilityLabel("\(title) face")
         }
       }
       HStack {
@@ -245,10 +263,10 @@ private struct NativeTypeRoleEditor: View {
       HStack {
         Picker("Alignment", selection: $role.alignment) {
           Text("Left").tag("left"); Text("Centre").tag("center"); Text("Right").tag("right"); Text("Justified").tag("justified")
-        }
+        }.accessibilityLabel("\(title) alignment")
         Picker("Colour", selection: $role.colorRole) {
           ForEach(NativeStarterPalette.roles.filter { $0 != "background" }, id: \.self) { Text(NativeStarterPalette.label($0)).tag($0) }
-        }
+        }.accessibilityLabel("\(title) colour")
       }
     }
   }

@@ -36,6 +36,10 @@ final class PrototypeCanvasView: NSView {
   private var previewGradient: PrototypeGradient?
   private var gestureStartInView = CGPoint.zero
   private var dragStarted = false
+  /// After a drag is released, its preview stays on screen until the saved
+  /// scene arrives (or the save queue settles), so the element does not jump
+  /// back; a new drag waits, so it never starts from stale geometry.
+  private var committing = false
   private var lastCropPoint: CGPoint?
   override var acceptsFirstResponder: Bool { true }
   override init(frame: NSRect) {
@@ -66,6 +70,7 @@ final class PrototypeCanvasView: NSView {
       return
     }
     let resolved = controller.resolvedScene
+    if committing && (sceneKey != controller.sceneGeneration || controller.pendingCount == 0) { cancelGesture() }
     if sceneKey != controller.sceneGeneration {
       sceneKey = controller.sceneGeneration
       self.slide = slide
@@ -97,21 +102,40 @@ final class PrototypeCanvasView: NSView {
     }
     needsDisplay = true
   }
+  /// Catalogue sizes of the originals on this slide (upright, as previews are).
+  private func sourceSizes(_ scene: ResolvedPrototype) -> [String: CGSize] {
+    var sizes: [String: CGSize] = [:]
+    for layer in scene.imageLayers {
+      guard let id = layer.assetID, let asset = controller?.assetIndex[id], let width = asset.width, let height = asset.height else { continue }
+      sizes[id] = CGSize(width: width, height: height)
+    }
+    return sizes
+  }
   override func draw(_ dirtyRect: NSRect) {
-    NSColor.windowBackgroundColor.setFill()
+    let clean = controller?.cleanPreview == true
+    (clean ? NSColor.black : NativeDesign.pasteboardNS).setFill()
     bounds.fill()
     guard var scene, let context = NSGraphicsContext.current?.cgContext, let controller else {
       return
     }
+    // Room for the hint above and the floating controls below the slide.
+    let inset = clean
+      ? NSEdgeInsets(top: 24, left: 24, bottom: 84, right: 24)
+      : NSEdgeInsets(top: 40, left: 40, bottom: 76, right: 40)
+    let available = CGRect(x: inset.left, y: inset.bottom, width: max(1, bounds.width - inset.left - inset.right),
+      height: max(1, bounds.height - inset.top - inset.bottom))
     let scale =
-      max(
-        0.02,
-        min((bounds.width - 64) / scene.canvas.width, (bounds.height - 64) / scene.canvas.height))
+      max(0.02, min(available.width / scene.canvas.width, available.height / scene.canvas.height))
       * controller.zoom
     artboard = CGRect(
-      x: (bounds.width - scene.canvas.width * scale) / 2 + pan.x,
-      y: (bounds.height - scene.canvas.height * scale) / 2 + pan.y,
+      x: available.midX - scene.canvas.width * scale / 2 + pan.x,
+      y: available.midY - scene.canvas.height * scale / 2 + pan.y,
       width: scene.canvas.width * scale, height: scene.canvas.height * scale)
+    context.saveGState()
+    context.setShadow(offset: CGSize(width: 0, height: -8), blur: clean ? 0 : 28, color: NSColor.black.withAlphaComponent(0.32).cgColor)
+    context.setFillColor(NSColor.black.cgColor)
+    context.fill(artboard)
+    context.restoreGState()
     if let frame = previewFrame, let gesture, let slide, let canvas {
       if gesture.target == "text" {
         var copy = slide
@@ -138,13 +162,13 @@ final class PrototypeCanvasView: NSView {
       }
     }
     if let gradient = previewGradient { scene.gradient = gradient }
-    NativeSlideRenderer.draw(scene, in: context, rect: artboard, images: images, rasterizeGradient: false)
+    NativeSlideRenderer.draw(scene, in: context, rect: artboard, images: images, sourceSizes: sourceSizes(scene), rasterizeGradient: false)
     context.saveGState()
     defer { context.restoreGState() }
     context.clip(to: bounds)
     if controller.cleanPreview { return }
     if controller.showGuides {
-      context.setStrokeColor(NSColor.secondaryLabelColor.withAlphaComponent(0.22).cgColor)
+      context.setStrokeColor(NSColor(white: 0.6, alpha: 0.16).cgColor)
       context.setLineWidth(0.5)
       let grid = NativeSlideGrid(canvas: scene.canvas)
       for x in grid.verticalGuides {
@@ -208,6 +232,7 @@ final class PrototypeCanvasView: NSView {
   }
   override func mouseDown(with event: NSEvent) {
     window?.makeFirstResponder(self)
+    guard !committing else { return }
     cancelGesture()
     guard let controller, let scene, let slide, let deckID = controller.document?.deck.deckId else {
       return
@@ -287,8 +312,9 @@ final class PrototypeCanvasView: NSView {
     }
     var crop = layer?.crop ?? .full
     if mode == "crop", let id = layer?.assetID, let image = images[id] {
+      let size = NativeSlideRenderer.sourceSize(image, original: sourceSizes(scene)[id])
       let placement = NativeSlideRenderer.imageRect(
-        sourceWidth: Double(image.width), sourceHeight: Double(image.height), frame: frame,
+        sourceWidth: size.width, sourceHeight: size.height, frame: frame,
         crop: crop, fit: "fill")
       crop = PrototypeCrop(
         x: (frame.minX - placement.minX) / placement.width,
@@ -300,7 +326,7 @@ final class PrototypeCanvasView: NSView {
     )
   }
   override func mouseDragged(with event: NSEvent) {
-    guard let gesture, let canvas else { return }
+    guard !committing, let gesture, let canvas else { return }
     let current = convert(event.locationInWindow, from: nil)
     if !dragStarted {
       // A click can contain small pointer movements; do not snap or save those as edits.
@@ -347,40 +373,20 @@ final class PrototypeCanvasView: NSView {
       guard hypot((g.end.x - g.start.x) * gesture.frame.width, (g.end.y - g.start.y) * gesture.frame.height) >= 1 else { return }
       previewGradient = g
     } else {
-      var f = gesture.frame
-      if gesture.mode == "resize" {
-        f.size.width = max(64, min(canvas.width - f.minX, f.width + dx))
-        f.size.height = max(64, min(canvas.height - f.minY, f.height + dy))
-      } else {
-        f.origin.x = min(canvas.width - f.width, max(0, f.minX + dx))
-        f.origin.y = min(canvas.height - f.height, max(0, f.minY + dy))
-      }
-      if controller?.showGuides == true && !event.modifierFlags.contains(.option) {
-        let xs = NativeLayoutGeometry.xGuides(canvas)
-        let ys = NativeLayoutGeometry.yGuides(canvas)
-        let tolerance = 6 * canvas.width / max(artboard.width, 1)
-        let edgeX = gesture.mode == "resize" ? f.maxX : f.minX
-        let edgeY = gesture.mode == "resize" ? f.maxY : f.minY
-        if let x = xs.min(by: { abs($0 - edgeX) < abs($1 - edgeX) }), abs(x - edgeX) < tolerance {
-          if gesture.mode == "resize" { f.size.width = max(64, x - f.minX) } else { f.origin.x = x }
-        }
-        if let y = ys.min(by: { abs($0 - edgeY) < abs($1 - edgeY) }), abs(y - edgeY) < tolerance {
-          if gesture.mode == "resize" { f.size.height = max(64, y - f.minY) } else { f.origin.y = y }
-        }
-      }
-      f.origin.x = max(0, min(canvas.width - f.width, f.minX))
-      f.origin.y = max(0, min(canvas.height - f.height, f.minY))
-      f.size.width = min(canvas.width - f.minX, f.width)
-      f.size.height = min(canvas.height - f.minY, f.height)
+      let snap = controller?.showGuides == true && !event.modifierFlags.contains(.option)
+      let f = NativeLayoutGeometry.draggedFrame(gesture.frame, dx: dx, dy: dy, resize: gesture.mode == "resize",
+        canvas: canvas, snapTolerance: snap ? 6 * canvas.width / max(artboard.width, 1) : nil)
       previewFrame = f
     }
     needsDisplay = true
   }
   override func mouseUp(with event: NSEvent) {
+    guard !committing else { return }
     guard let gesture, let controller, controller.document?.deck.deckId == gesture.deckID else {
       cancelGesture()
       return
     }
+    let pendingBefore = controller.pendingCount
     do {
       if let crop = previewCrop, crop != gesture.crop {
         controller.patchLayout(
@@ -397,9 +403,11 @@ final class PrototypeCanvasView: NSView {
           id: gesture.slideID)
       }
     } catch { controller.failure = error.localizedDescription }
-    cancelGesture()
+    if controller.pendingCount > pendingBefore { committing = true; dragStarted = false; lastCropPoint = nil }
+    else { cancelGesture() }
   }
   private func cancelGesture() {
+    committing = false
     gesture = nil
     dragStarted = false
     lastCropPoint = nil
@@ -420,6 +428,9 @@ final class PrototypeCanvasView: NSView {
       spaceHeld = false; cancelGesture()
       for task in imageTasks.values { task.cancel() }
       imageTasks = [:]; imageKeys = [:]; images = [:]
+    } else if let controller {
+      // Back in a window without a SwiftUI update: reload what was released.
+      update(controller)
     }
   }
   override func keyDown(with event: NSEvent) {

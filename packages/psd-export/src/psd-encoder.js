@@ -22,28 +22,26 @@ const structureOptions = {
 }
 let session
 const guidePathName = 'GRID NUMBERS - nonprinting'
+// The name is unchanged from the earlier rectangle guide, so every bundled
+// PNG exporter, old or new, still hides it before exporting.
 const textGuideName = 'GUIDE - Text area (hide for export)'
+const textGuideLayers = ['Text boxes', 'Copy as set by Workbench']
 const documentResolution = 144
 
+// A hidden group with the slide's own writing, drawn by Workbench exactly as
+// on the canvas and in the PDF, over outlines of its text boxes. Static pixels
+// rather than live type: written text layers make Photoshop ask to update them
+// on every open, which would also stop the PNG exporter.
 function textGuideLayer() {
-  if (!session.textGuideRect) return undefined
-  const [x, y, width, height] = session.textGuideRect
-  const left = Math.max(0, Math.floor(x)), top = Math.max(0, Math.floor(y))
-  const right = Math.min(session.width, Math.ceil(x + width))
-  const bottom = Math.min(session.height, Math.ceil(y + height))
-  const data = new Uint8Array((right - left) * (bottom - top) * 4)
-  for (let i = 0; i < data.length; i += 4) {
-    data[i] = 64; data[i + 1] = 184; data[i + 2] = 255; data[i + 3] = 255
-  }
+  if (!session.textGuide) return undefined
+  const [left, top, width, height] = session.textGuide.rect
+  const first = session.layers.length + 1
   return {
-    id: session.layers.length + 1, name: textGuideName, hidden: true, opacity: 0.5,
-    left, top, imageData: { width: right - left, height: bottom - top, data },
-    vectorFill: { type: 'color', color: { r: 64, g: 184, b: 255 } },
-    vectorMask: { fillStartsWithAllPixels: false, paths: [{
-      open: false, operation: 'combine', fillRule: 'non-zero',
-      knots: [[x, y], [x + width, y], [x + width, y + height], [x, y + height]].map(([px, py]) =>
-        ({ linked: true, points: [px, py, px, py, px, py] })),
-    }] },
+    id: first, name: textGuideName, hidden: true, opened: true,
+    children: textGuideLayers.map((name, index) => ({
+      id: first + 1 + index, name, left, top,
+      imageData: layerPixels(index === 0 ? session.textGuide.boxes : session.textGuide.copy, session.textGuide.rect),
+    })),
   }
 }
 
@@ -209,7 +207,7 @@ function verify(data, names, expectedFiles) {
 
 globalThis.PitchdogPSD = {
   version: '1',
-  start(json, icc) {
+  start(json, icc, boxPixels, copyPixels) {
     const input = JSON.parse(json)
     if (![1920, 2576].includes(input.width) || input.height !== 1080 ||
         typeof input.cropToFrames !== 'boolean' || input.guides?.length !== 72 || input.guides.some(g => !Number.isFinite(g.location) ||
@@ -218,13 +216,18 @@ globalThis.PitchdogPSD = {
     }
     session = { ...input, icc: bytes(icc, undefined, 'ICC'), layers: [], files: new Map() }
     if (session.icc.length < 128) throw new Error('The sRGB ICC profile is missing')
-    if (session.textGuideRect !== undefined) {
-      const rect = session.textGuideRect
-      if (!Array.isArray(rect) || rect.length !== 4 || rect.some(value => !Number.isFinite(value)) ||
-          rect[2] <= 0 || rect[3] <= 0 || rect[0] >= session.width || rect[1] >= session.height ||
-          rect[0] + rect[2] <= 0 || rect[1] + rect[3] <= 0) {
+    if (input.textGuideRect !== undefined) {
+      const rect = input.textGuideRect
+      if (!Array.isArray(rect) || rect.length !== 4 || rect.some(value => !Number.isInteger(value)) ||
+          rect[0] < 0 || rect[1] < 0 || rect[2] < 1 || rect[3] < 1 ||
+          rect[0] + rect[2] > session.width || rect[1] + rect[3] > session.height) {
         throw new Error('Invalid visible text guide frame')
       }
+      session.textGuide = { rect,
+        boxes: bytes(boxPixels, rect[2] * rect[3] * 4, 'text box guide'),
+        copy: bytes(copyPixels, rect[2] * rect[3] * 4, 'copy guide') }
+    } else if (boxPixels !== undefined || copyPixels !== undefined) {
+      throw new Error('Text guide pixels need a text guide frame')
     }
     session.guidePath = guideNumberPath()
     return true
@@ -274,12 +277,11 @@ globalThis.PitchdogPSD = {
     for (const [index, layer] of parsedInner.children.entries()) {
       const expected = session.layers[index]
       if (expected === textGuide) {
-        const paths = layer.vectorMask?.paths, expectedKnots = textGuide.vectorMask.paths[0].knots
-        if (!layer.hidden || Math.abs(layer.opacity - 0.5) > 1 / 255 ||
-            layer.vectorFill?.type !== 'color' || paths?.length !== 1 || paths[0].knots.length !== 4 ||
-            paths[0].knots.some((knot, i) => knot.points.some((value, j) =>
-              Math.abs(value - expectedKnots[i].points[j]) > 0.001))) {
-          throw new Error('PSD verification failed: hidden editable text guide changed')
+        const [left, top, width, height] = session.textGuide.rect
+        if (!layer.hidden || layer.children?.length !== textGuideLayers.length ||
+            layer.children.some((child, i) => child.name !== textGuideLayers[i] || child.hidden ||
+              child.left !== left || child.top !== top || child.right !== left + width || child.bottom !== top + height)) {
+          throw new Error('PSD verification failed: the hidden text guide group changed')
         }
       }
       if (!expected.placedLayer) continue
