@@ -8,12 +8,14 @@
     "node": ">=24.0.0"
   },
   "scripts": {
-    "generate": "node scripts/build-kernel.mjs",
+    "generate": "node scripts/build-kernel.mjs && node scripts/build-psd-encoder.mjs",
     "build": "scripts/build-native-macos.sh",
     "build:macos": "scripts/build-native-macos.sh",
     "test": "node scripts/test-native-kernel.mjs",
     "verify": "npm test",
-    "verify:package": "scripts/verify-native-package.sh"
+    "verify:package": "scripts/verify-native-package.sh",
+    "verify:indesign": "node tests/verify-indesign-bundle.mjs \"apps/macos/Resources/StarterKit/Automation/InDesign/Deck Production.jsxinc\"",
+    "test:update": "scripts/test-update.sh"
   },
   "devDependencies": {
     "ag-psd": "31.0.2",

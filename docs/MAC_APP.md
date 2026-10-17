@@ -55,13 +55,13 @@ Set **Slide appearance → Dark/Light** separately for each slide; applying colo
 
 **Solid background** uses the text-only layout and keeps all chosen images and the shortlist. Switching off uses Text left and restores the primary image; select Moodboard or another layout to show additional retained images. Approved Media still carries those assigned originals.
 
-Select a text-left/right/lower/wide, text-only, image-only, two-image, three-image or moodboard arrangement from the inspector's layout schematics or the Layout menu. Empty copy fields take no space. New and newly imported slides start with Fit Copy off. Enable it to measure actual text and reduce size within the prototype limit. Dense copy or contents can still overflow; the warning remains visible, and selected copy/notes companions retain the full writing. Contents remains a two-column list rather than following the general Columns control.
+Select a text-left/right/lower/wide, text-only, image-only, two-image, three-image or moodboard arrangement from the inspector's layout schematics or the Layout menu. Empty copy fields take no space. New and newly imported slides start with **Fit copy within readable limits** off. Enable it to measure actual text and reduce size within the prototype limit. Dense copy or contents can still overflow; the warning remains visible, and selected copy/notes companions retain the full writing. Contents remains a two-column list rather than following the general Columns control.
 
 Drag text to move its region, or resize at its handle. Drag an image to pan its crop; Command-drag moves its frame. Guides snap when enabled; Option bypasses snapping. Space-drag pans the viewport. Guides, zoom, Fit and Review deck float below the slide; Fit recentres the canvas. Escape cancels the gesture; a completed drag is one Undo step. Small click movements do not create edits, and reversing a crop drag at an image edge responds immediately. **Review deck** hides editing overlays without changing exported content.
 
-Image-specific frame/crop/fill edits merge only that role. Reset Crop resets one role. Gradient strength preserves the currently visible direction. Controls follow saved values and Undo. Legacy text fitting requires explicit conversion to a native prototype layout; unsupported legacy shapes/lines are reported rather than claimed as exact fidelity.
+Image-specific frame/crop/fill edits merge only that role. **Reset crop** resets one role. Gradient strength preserves the currently visible direction. Controls follow saved values and Undo. Legacy text fitting requires explicit conversion to a native prototype layout; unsupported legacy shapes/lines are reported rather than claimed as exact fidelity.
 
-Apply Arrangement copies the resolved arrangement to explicitly selected slides in one Undo step. It does not change their copy, notes, original media or per-image crops. Slots are reconciled without deleting candidates.
+**Apply arrangement…** copies the resolved arrangement to explicitly selected slides in one Undo step. It does not change their copy, notes, original media or per-image crops. Slots are reconciled without deleting candidates.
 
 ## Export
 
@@ -93,7 +93,7 @@ Each completed component can survive an independent component error. Production 
 
 ## Recovery
 
-New decks use package schema 3 and need Workbench 0.2 or later. Merely opening an older package leaves its saved schema unchanged. Before a saved starter feature or explicit copy-field state reaches the journal, Workbench copies and verifies the previous manifest, checkpoint, journal and available recovery/catalogue data under `recovery/pre-starter-0.2.0` inside the package. Existing recovery data is preserved. A failed backup blocks the edit. Older apps reject the upgraded working package; Undo does not downgrade it, and the internal recovery data is not a standalone deck. Keep an untouched duplicate if you need the old app.
+New decks use package schema 3 and need Workbench 0.2 or later. Merely opening an older package leaves its saved schema unchanged. Before a saved starter feature or explicit copy-field state reaches the journal, Workbench copies and verifies the previous manifest, checkpoint, journal and available recovery/catalogue data under `recovery/pre-starter-0.2.0` inside the package. Existing recovery data is preserved. A failed backup blocks the edit. Older apps reject the upgraded working package; Undo does not downgrade it, and the internal recovery data is not a standalone deck. Keep an untouched duplicate if you need the old app. A first ordinary native edit of a pre-native schema-1 package can still require the earlier schema-2 upgrade.
 
 Recover Saved Copy creates a separate recovered package. Save Pending Actions exports the unresolved command queue; Restore Pending Actions checks deck identity, payload bounds, command vocabulary and IDs before asking to replay. Duplicate acknowledged IDs are deduplicated. Never restore another deck's actions into the current one.
 
@@ -101,7 +101,7 @@ This is local single-writer work, not simultaneous collaborative editing. Preser
 
 ## Layout finishing
 
-A new layout restores its default text/image placement and gradient (direction and strength) while keeping existing crops. **Reset placement** repeats that reset for the current layout; Undo restores it. Apply Arrangement copies custom image frames as well as the text region, columns and gradient, without overwriting the destination's image crops or writing.
+A new layout restores its default text/image placement and gradient (direction and strength) while keeping existing crops. **Reset placement** repeats that reset for the current layout; Undo restores it. **Apply arrangement…** copies custom image frames as well as the text region, columns and gradient, without overwriting the destination's image crops or writing.
 
 Arrow keys nudge the selected visible region or gradient; Shift uses a larger step. Frame movement stays inside the canvas; a frame larger than the canvas keeps its size and moves only while it still covers the canvas. Guides snap to both sides of each column/row: moving snaps whichever frame edge is nearer a guide, including the right and bottom margins; resizing snaps the right and bottom edges. On square and portrait canvases, side and lower layouts set the copy in the lower part of the page over a bottom gradient, and two- and three-image layouts set it below the images. The gradient's Left, Right and Bottom buttons change only its direction, not its colours. Image-only layouts do not offer invisible text controls. With **Fit whole image**, switch to **Fill / crop** before panning the crop; Command-drag still moves the frame.
 
@@ -111,7 +111,7 @@ The screen draws live gradients directly. PDFs retain the alpha-safe overlay exp
 
 **Review deck** in Assemble (or Command-Shift-P) hides the editing panels. Left/Right or Up/Down move through slides; Space advances, Shift-Space returns, Home/End jump to the beginning/end, N (or **Notes**) shows the slide's designer notes beside it, and Escape restores the editing workspace. Reviewing never changes slide content. Excluded slides remain visible for review; their inclusion in export stays an independent choice.
 
-For an image in **Fill / crop**, the inspector offers **Crop zoom** (100–400%) and **Centre crop**. Zoom retains the current focal point where the image boundaries allow. Dragging still pans the crop. Each committed adjustment is undoable, does not change other image roles, and never changes the source file. Reset Crop returns to the full source.
+For an image in **Fill / crop**, the inspector offers **Crop zoom** (100–400%) and **Centre crop**. Zoom retains the current focal point where the image boundaries allow. Dragging still pans the crop. Each committed adjustment is undoable, does not change other image roles, and never changes the source file. **Reset crop** returns to the full source.
 
 The copy editor can remove optional body/subheadline/caption/credit fields. Removal affects only its draft until Save Copy; Cancel changes nothing. Notes editing and copy fields retain stable slide/field identities across view updates.
 

@@ -12,7 +12,7 @@ NativeUpdates wraps Sparkle 2.10.0's standard updater for **Check for Updates…
 
 MediaCatalogSession performs progressive background scans and stores original identities/revisions. NativeSlideRenderer is shared by canvas and PDF. NativeHandoffExporter freezes one document snapshot, computes resources from selected outputs, stages originals once and verifies copies. Independent components report their actual results. Original filenames and source notes are retained in the portable media index; absolute machine paths are not included.
 
-Build: scripts/build-native-macos.sh. Verification: npm test and scripts/verify-native-package.sh. Normal CI builds artifacts. Explicit `v*` tags publish only the matching successful main-branch artifact; no publish-on-every-push, self-mutating source workflow or permanent acceptance waiver.
+Build: scripts/build-native-macos.sh. Verification: npm test and scripts/verify-native-package.sh. Normal CI builds artifacts. Releases are published by running the release workflow by hand on main; it publishes the successful push-build artifact of a commit on main, never a rebuild (docs/UPDATES.md). No publish-on-every-push, self-mutating source workflow or permanent acceptance waiver.
 
 Keep scope to prototype direction and handoff. No Linux, Electron, browser product, cloud service, telemetry or bundled AI. See KNOWN_LIMITATIONS.md for honest remaining boundaries.
 
@@ -24,7 +24,7 @@ NativeSlideEditing contains the shared layout picker, always-visible slide actio
 
 The selected scene is resolved once per document revision/slide identity and only rebuilt when the rendering inputs change. NativeCanvas uses the controller's scene generation rather than encoding and hashing the same input twice. NativeSlideRenderer caches origin-independent Core Text frames by exact stable serialized copy, region size, columns and type settings; immutable frames may be drawn at new positions. NSCache has count/cost eviction targets and is safe for the existing canvas/export callers.
 
-Screen drawing opts into native linear-gradient rendering. PDF callers retain the established raster-alpha overlay; both use the same gradient colors/endpoints and have a pixel comparison in the native journey. NativeLayoutGeometry supplies consistent guide edges and visible text targets. The kernel clamps relative frame nudges and translates gradient endpoints atomically. Batch Apply Arrangement deliberately replaces the destination frame map; normal individual image edits still merge by role.
+Screen drawing opts into native linear-gradient rendering. PDF callers retain the established raster-alpha overlay; both use the same gradient colors/endpoints and have a pixel comparison in the native journey. NativeLayoutGeometry supplies consistent guide edges and visible text targets. The kernel clamps relative frame nudges and translates gradient endpoints atomically. Batch **Apply arrangement…** deliberately replaces the destination frame map; normal individual image edits still merge by role.
 
 ## v0.1.3 lifecycle and projection boundaries
 

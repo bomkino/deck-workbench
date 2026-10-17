@@ -45,6 +45,8 @@
   <string>26.0</string>
   <key>NSHighResolutionCapable</key>
   <true/>
+  <key>NSHumanReadableCopyright</key>
+  <string>Copyright contributors. Free software under the GNU AGPL v3, with no warranty. Source and notices: github.com/bomkino/deck-workbench</string>
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
   <key>SUEnableAutomaticChecks</key>
