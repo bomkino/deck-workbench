@@ -268,7 +268,7 @@ $.global.PitchdogSlidePNGs = (function () {
     }
 
     api.run = function (options) {
-        var input, output, slides, originalDialogs, originalDocument = null, report = null, reportStarted = false;
+        var input, output, slides, originalDialogs, originalUnits, originalDocument = null, report = null, reportStarted = false;
         var i, result = { status: "checking", completedSlides: [], outputs: [], partialOutputs: [], warnings: [], reportPath: null }, attemptedOutput = null;
         api.lastResult = result;
         try {
@@ -280,6 +280,9 @@ $.global.PitchdogSlidePNGs = (function () {
             slides = collectSlides(input); result.slideCount = slides.length; result.inputFolder = input.fsName; result.outputFolder = output.fsName;
             rejectOpenInputs(slides); rejectExistingOutputs(output, slides);
             originalDialogs = app.displayDialogs;
+            // Workbench PSDs are 144 ppi; with rulers in inches or points a
+            // pixel reading would use 72 ppi and halve every size.
+            originalUnits = app.preferences.rulerUnits; app.preferences.rulerUnits = Units.PIXELS;
             if (app.documents.length) { originalDocument = app.activeDocument; }
             app.displayDialogs = DialogModes.NO;
 
@@ -336,6 +339,7 @@ $.global.PitchdogSlidePNGs = (function () {
             throw failure;
         } finally {
             if (originalDialogs !== undefined) { app.displayDialogs = originalDialogs; }
+            if (originalUnits !== undefined) { app.preferences.rulerUnits = originalUnits; }
             if (originalDocument) { try { app.activeDocument = originalDocument; } catch (ignored) {} }
         }
     };

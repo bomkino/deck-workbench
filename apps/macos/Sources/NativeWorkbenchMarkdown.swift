@@ -35,6 +35,9 @@ struct WorkbenchProductionSlide: Codable, Sendable {
   var palette: NativeStarterPalette? = nil
   var colourRoles: [String: String]? = nil
   var notes: String
+  /// Whether this slide is the generated Contents (the InDesign builder used
+  /// to infer it from `intent`, which older decks can set without it).
+  var contents: Bool = false
   var blocks: [WorkbenchProductionBlock]
   var projection: [WorkbenchCopyProjection]
   var psd: WorkbenchProductionPSD? = nil
@@ -69,15 +72,20 @@ enum NativeWorkbenchMarkdown {
   static func sha256(_ data: Data) -> String {
     SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
   }
+  /// Prefixes compare UTF-16 code units, as the InDesign importer's indexOf
+  /// does: "State:" followed by a combining mark is still a reserved line.
+  static func reservedPrefix(_ line: String) -> String? {
+    reserved.first { line.utf16.starts(with: $0.utf16) }
+  }
   static func escapeCopy(_ value: String) -> String {
     value.components(separatedBy: "\n").map { line in
       let tail = String(line.drop { $0 == "\\" })
-      return reserved.contains(where: { tail.hasPrefix($0) }) ? "\\" + line : line
+      return reservedPrefix(tail) != nil ? "\\" + line : line
     }.joined(separator: "\n")
   }
   static func decodeCopyLine(_ line: String) -> String {
     let tail = String(line.drop { $0 == "\\" })
-    return line.hasPrefix("\\") && reserved.contains(where: { tail.hasPrefix($0) })
+    return line.hasPrefix("\\") && reservedPrefix(tail) != nil
       ? String(line.dropFirst()) : line
   }
   private static func nonblank(_ value: String) -> Bool {
@@ -179,9 +187,9 @@ enum NativeWorkbenchMarkdown {
       entries.append(WorkbenchProductionSlide(slideID: slide.id, sectionID: section.id,
         sourceOrdinal: ordinal + 1, exportOrdinal: index + 1, title: slide.title,
         intent: slide.intent, appearance: layout.appearance,
-        palette: carriesColours ? layout.palette ?? .standard : nil,
+        palette: carriesColours ? (layout.palette ?? .standard).complete : nil,
         colourRoles: carriesColours ? ["head": type.head.colorRole, "sub": type.sub.colorRole, "body": type.body.colorRole] : nil,
-        notes: slide.settings.notes, blocks: blocks, projection: projection))
+        notes: slide.settings.notes, contents: layout.contents == true, blocks: blocks, projection: projection))
     }
     let markdown = chunks.joined(separator: "\n\n") + "\n"
     guard markdown.utf8.count <= 1_048_576 else {
@@ -267,7 +275,7 @@ enum NativeWorkbenchMarkdown {
         var raw: [String] = []
         while cursor < lines.count {
           let line = lines[cursor]
-          if let prefix = reserved.first(where: { line.hasPrefix($0) }) {
+          if let prefix = reservedPrefix(line) {
             if roles.contains(where: { line == "#### \($0.capitalized)" }) || prefix == "### Slide:" || prefix == "## Part:" { break }
             throw error("Unexpected marker \(prefix); escape structural-looking copy.")
           }

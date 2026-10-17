@@ -26,6 +26,8 @@ jobs:
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - name: Check document mutations and retained durability behavior
         run: npm test
+      - name: Check the InDesign builder's bundle validators
+        run: node tests/verify-indesign-bundle.mjs "apps/macos/Resources/StarterKit/Automation/InDesign/Deck Production.jsxinc"
       - name: Build exact native application
         run: scripts/build-native-macos.sh
       - name: Exercise the extracted Mac application and handoff

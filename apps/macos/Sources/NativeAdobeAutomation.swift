@@ -16,10 +16,24 @@ enum NativeStarterKit {
     return url
   }
 
-  static func verify(_ root: URL) throws {
+  /// Checks every listed file's hash and that the kit holds nothing unlisted.
+  /// `reference` names the manifest to trust; a handoff's kit is checked
+  /// against the app's own manifest, so editing both a kit file and the
+  /// kit's manifest is still caught.
+  static func verify(_ root: URL, reference: URL? = nil) throws {
     let root = root.resolvingSymlinksInPath()
-    let receipt = try JSONDecoder().decode(Receipt.self, from: Data(contentsOf: root.appendingPathComponent("manifest.json")))
+    let receipt = try JSONDecoder().decode(Receipt.self, from: Data(contentsOf: reference ?? root.appendingPathComponent("manifest.json")))
     guard !receipt.files.isEmpty else { throw WorkbenchFailure(name: "StarterKitInvalid", message: "The starter kit is empty.") }
+    let listed = Set(receipt.files.map(\.path) + ["manifest.json"])
+    if let walker = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey]) {
+      for case let file as URL in walker where (try? file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true {
+        let relative = String(file.resolvingSymlinksInPath().path.dropFirst(root.path.count + 1))
+        // Finder's own metadata files may appear once a person opens the folder.
+        guard listed.contains(relative) || file.lastPathComponent == ".DS_Store" || file.lastPathComponent.hasPrefix("._") else {
+          throw WorkbenchFailure(name: "StarterKitInvalid", message: "The starter kit contains an unlisted file: \(relative). Reinstall Workbench or export a fresh handoff.")
+        }
+      }
+    }
     for entry in receipt.files {
       try Task.checkCancellation()
       let file = root.appendingPathComponent(entry.path).standardizedFileURL
@@ -124,22 +138,24 @@ enum NativeAdobeAutomation {
     }
   }
 
-  static func build(in handoff: URL, width: Int, slideCount: Int, cancellation: URL) throws -> [Int] {
+  static func build(in handoff: URL, width: Int, height: Int, slideCount: Int, cancellation: URL) throws -> [Int] {
     guard lock.try() else { throw busy() }; defer { lock.unlock() }
     try Task.checkCancellation()
     guard installed(inDesignID) else {
       throw WorkbenchFailure(name: "InDesignNotInstalled", message: "InDesign was not found. Your PSDs and writing are ready; use the included starter and Build script on a Mac with InDesign installed.")
     }
-    guard width == 1920 || width == 2576 else {
+    guard (width == 1920 || width == 2576) && height == 1080 else {
       throw WorkbenchFailure(name: "InDesignCanvasUnsupported", message: "Automatic InDesign needs 1920 × 1080 or 2576 × 1080.")
     }
     let kit = handoff.appendingPathComponent("Starter Kit", isDirectory: true)
-    try NativeStarterKit.verify(kit)
+    let bundled = try NativeStarterKit.bundled()
+    try NativeStarterKit.verify(kit, reference: bundled.appendingPathComponent("manifest.json"))
     let manager = FileManager.default
     let logs = cancellation.deletingLastPathComponent()
     try manager.createDirectory(at: logs, withIntermediateDirectories: true)
     let runner = logs.appendingPathComponent("Build InDesign.jsx")
-    try manager.copyItem(at: kit.appendingPathComponent("Automation/InDesign/Build Handoff.jsx"), to: runner)
+    // The runner itself comes from the app; the kit it loads was just verified.
+    try manager.copyItem(at: bundled.appendingPathComponent("Automation/InDesign/Build Handoff.jsx"), to: runner)
     let runID = UUID().uuidString
     let job: [String: Any] = ["format": "pitchdog-indesign-job/1", "runID": runID, "width": width, "slideCount": slideCount]
     try JSONSerialization.data(withJSONObject: job, options: [.prettyPrinted, .sortedKeys])
@@ -149,7 +165,8 @@ enum NativeAdobeAutomation {
     // never point into the exporter's temporary staging directory.
     try execute("with timeout of 3600 seconds\n tell application id \(quoted(inDesignID))\n do script (POSIX file \(quoted(runner.path))) language javascript\n end tell\nend timeout")
     let resultURL = logs.appendingPathComponent("result.json")
-    guard let result = try JSONSerialization.jsonObject(with: Data(contentsOf: resultURL)) as? [String: Any],
+    guard let receipt = try? Data(contentsOf: resultURL),
+      let result = try? JSONSerialization.jsonObject(with: receipt) as? [String: Any],
       result["runID"] as? String == runID else {
       throw WorkbenchFailure(name: "InDesignReceiptMissing", message: "InDesign did not return a matching build receipt. Review the Automation folder before retrying.")
     }

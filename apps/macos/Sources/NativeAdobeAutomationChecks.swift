@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 enum NativeAdobeAutomationChecks {
@@ -54,5 +55,39 @@ enum NativeAdobeAutomationChecks {
       throw WorkbenchFailure(name: "AcceptanceFailure", message: "Cancelling a blocked Adobe request did not return control and mark safe cleanup")
     }
     release.signal()
+    try kitVerification(root)
+  }
+
+  /// A handoff's starter kit is checked against the app's own manifest: an
+  /// added file, or a changed file with a rewritten kit manifest, is refused.
+  private static func kitVerification(_ root: URL) throws {
+    func refused(_ kit: URL, reference: URL? = nil) -> Bool {
+      do { try NativeStarterKit.verify(kit, reference: reference); return false }
+      catch { return (error as? WorkbenchFailure)?.name == "StarterKitInvalid" }
+    }
+    let bundled = try NativeStarterKit.bundled()
+    let reference = bundled.appendingPathComponent("manifest.json")
+    let kit = root.appendingPathComponent("Starter Kit", isDirectory: true)
+    try NativeStarterKit.copy(to: kit)
+    try NativeStarterKit.verify(kit, reference: reference)
+    let extra = kit.appendingPathComponent("Automation/InDesign/Extra.jsx")
+    try Data("// not shipped\n".utf8).write(to: extra)
+    guard refused(kit, reference: reference) else {
+      throw WorkbenchFailure(name: "AcceptanceFailure", message: "An unlisted starter-kit file was accepted")
+    }
+    try FileManager.default.removeItem(at: extra)
+    let runner = kit.appendingPathComponent("Automation/InDesign/Build Handoff.jsx")
+    let changed = Data("// changed\n".utf8)
+    try changed.write(to: runner)
+    let manifestURL = kit.appendingPathComponent("manifest.json")
+    var manifest = try JSONSerialization.jsonObject(with: Data(contentsOf: manifestURL)) as! [String: Any]
+    let digest = SHA256.hash(data: changed).map { String(format: "%02x", $0) }.joined()
+    manifest["files"] = (manifest["files"] as! [[String: Any]]).map { entry in
+      entry["path"] as? String == "Automation/InDesign/Build Handoff.jsx" ? ["path": entry["path"]!, "sha256": digest] : entry
+    }
+    try JSONSerialization.data(withJSONObject: manifest).write(to: manifestURL)
+    guard !refused(kit), refused(kit, reference: reference) else {
+      throw WorkbenchFailure(name: "AcceptanceFailure", message: "A changed starter kit with a rewritten manifest was accepted")
+    }
   }
 }

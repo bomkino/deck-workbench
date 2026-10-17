@@ -24,11 +24,11 @@
     },
     {
       "path": "Automation/InDesign/Build Handoff.jsx",
-      "sha256": "76aaed10b8d238f83d322fdc67d8f12f1da8423f7f586939012d88b8a7abdd3b"
+      "sha256": "2547d34c68361562307a5c22502e69049115a09fe01a2bd0a4fac9b7aca38359"
     },
     {
       "path": "Automation/InDesign/Deck Production.jsxinc",
-      "sha256": "e8293db21d2d10d486f66200e734deff34b6b17f39d3b79f848b4fe46091575d"
+      "sha256": "9ecc371f5e95f481cdc2bf7cbf7a9b60afb8ca05e31c8f28cb75865f10c4502e"
     },
     {
       "path": "Automation/InDesign/Refresh PSD Links.jsx",
@@ -40,7 +40,7 @@
     },
     {
       "path": "Automation/InDesign/WorkbenchImportCore.jsxinc",
-      "sha256": "76cabe9ee2cd97edc8e01f569b9695e63e50768961553ef79203aa597b35c017"
+      "sha256": "2b085e00dfe726fc557f1080ce17781f61ede2da4bf93e82341fc622b6140c16"
     },
     {
       "path": "Automation/Photoshop/Export Slide PNGs - Read me.md",
@@ -48,7 +48,7 @@
     },
     {
       "path": "Automation/Photoshop/Export Slide PNGs.jsx",
-      "sha256": "e8341c0ce6ae59b29416b43ff9b0c56cedb9a35870fb9ae32e47b4847854f76b"
+      "sha256": "7affea2a19369baabbe646bca61bbcf555e01346f450dbff8533d49d5ab374af"
     },
     {
       "path": "Colour System/Colour Core.jsxinc",
@@ -132,15 +132,15 @@
     },
     {
       "path": "Start Here - Deck Production.md",
-      "sha256": "6a72b635f736c4aca95bbd86eb0229c234dd5a6701632be6df0da69bd2e78d23"
+      "sha256": "d93763f237a46d7f693b4b58dc70c73a7b76cfa8a1d5d6d2c29be3b6793322b4"
     },
     {
       "path": "Start Here - InDesign.md",
-      "sha256": "b063a62b6c6bddb1795cae23cc1e010706cc4eb35b886c373f0018cd5ebe7535"
+      "sha256": "2972d96615ffe3eec80e346ee94b4e820a423db640fb75dad149136663a589ce"
     },
     {
       "path": "Start Here.md",
-      "sha256": "26defe26fb408242620e5ac891b2496bdc198604175898a53f953a54bf832ccb"
+      "sha256": "570e21c9051f3125d6e2e27352c2595e278a0719aa2db3b6354bfd7e7539fb9b"
     },
     {
       "path": "Text Scramble Head Sub Body - Read me.md",

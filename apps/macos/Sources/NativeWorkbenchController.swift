@@ -1337,12 +1337,12 @@ final class NativeWorkbenchController: ObservableObject {
           result = NativeAdobeAutomation.withIssue(result, "InDesign was not built because its production files or starter kit could not be exported.")
         } else {
           status = "Building InDesign · macOS may ask for Automation permission…"
-          let handoff = result.url, width = Int(frozen.deck.canvasPreset.width), count = result.slideCount
+          let handoff = result.url, width = Int(frozen.deck.canvasPreset.width), height = Int(frozen.deck.canvasPreset.height), count = result.slideCount
           let cancellation = handoff.appendingPathComponent("Automation/cancel")
           do {
             try FileManager.default.createDirectory(at: cancellation.deletingLastPathComponent(), withIntermediateDirectories: true)
             let overflow = try await NativeAdobeAutomation.waitForBuild(cancellation: cancellation) {
-              try NativeAdobeAutomation.build(in: handoff, width: width, slideCount: count, cancellation: cancellation)
+              try NativeAdobeAutomation.build(in: handoff, width: width, height: height, slideCount: count, cancellation: cancellation)
             }
             result.produced.append("InDesign/Deck.indd")
             if !overflow.isEmpty {

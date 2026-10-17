@@ -2,12 +2,12 @@
 /* Workbench's portable automatic build. Run the copy in a handoff's Automation folder. */
 (function () {
     var automation = File($.fileName).parent, root = automation.parent;
-    if (!File(automation.fsName+'/job.json').exists || !Folder(root.fsName+'/Starter Kit').exists) {
+    if (!File(automation.fsName+'/job.json').exists) {
         alert('Workbench launches this runner from a handoff. For a manual build, use Build Deck from Workbench.jsx.');
         return;
     }
     var template = null, original = null, oldUI = app.scriptPreferences.userInteractionLevel;
-    var oldUnits = app.scriptPreferences.measurementUnit, job = null, outcome = null, ownsScratch = false;
+    var oldUnits = app.scriptPreferences.measurementUnit, job = null, outcome = null, ownsScratch = false, built = false;
     function read(file) {
         file.encoding = 'UTF-8'; if (!file.open('r')) throw Error('Cannot read ' + file.name);
         try { return file.read(); } finally { file.close(); }
@@ -26,7 +26,9 @@
     }
     function write(file, value) {
         file.encoding = 'UTF-8'; if (!file.open('w')) throw Error('Cannot write ' + file.name);
-        try { file.write(json(value)+'\n'); } finally { file.close(); }
+        var written;
+        try { written = file.write(json(value)+'\n'); } finally { file.close(); }
+        if (!written || file.error) throw Error('Cannot write ' + file.name + (file.error ? ': ' + file.error : ''));
     }
     function check() {
         if (File(automation.fsName+'/cancel').exists) throw Error('Build cancelled. The completed handoff is safe; any partial InDesign folder is marked incomplete.');
@@ -34,6 +36,8 @@
     try {
         if (app.documents.length) original = app.activeDocument;
         var kit = Folder(root.fsName+'/Starter Kit');
+        // Workbench is waiting for a receipt: report a missing kit, never block on an alert.
+        if (!kit.exists) throw Error('The handoff has no Starter Kit folder. Export a fresh handoff from Workbench.');
         $.evalFile(File(kit.fsName+'/Automation/InDesign/Deck Production.jsxinc'));
         job = PitchdogDeckProduction.parseJSON(read(File(automation.fsName+'/job.json')));
         if (job.format !== 'pitchdog-indesign-job/1' || !job.runID || (job.width !== 1920 && job.width !== 2576)) throw Error('Invalid Workbench build job. Export a new handoff from Workbench.');
@@ -51,6 +55,7 @@
         check();
         outcome = PitchdogDeckProduction.build({document: template, markdownFile: File(root.fsName+'/Production/workbench.md'),
             outputParent: root, projectName: 'InDesign', stack: 'text-over-character', interactive: false, onProgress: check});
+        built = true;
         if (outcome.slides !== job.slideCount) throw Error('The saved deck has a different slide count from the Workbench job.');
         outcome.runID = job.runID;
         // Source references are relative so the manifest travels with the folder.
@@ -63,6 +68,12 @@
         write(manifestFile, manifest);
     } catch (e) {
         outcome = {ok:false, runID:job ? job.runID : '', message:e.message || String(e), line:e.line || 0};
+        // A failure after this run saved the deck must not leave its manifest "ready".
+        if (built) try {
+            var builtManifest = File(root.fsName+'/InDesign/deck-production.json');
+            var record = PitchdogDeckProduction.parseJSON(read(builtManifest));
+            record.status = 'incomplete'; record.error = outcome.message; write(builtManifest, record);
+        } catch (_) {}
     } finally {
         if (template && template.isValid) { try { template.close(SaveOptions.NO); } catch (_) {} }
         if (outcome && !outcome.ok && original && original.isValid) { try { app.activeDocument=original; } catch (_) {} }
