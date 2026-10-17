@@ -27,7 +27,7 @@ final class NativeWorkbenchController: ObservableObject {
     }
   }
   @Published var status = "Import final copy to begin."
-  @Published var failure: String?
+  @Published var failure: String? { didSet { if let failure, failure != oldValue { announce(failure) } } }
   @Published var assets: [NativeMediaAsset] = [] { didSet { indexAssets() } }
   @Published var roots: [NativeMediaRoot] = []
   @Published var sources: [String: NativeMediaSource] = [:]
@@ -336,6 +336,8 @@ final class NativeWorkbenchController: ObservableObject {
     }
   }
   private func remember(_ url: URL) {
+    // The packaged self-test's temporary decks never join the person's recents.
+    guard !CommandLine.arguments.contains("--native-self-test") else { return }
     var urls = recentDocuments.filter { $0 != url }
     urls.insert(url, at: 0)
     UserDefaults.standard.set(Array(urls.prefix(12)).map(\.path), forKey: "native.recentDocuments")
@@ -361,11 +363,19 @@ final class NativeWorkbenchController: ObservableObject {
   func focusNext(_ delta: Int) {
     let ids = previewOpen ? previewIDs : filteredAssets.map(\.id)
     guard !ids.isEmpty else { return }
-    guard let index = ids.firstIndex(of: focusedAssetID ?? "") else {
+    if let index = ids.firstIndex(of: focusedAssetID ?? "") {
+      focusedAssetID = ids[min(ids.count - 1, max(0, index + delta))]
+    } else {
       focusedAssetID = delta < 0 ? ids.last : ids.first
-      return
     }
-    focusedAssetID = ids[min(ids.count - 1, max(0, index + delta))]
+    // Media focus is drawn, not a real focus, so VoiceOver is told the image.
+    if let id = focusedAssetID, let asset = assetIndex[id] { announce(asset.filename) }
+  }
+  /// Spoken by VoiceOver when it is running; ignored otherwise.
+  func announce(_ text: String) {
+    guard let window = NSApp.keyWindow ?? NSApp.mainWindow else { return }
+    NSAccessibility.post(element: window, notification: .announcementRequested,
+      userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue])
   }
   func preview(_ id: String? = nil) {
     previewUsesCandidates = false
@@ -427,7 +437,11 @@ final class NativeWorkbenchController: ObservableObject {
           // Definitive validation rejection did not touch the journal. Keep later
           // independent actions usable; only uncertain storage failures fence it.
           self.failure = "\(command.label) was not applied: \(rejected.message)"
-          if let id = command.noteSlideID { self.enqueuedNoteGenerations[id] = nil }
+          if let id = command.noteSlideID {
+            self.enqueuedNoteGenerations[id] = nil
+            // Notes for a slide that no longer exists can never be saved.
+            if self.slideIndex[id] == nil { self.notesDrafts[id] = nil; self.noteTasks.removeValue(forKey: id)?.cancel() }
+          }
           return
         }
         self.failedCommands.append(command)
@@ -460,6 +474,11 @@ final class NativeWorkbenchController: ObservableObject {
   private func commitNote(_ id: String) {
     guard let text = notesDrafts[id], let generation = noteGenerations[id],
       enqueuedNoteGenerations[id] != generation, let deckID = document?.deck.deckId else { return }
+    guard slideIndex[id] != nil || !failedCommands.isEmpty else {
+      // The slide was deleted (and its deletion saved); its draft has no destination.
+      notesDrafts[id] = nil
+      return
+    }
     if slideIndex[id]?.settings.notes == text && enqueuedNoteGenerations[id] == nil {
       notesDrafts[id] = nil
       return
@@ -569,7 +588,11 @@ final class NativeWorkbenchController: ObservableObject {
       await prior?.value
       guard let self else { return }
       defer { self.pendingCount -= 1 }
-      guard self.failedCommands.isEmpty, self.document?.deck.deckId == deckID else { return }
+      guard self.document?.deck.deckId == deckID else { return }
+      guard self.failedCommands.isEmpty else {
+        self.failure = "\(redo ? "Redo" : "Undo") waits until the pending actions are saved. Retry or discard them first."
+        return
+      }
       let history = self.document?.history
       guard redo ? history?.canRedo == true : history?.canUndo == true else { return }
       do { self.accept(try await self.session.history(redo: redo, deckID: deckID)) }
@@ -936,7 +959,7 @@ final class NativeWorkbenchController: ObservableObject {
     throw WorkbenchFailure(name: "DocumentBusy", message: "The deck changed while Workbench was checking it. Nothing was changed; try opening it again.")
   }
   @discardableResult func closeForSwitch() async -> Bool {
-    guard !lifecycleBusy else { return false }
+    guard !lifecycleBusy else { status = "Workbench is finishing the previous action. Try again in a moment."; return false }
     lifecycleBusy = true
     defer { lifecycleBusy = false }
     return await closeCurrentDocument()
@@ -949,10 +972,21 @@ final class NativeWorkbenchController: ObservableObject {
       return false
     }
     await flush()
-    guard failedCommands.isEmpty && notesDrafts.isEmpty else {
+    guard failedCommands.isEmpty else {
       failure =
-        "Some notes or actions are not saved. Retry them, or save the pending-actions file and explicitly discard the queue before closing."
+        "Some actions are not saved. Use Retry Pending Actions, or Save Pending Actions… and then Discard Unsaved Actions… before closing."
       return false
+    }
+    if !notesDrafts.isEmpty {
+      // Everything that could be saved was; what remains was refused (a note
+      // over the length limit, say). Never leave the deck impossible to close.
+      let alert = NSAlert()
+      alert.messageText = "Discard notes that could not be saved?"
+      alert.informativeText = "Notes on \(notesDrafts.count == 1 ? "one slide" : "\(notesDrafts.count) slides") were refused when saving. The rest of the deck is saved. Copy the notes first if you need them."
+      alert.addButton(withTitle: "Keep Deck Open")
+      alert.addButton(withTitle: "Discard and Close")
+      guard alert.runModal() == .alertSecondButtonReturn else { return false }
+      notesDrafts = [:]
     }
     if exportRunning || exportChoosingDestination {
       failure = "Cancel or finish the handoff before closing this deck."
@@ -966,29 +1000,34 @@ final class NativeWorkbenchController: ObservableObject {
     if let media = try? await session.mediaSession() { await media.cancelNativeScans() }
     do {
       let closeWarning = try await session.close()
-      document = nil
-      documentURL = nil
-      selectedSlideID = nil
-      notesDrafts = [:]
-      noteGenerations = [:]
-      enqueuedNoteGenerations = [:]
-      previewOpen = false; previewIDs = []; previewUsesCandidates = false
-      compareOpen = false; comparedAssetID = nil; compareIDs = []
-      focusedAssetID = nil; cleanPreview = false; exportResult = nil; showExportResult = false
-      showExport = false; showApplyLayout = false; showStarterStyle = false; showMoodboard = false; imported = nil; importError = nil
-      pendingSearchFocus = false
-      query = ""; collection = "all"; selectedRootID = nil
+      clearDocumentState()
       failure = nil
-      assets = []
-      roots = []
-      sources = [:]
-      catalogRevision = -1
       status = closeWarning ?? "Import final copy to begin."
       return true
     } catch {
       failure = error.localizedDescription
       return false
     }
+  }
+  /// The window state of no open deck. Parked actions are kept.
+  private func clearDocumentState() {
+    document = nil
+    documentURL = nil
+    selectedSlideID = nil
+    notesDrafts = [:]
+    noteGenerations = [:]
+    enqueuedNoteGenerations = [:]
+    previewOpen = false; previewIDs = []; previewUsesCandidates = false
+    compareOpen = false; comparedAssetID = nil; compareIDs = []
+    focusedAssetID = nil; cleanPreview = false; exportResult = nil; showExportResult = false
+    showExport = false; showApplyLayout = false; showStarterStyle = false; showMoodboard = false; imported = nil; importError = nil
+    pendingSearchFocus = false
+    query = ""; collection = "all"; selectedRootID = nil
+    assets = []
+    roots = []
+    sources = [:]
+    catalogRevision = -1
+    status = "Import final copy to begin."
   }
   func save() {
     guard !lifecycleBusy, let deckID = document?.deck.deckId else { return }
@@ -1005,23 +1044,35 @@ final class NativeWorkbenchController: ObservableObject {
   func retryPending() {
     guard !lifecycleBusy, !exportRunning, !exportChoosingDestination, !copyEditorOpen else { return }
     lifecycleBusy = true
+    // Note drafts join the parked queue first, so no debounce can slip a note
+    // in while the deck reopens and then be cleared with the old queue.
+    for task in noteTasks.values { task.cancel() }
+    noteTasks = [:]
+    for id in Array(notesDrafts.keys) { commitNote(id) }
     Task {
       defer { lifecycleBusy = false }
       await writeTail?.value
       guard let url = documentURL else { return }
-      let pending = failedCommands
       scanTask?.cancel(); scanTask = nil; scanRunning = false
       catalogGeneration += 1; catalogRefreshToken = nil
       do {
         try await session.close()
+      } catch { failure = error.localizedDescription; return }
+      do {
         try apply(await session.open(at: url))
-        catalogRevision = -1
-        catalogGeneration += 1
-        await refreshCatalog()
-        failedCommands = []
-        failure = nil
-        for command in pending { submit(command) }
-      } catch { failure = error.localizedDescription }
+      } catch {
+        // The deck is closed now; showing it would park every new edit.
+        clearDocumentState()
+        failure = "Retry could not reopen the deck: \(error.localizedDescription) Its unsaved actions are kept here: choose Save Pending Actions… to keep them, then reopen the deck or use File → Recover Saved Copy."
+        return
+      }
+      catalogRevision = -1
+      catalogGeneration += 1
+      await refreshCatalog()
+      let pending = failedCommands
+      failedCommands = []
+      failure = nil
+      for command in pending { submit(command) }
     }
   }
   func savePending() {
@@ -1158,6 +1209,8 @@ final class NativeWorkbenchController: ObservableObject {
       catalogRefreshToken = nil
       if Task.isCancelled {
         status = "Scan cancelled; discovered media remains available."
+        // This task is cancelled, so the final catalogue is fetched outside it.
+        Task { [weak self] in await self?.refreshCatalog() }
         return
       }
       await refreshCatalog()
@@ -1169,7 +1222,11 @@ final class NativeWorkbenchController: ObservableObject {
         ? "Scan stopped with partial results; only files confirmed gone were marked missing."
         : "\(assets.count) media files available"
     } catch is CancellationError {
-      if generation == catalogGeneration { status = "Scan cancelled; discovered media remains available." }
+      if generation == catalogGeneration {
+        status = "Scan cancelled; discovered media remains available."
+        catalogRevision = -1
+        Task { [weak self] in await self?.refreshCatalog() }
+      }
     } catch { if generation == catalogGeneration { failure = error.localizedDescription } }
   }
   func rescan(_ id: String) { startScan(url: nil, rootID: id) }
@@ -1241,11 +1298,18 @@ final class NativeWorkbenchController: ObservableObject {
     exportRunning = true; exportProgress = 0; exportGeneration += 1
     let generation = exportGeneration
     defer { exportRunning = false; exportGeneration += 1 }
-    await flush()
+    // Notes typed while the first flush runs are saved by the next one.
+    for _ in 0..<3 {
+      await flush()
+      if notesDrafts.isEmpty || !failedCommands.isEmpty { break }
+    }
     guard document?.deck.deckId == expectedDeckID else { return }
-    guard failedCommands.isEmpty && notesDrafts.isEmpty else {
-      failure =
-        "Pending notes and actions must be saved or explicitly discarded before taking the handoff snapshot."
+    guard failedCommands.isEmpty else {
+      failure = "Pending actions must be saved before the handoff snapshot. Use Retry Pending Actions, or Save Pending Actions… and Discard Unsaved Actions…."
+      return
+    }
+    guard notesDrafts.isEmpty else {
+      failure = "Notes on \(notesDrafts.count == 1 ? "one slide" : "\(notesDrafts.count) slides") could not be saved, so the handoff was not started. Shorten them, or choose Workbench → Discard Unsaved Actions…, then export again."
       return
     }
     do {

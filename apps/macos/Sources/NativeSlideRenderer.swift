@@ -162,7 +162,9 @@ enum NativeSlideRenderer {
       columns: layout.columns, targetSize: targetSize, minimumSize: min(20 * unitScale, targetSize), fit: layout.fitCopy, starterType: layout.starterType, palette: palette, appearance: appearance, gutter: gutter,
       usePalette: usePalette, contentsID: layout.contents == true ? slide.id + ":contents" : nil,
       contentsGutter: contentsGutter, unavailableFonts: layout.starterType?.unavailableFonts ?? [])
-    let encodedKey = (try? nativeJSON(key)).map { $0 as NSData }
+    // Core Text frames stay on the thread that made them: only the main
+    // thread (canvas) shares cached layouts; exports lay out their own.
+    let encodedKey = Thread.isMainThread ? (try? nativeJSON(key)).map { $0 as NSData } : nil
     let cached: CachedTextLayout
     if let encodedKey, let hit = textLayoutCache.object(forKey: encodedKey) { cached = hit }
     else {

@@ -69,7 +69,7 @@ struct NativeContextPanel: View {
                 HStack(spacing: 8) {
                   Button { controller.previewCandidate(id) } label: {
                     NativeAssetImage(source: controller.sources[id], longestSide: 512).frame(width: 64, height: 42)
-                  }.buttonStyle(.plain).help("Preview candidate")
+                  }.buttonStyle(.plain).help("Preview candidate").accessibilityLabel("Preview \(controller.assetIndex[id]?.filename ?? "candidate")")
                   VStack(alignment: .leading, spacing: 4) {
                     Text(controller.assetIndex[id]?.filename ?? "Reconnect media").workbenchText(.caption).lineLimit(2)
                     HStack {
@@ -199,7 +199,7 @@ struct NativeReplacementPanel: View {
               Picker("Incoming copy", selection: Binding(get: { matches[old.id] ?? "" }, set: { matches[old.id] = $0.isEmpty ? nil : $0 })) {
                 Text("Leave unchanged").tag("")
                 ForEach(imported.slides) { incoming in Text(incoming.title).tag(incoming.id) }
-              }
+              }.accessibilityLabel("Incoming copy for \(old.title)")
               if let incoming = imported.slides.first(where: { $0.id == matches[old.id] }) {
                 DisclosureGroup("Compare current and incoming writing") {
                   VStack(alignment: .leading, spacing: 8) {

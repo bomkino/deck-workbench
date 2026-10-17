@@ -36,6 +36,10 @@ final class PrototypeCanvasView: NSView {
   private var previewGradient: PrototypeGradient?
   private var gestureStartInView = CGPoint.zero
   private var dragStarted = false
+  /// After a drag is released, its preview stays on screen until the saved
+  /// scene arrives (or the save queue settles), so the element does not jump
+  /// back; a new drag waits, so it never starts from stale geometry.
+  private var committing = false
   private var lastCropPoint: CGPoint?
   override var acceptsFirstResponder: Bool { true }
   override init(frame: NSRect) {
@@ -66,6 +70,7 @@ final class PrototypeCanvasView: NSView {
       return
     }
     let resolved = controller.resolvedScene
+    if committing && (sceneKey != controller.sceneGeneration || controller.pendingCount == 0) { cancelGesture() }
     if sceneKey != controller.sceneGeneration {
       sceneKey = controller.sceneGeneration
       self.slide = slide
@@ -217,6 +222,7 @@ final class PrototypeCanvasView: NSView {
   }
   override func mouseDown(with event: NSEvent) {
     window?.makeFirstResponder(self)
+    guard !committing else { return }
     cancelGesture()
     guard let controller, let scene, let slide, let deckID = controller.document?.deck.deckId else {
       return
@@ -310,7 +316,7 @@ final class PrototypeCanvasView: NSView {
     )
   }
   override func mouseDragged(with event: NSEvent) {
-    guard let gesture, let canvas else { return }
+    guard !committing, let gesture, let canvas else { return }
     let current = convert(event.locationInWindow, from: nil)
     if !dragStarted {
       // A click can contain small pointer movements; do not snap or save those as edits.
@@ -365,10 +371,12 @@ final class PrototypeCanvasView: NSView {
     needsDisplay = true
   }
   override func mouseUp(with event: NSEvent) {
+    guard !committing else { return }
     guard let gesture, let controller, controller.document?.deck.deckId == gesture.deckID else {
       cancelGesture()
       return
     }
+    let pendingBefore = controller.pendingCount
     do {
       if let crop = previewCrop, crop != gesture.crop {
         controller.patchLayout(
@@ -385,9 +393,11 @@ final class PrototypeCanvasView: NSView {
           id: gesture.slideID)
       }
     } catch { controller.failure = error.localizedDescription }
-    cancelGesture()
+    if controller.pendingCount > pendingBefore { committing = true; dragStarted = false; lastCropPoint = nil }
+    else { cancelGesture() }
   }
   private func cancelGesture() {
+    committing = false
     gesture = nil
     dragStarted = false
     lastCropPoint = nil

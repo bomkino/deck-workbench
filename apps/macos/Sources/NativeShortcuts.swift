@@ -72,10 +72,22 @@ enum NativeShortcuts {
     {
       return false
     }
-    if let text = NSApp.keyWindow?.firstResponder as? NSTextView, text.isEditable { return false }
-    if NSApp.keyWindow?.firstResponder is NSSlider || NSApp.keyWindow?.firstResponder is NSPopUpButton || NSApp.keyWindow?.firstResponder is NSComboBox { return false }
-    if event.keyCode == 49 && NSApp.keyWindow?.firstResponder is NSButton { return false }
+    let responder = NSApp.keyWindow?.firstResponder
+    if let text = responder as? NSTextView, text.isEditable { return false }
+    if responder is NSSlider || responder is NSPopUpButton || responder is NSComboBox || responder is NSStepper { return false }
+    if event.keyCode == 49 && responder is NSButton { return false }
+    // A focused list or segmented control keeps its own navigation keys: the
+    // slide list's arrows change slide, not the selected frame or image.
+    let navigation: Set<UInt16> = [123, 124, 125, 126, 115, 119, 116, 121, 36, 76]
+    if (responder is NSTableView || responder is NSSegmentedControl) && (navigation.contains(event.keyCode) || event.keyCode == 49) { return false }
     let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
+    // Some layouts (German, for example) type [ and ] with Option.
+    if flags.contains(.option), !flags.contains(.command), !flags.contains(.control),
+      let typed = event.characters, typed == "[" || typed == "]"
+    {
+      controller.moveSlide(typed == "[" ? -1 : 1)
+      return true
+    }
     guard !flags.contains(.command), !flags.contains(.control), !flags.contains(.option) else {
       return false
     }

@@ -42,7 +42,7 @@ struct NativeSlideEditingBar: View {
     }
   }
   @ViewBuilder private func controls(_ slide: DeckSlide) -> some View {
-    NativeLayoutPicker(controller: controller, slide: slide).frame(width: 190)
+    NativeLayoutPicker(controller: controller, slide: slide).frame(width: 190 * controller.interfaceScale)
     Button { controller.beginEditCopy() } label: { Label("Edit Copy", systemImage: "pencil") }
       .disabled(!controller.slideEditingAvailable).help("Edit this slide’s writing (Command-E)")
       .accessibilityIdentifier("edit-slide-copy")
@@ -98,6 +98,12 @@ struct NativeCopyEditor: View {
     }
     _blocks = State(initialValue: fields)
   }
+  /// "body copy", or "body copy 2" when a slide has more than one body field.
+  private func fieldName(_ block: DeckCopyBlock) -> String {
+    let same = blocks.filter { $0.role == block.role }
+    guard same.count > 1, let index = same.firstIndex(where: { $0.id == block.id }) else { return "\(block.role) copy" }
+    return "\(block.role) copy \(index + 1)"
+  }
   private static func blank(_ role: String) -> DeckCopyBlock {
     let id = UUID().uuidString.lowercased()
     return DeckCopyBlock(id: id, semanticKey: "\(role).\(id)", role: role, value: RichCopy(""))
@@ -126,13 +132,14 @@ struct NativeCopyEditor: View {
                 if block.role != "headline" {
                   Button("Remove field", role: .destructive) { blocks.removeAll { $0.id == block.id } }
                     .controlSize(.small).help("Removes this field from the draft. Cancel keeps the saved version; Undo restores a saved edit.")
+                    .accessibilityLabel("Remove \(fieldName(block))")
                 }
               }
               TextEditor(text: Binding(get: { blocks.first { $0.id == block.id }?.text ?? "" },
                 set: { value in if let i = blocks.firstIndex(where: { $0.id == block.id }) { blocks[i].setText(value) } }))
                 .workbenchText(.input).frame(minHeight: block.role == "body" ? 150 : 80)
                 .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.secondary.opacity(0.25)))
-                .accessibilityLabel("\(block.role) copy")
+                .accessibilityLabel(fieldName(block))
             }
           }
           Menu("Add Text Field") {

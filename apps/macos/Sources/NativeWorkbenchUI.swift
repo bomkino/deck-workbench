@@ -94,7 +94,7 @@ struct NativeWorkbenchRoot: View {
             controller.showShortcuts = true
           } label: {
             Image(systemName: "keyboard")
-          }.help("Keyboard Shortcuts (Command-/)")
+          }.help("Keyboard Shortcuts (Command-/)").accessibilityLabel("Keyboard shortcuts")
         }.padding(.horizontal, 14).padding(.vertical, 9)
       }.navigationTitle(controller.document?.deck.title ?? "Workbench")
         .toolbar {
@@ -114,7 +114,7 @@ struct NativeWorkbenchRoot: View {
             Picker("Workspace", selection: $controller.phase) {
               Text("Curate").tag("curate")
               Text("Assemble").tag("assemble")
-            }.pickerStyle(.segmented).frame(width: 200).disabled(controller.document == nil)
+            }.pickerStyle(.segmented).frame(width: 200 * controller.interfaceScale).disabled(controller.document == nil)
           }
           ToolbarItemGroup(placement: .primaryAction) {
             Button { controller.showContext.toggle() } label: {
@@ -183,12 +183,18 @@ struct NativeSlideSidebar: View {
         Section(section.title) {
           ForEach(section.slides) { slide in
             NativeSlideRow(slide: slide, ordinal: ordinal(slide)).tag(slide.id)
-              .contextMenu { NativeSlideActions(controller: controller, slideID: slide.id) }
-              .onTapGesture(count: 2) { controller.beginEditCopy(slide.id) }
           }
         }
       }
-    }.navigationTitle("Slides")
+    }
+    // The list's own primary action (double-click or Return) keeps selection
+    // working, unlike a double-tap gesture inside List(selection:).
+    .contextMenu(forSelectionType: String.self) { ids in
+      if let id = ids.first { NativeSlideActions(controller: controller, slideID: id) }
+    } primaryAction: { ids in
+      if let id = ids.first { controller.beginEditCopy(id) }
+    }
+    .navigationTitle("Slides")
       .safeAreaInset(edge: .bottom, spacing: 0) {
         HStack {
           Button { controller.addSlide() } label: { Label("Add Slide", systemImage: "plus") }
@@ -218,7 +224,7 @@ struct NativeSlideRow: View {
   var body: some View {
     HStack(alignment: .top) {
       Text(ordinal).workbenchText(.data)
-        .foregroundStyle(.secondary).frame(width: 28)
+        .foregroundStyle(.secondary).frame(minWidth: 28, alignment: .leading).fixedSize()
       VStack(alignment: .leading, spacing: 4) {
         Text(slide.title).workbenchText(.body).lineLimit(2)
         Text(summary).workbenchText(.caption).foregroundStyle(.secondary).lineLimit(2)
@@ -275,7 +281,7 @@ struct NativeCurateView: View {
           Text("Shortlist").tag("shortlist")
           Text("Chosen").tag("chosen")
           Text("Rejected").tag("rejected")
-        }.labelsHidden().frame(width: 130).accessibilityLabel("Media collection")
+        }.labelsHidden().frame(width: 130 * controller.interfaceScale).accessibilityLabel("Media collection")
           .help("Show all media, shortlisted, chosen or rejected images")
         Menu {
           Button("Add Media Folder…") { controller.addMediaFolder() }
@@ -341,7 +347,7 @@ struct NativeCurateView: View {
       Text("Filename").tag("filename")
       Text("Folder").tag("folder")
       Text("Newest first").tag("modified")
-    }.labelsHidden().frame(width: 130).controlSize(.small)
+    }.labelsHidden().frame(width: 130 * controller.interfaceScale).controlSize(.small)
       .help("Sort by filename, folder or modification date")
   }
   @ViewBuilder private var compareButton: some View {
@@ -369,7 +375,7 @@ struct NativeAssetTile: View {
         if controller.shortlistedAssetIDs.contains(asset.id) {
           Label("Shortlisted", systemImage: "bookmark.fill")
         }
-        if controller.compareIDs.contains(asset.id) { Image(systemName: "square.split.2x1") }
+        if controller.compareIDs.contains(asset.id) { Image(systemName: "square.split.2x1").accessibilityLabel("In comparison") }
       }
       .workbenchText(.caption).foregroundStyle(.secondary).lineLimit(1)
         .frame(minHeight: 16 * controller.interfaceScale, alignment: .leading)
@@ -381,8 +387,13 @@ struct NativeAssetTile: View {
         controller.focusedAssetID == asset.id ? Color.accentColor : Color.primary.opacity(0.12),
         lineWidth: controller.focusedAssetID == asset.id ? 2 : 1)
     )
-    .contentShape(Rectangle()).onTapGesture(count: 2) { controller.preview(asset.id) }.onTapGesture
-    { controller.focusAsset(asset.id) }
+    // One gesture, so a single click focuses at once instead of waiting out
+    // the double-click interval. Clicking a tile also takes keyboard focus
+    // from the slide list, so the curation keys act on the grid.
+    .contentShape(Rectangle()).onTapGesture {
+      NSApp.keyWindow?.makeFirstResponder(nil)
+      if NSApp.currentEvent?.clickCount == 2 { controller.preview(asset.id) } else { controller.focusAsset(asset.id) }
+    }
     .accessibilityElement(children: .combine).accessibilityAddTraits(
       controller.focusedAssetID == asset.id ? .isSelected : []
     )
@@ -390,6 +401,9 @@ struct NativeAssetTile: View {
     .accessibilityAction { controller.focusAsset(asset.id) }
     .accessibilityAction(named: Text("Shortlist")) { controller.decide("shortlist", assetID: asset.id) }
     .accessibilityAction(named: Text("Choose for slide")) { controller.decide("use", assetID: asset.id) }
+    .accessibilityAction(named: Text("Reject for this slide")) { controller.decide("reject", assetID: asset.id) }
+    .accessibilityAction(named: Text("Preview")) { controller.preview(asset.id) }
+    .accessibilityAction(named: Text(controller.compareIDs.contains(asset.id) ? "Remove from comparison" : "Add to comparison")) { controller.toggleCompare(asset.id) }
     .contextMenu {
       Button("Choose for Slide") { controller.decide("use", assetID: asset.id) }
       Button("Add to Shortlist") { controller.decide("shortlist", assetID: asset.id) }
@@ -397,7 +411,7 @@ struct NativeAssetTile: View {
       Button("Reject for This Slide") { controller.decide("reject", assetID: asset.id) }
       Button("Restore rejected candidate") { controller.decide("clear-reject", assetID: asset.id) }
       Divider()
-      Button("Add to Comparison") { controller.toggleCompare(asset.id) }
+      Button(controller.compareIDs.contains(asset.id) ? "Remove from Comparison" : "Add to Comparison") { controller.toggleCompare(asset.id) }
       Button("Reveal in Finder") {
         controller.focusedAssetID = asset.id
         controller.revealFocused()
@@ -482,13 +496,13 @@ struct NativePreviewView: View {
           controller.focusNext(-1)
         } label: {
           Image(systemName: "chevron.left")
-        }
+        }.accessibilityLabel("Previous image")
         NativeCurateActions(controller: controller)
         Button {
           controller.focusNext(1)
         } label: {
           Image(systemName: "chevron.right")
-        }
+        }.accessibilityLabel("Next image")
       }
       Text("← → Browse · S Shortlist · M Choose · X Reject · C Compare · Space/Esc Close")
         .workbenchText(.caption).foregroundStyle(.secondary)
@@ -550,7 +564,8 @@ struct NativeAssembleView: View {
           Button("Review deck") { controller.startCleanPreview() }
           Spacer(minLength: 4)
           Button("Fit") { controller.fitCanvas() }
-          Slider(value: $controller.zoom, in: 0.25...3).frame(width: 100).help("Canvas zoom; does not change export")
+          Slider(value: $controller.zoom, in: 0.25...3).frame(width: 100 * controller.interfaceScale).help("Canvas zoom; does not change export")
+            .accessibilityLabel("Canvas zoom")
         }.padding(12)
       }
       Divider()
@@ -613,7 +628,7 @@ struct NativeAssemblyInspector: View {
         onEditingChanged: { editing in
           editingSize = editing
           if !editing { controller.patchLayout(["bodySize": bodySize]) }
-        })
+        }).accessibilityLabel("Provisional size")
       }
       Button("Type & colours…") { controller.showStarterStyle = true }
         .help("Choose fonts, step through Head / Sub / Body sizes, and edit the four-accent palette")
@@ -650,7 +665,7 @@ struct NativeAssemblyInspector: View {
               g.opacity = opacity
               setGradient(g)
             }
-          })
+          }).accessibilityLabel("Gradient strength")
         // Direction buttons change only the direction; the slide's gradient
         // colours (a light slide's cream fade, say) stay as they are.
         HStack {
@@ -871,7 +886,7 @@ struct NativeImportSheet: View {
       Text("No text is rewritten. Slide boundaries and optional copy fields come from the file.")
         .workbenchText(.caption).foregroundStyle(.secondary)
       HStack {
-        Button("Cancel") { controller.imported = nil }
+        Button("Cancel") { controller.imported = nil }.keyboardShortcut(.cancelAction)
         if controller.document != nil {
           Button(matching ? "Show import" : "Preview replacement…") { matching.toggle() }
         }
@@ -913,7 +928,12 @@ struct NativeSettingsView: View {
       }
       Button("Save complete starter kit…") { controller.saveStarterKit() }.disabled(controller.adobeSetupBusy || controller.exportRunning)
       if let status = controller.adobeStatus["kit"] { Text(status).workbenchText(.caption) }
-      Button("Done") { controller.showSettings = false }
-    }.padding(28).nativeSheetFrame(width: 540, height: 620)
+    }.formStyle(.grouped)
+    // The form scrolls inside the sheet, so Done stays reachable at large
+    // interface sizes; Escape closes it.
+    .safeAreaInset(edge: .bottom) {
+      HStack { Spacer(); Button("Done") { controller.showSettings = false }.keyboardShortcut(.cancelAction) }.padding(16)
+    }
+    .nativeSheetFrame(width: 540 * controller.interfaceScale, height: 620 * controller.interfaceScale)
   }
 }

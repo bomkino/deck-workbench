@@ -10,6 +10,12 @@ struct NativeStarterStyleSheet: View {
   @State private var tab = "type"
   @State private var typeAllSlides = false
   @State private var colourAllSlides = true
+  @State private var initialType = NativeStarterType.standard
+  @State private var initialPalette = NativeStarterPalette.standard
+  /// Apply applies the visible tab, and the other tab too when it was edited,
+  /// so switching tabs never silently drops changes.
+  private var applyType: Bool { tab == "type" || type != initialType }
+  private var applyColours: Bool { tab == "colours" || palette != initialPalette }
   private var allSlides: Bool { tab == "type" ? typeAllSlides : colourAllSlides }
   private var scope: Binding<Bool> {
     Binding(get: { allSlides }, set: { if tab == "type" { typeAllSlides = $0 } else { colourAllSlides = $0 } })
@@ -46,17 +52,25 @@ struct NativeStarterStyleSheet: View {
       HStack {
         Button("Cancel") { controller.showStarterStyle = false }.keyboardShortcut(.cancelAction)
         Spacer()
-        Button(tab == "type" ? "Apply type" : "Apply colours") {
+        Button(applyType && applyColours ? "Apply type & colours" : applyType ? "Apply type" : "Apply colours") {
           do {
-            let patch: [String: Any] = tab == "type" ? ["starterType": try nativeObject(type)] : ["palette": try nativeObject(palette)]
-            controller.applyStarterStyle(patch, allSlides: allSlides)
+            let typePatch: [String: Any] = applyType ? ["starterType": try nativeObject(type)] : [:]
+            let colourPatch: [String: Any] = applyColours ? ["palette": try nativeObject(palette)] : [:]
+            if typeAllSlides == colourAllSlides || typePatch.isEmpty || colourPatch.isEmpty {
+              controller.applyStarterStyle(typePatch.merging(colourPatch) { $1 }, allSlides: typePatch.isEmpty ? colourAllSlides : typeAllSlides)
+            } else {
+              controller.applyStarterStyle(typePatch, allSlides: typeAllSlides)
+              controller.applyStarterStyle(colourPatch, allSlides: colourAllSlides)
+            }
           } catch { controller.failure = error.localizedDescription }
-        }.buttonStyle(.borderedProminent).disabled(tab == "type" ? !type.unavailableFonts.isEmpty : !validPalette)
+        }.buttonStyle(.borderedProminent).disabled((applyType && !type.unavailableFonts.isEmpty) || (applyColours && !validPalette))
       }.workbenchText(.action)
     }.padding(24).nativeSheetFrame(width: 670, height: 770)
       .onAppear {
         type = controller.selectedSlide?.settings.layout.starterType ?? .standard
         palette = controller.selectedSlide?.settings.layout.palette ?? .standard
+        initialType = type
+        initialPalette = palette
         do { library = try NativeColourLibrary.bundled() }
         catch { libraryError = "The colour library could not be loaded. Your saved colours and custom hex editing are available." }
       }
@@ -227,9 +241,10 @@ private struct NativeTypeRoleEditor: View {
           Text("SF Pro (system)").tag("System")
           Text("New York (system serif)").tag("System Serif")
           ForEach(NSFontManager.shared.availableFontFamilies.sorted(), id: \.self) { Text($0).tag($0) }
-        }
+        }.accessibilityLabel("\(title) family")
         if !role.isSystemFont {
           Picker("Face", selection: $role.fontName) { ForEach(faces, id: \.0) { Text($0.1).tag($0.0) } }.frame(maxWidth: 220)
+            .accessibilityLabel("\(title) face")
         }
       }
       HStack {
@@ -245,10 +260,10 @@ private struct NativeTypeRoleEditor: View {
       HStack {
         Picker("Alignment", selection: $role.alignment) {
           Text("Left").tag("left"); Text("Centre").tag("center"); Text("Right").tag("right"); Text("Justified").tag("justified")
-        }
+        }.accessibilityLabel("\(title) alignment")
         Picker("Colour", selection: $role.colorRole) {
           ForEach(NativeStarterPalette.roles.filter { $0 != "background" }, id: \.self) { Text(NativeStarterPalette.label($0)).tag($0) }
-        }
+        }.accessibilityLabel("\(title) colour")
       }
     }
   }

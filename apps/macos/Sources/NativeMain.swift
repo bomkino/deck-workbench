@@ -117,7 +117,8 @@ struct NativeWorkbenchCommands: Commands {
       ).disabled(controller.document == nil)
     }
     CommandGroup(replacing: .appSettings) {
-      Button("Settings…") { controller.showSettings = true }.keyboardShortcut(",")
+      // Sheets need the window; reopen it if it was closed.
+      Button("Settings…") { openWindow(id: "workbench"); controller.showSettings = true }.keyboardShortcut(",")
     }
     CommandMenu("Slide") {
       Button("Add Slide") { controller.addSlide() }.keyboardShortcut("n", modifiers: [.command, .shift])
@@ -162,10 +163,12 @@ struct NativeWorkbenchCommands: Commands {
       Button("Retry Pending Actions") { controller.retryPending() }.disabled(
         controller.failedCommands.isEmpty)
       Button("Save Pending Actions…") { controller.savePending() }.disabled(controller.failedCommands.isEmpty)
+      Button("Discard Unsaved Actions…") { controller.discardPending() }.disabled(controller.failedCommands.isEmpty && controller.notesDrafts.isEmpty)
       Button("Restore Pending Actions…") { controller.restorePending() }.disabled(controller.document == nil)
     }
     CommandGroup(replacing: .help) {
       Button("Keyboard Shortcuts") {
+        openWindow(id: "workbench")
         controller.previewOpen = false
         controller.showShortcuts = true
       }.keyboardShortcut("/")
