@@ -1222,6 +1222,8 @@ final class NativeWorkbenchController: ObservableObject {
       }
       documentURL = url
       parkedDocumentURL = nil
+      catalogRevision = -1
+      catalogGeneration += 1
       await refreshCatalog()
       resubmitParked()
     }
