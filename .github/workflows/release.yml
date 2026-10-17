@@ -1,7 +1,9 @@
-# Publishes one version, run by hand from the Actions tab on main for an
-# existing vX.Y.Z tag: the exact successful CI artifact of the tag's commit
-# (never rebuilt), its acceptance receipt, and the update feed installed
-# copies read, signed with pitch.dog's update key (docs/UPDATES.md).
+# Publishes one version, run by hand from the Actions tab on main for a
+# vX.Y.Z tag: the exact successful CI artifact of the tag's commit (never
+# rebuilt), its acceptance receipt, and the update feed installed copies read,
+# signed with pitch.dog's update key (docs/UPDATES.md). Without an existing
+# tag, the commit this run checked out from main is used, only if it carries
+# that version; the tag is then created with the release.
 #
 # The key is the SPARKLE_PRIVATE_KEY secret of the `release` environment,
 # which only main may use. Only the signing step receives it; it is written to
@@ -39,6 +41,13 @@ jobs:
           fetch-depth: 0
       - name: On main only
         run: '[ "$GITHUB_REF" = refs/heads/main ] || { echo "::error::Run this from main."; exit 1; }'
+      - name: Use the tag, or main's commit for a new version
+        run: |
+          if git rev-parse -q --verify "refs/tags/$RELEASE_TAG" >/dev/null; then exit 0; fi
+          VERSION="$(python3 -c 'import json; print(json.load(open("package.json"))["version"])')"
+          [ "$RELEASE_TAG" = "v$VERSION" ] || { echo "::error::There is no tag $RELEASE_TAG and main is at $VERSION. Raise the version on main, or tag the commit to release."; exit 1; }
+          git tag "$RELEASE_TAG" "$GITHUB_SHA"
+          echo "$RELEASE_TAG is main's $GITHUB_SHA; publishing creates the tag on GitHub."
       - name: Find and check the exact artifact
         run: scripts/publish-native-release.sh stage "$RELEASE_TAG" "$RUNNER_TEMP/release"
       - name: Sign the update feed
