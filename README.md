@@ -14,8 +14,8 @@ If macOS blocks the first launch, open **System Settings → Privacy & Security 
 
 ## Work
 
-1. **Import or paste final copy.** Review the slide boundaries, then create the deck. Workbench Markdown v1 and ordinary Markdown/text are supported.
-2. **Curate images.** Add a media folder, shortlist references and choose each slide's artwork. Original files stay untouched.
+1. **Import or paste final copy** (or drop the file on the window). Review the slide boundaries, then create the deck. Workbench Markdown v1 and ordinary Markdown/text are supported.
+2. **Curate images.** Add (or drop) a media folder, shortlist references and choose each slide's artwork. Original files stay untouched. The sidebar marks slides that still need an image and counts the ready ones.
 3. **Arrange the deck.** Use **Slide → Add Contents / Index** or **Add Moodboard…**. Moodboards accept up to 12 images. **Duplicate Slide** reuses a layout; **Move to Position…** puts any slide where you want it. Contents follows the included slide names and order automatically.
 4. **Assemble.** Use the numbered 24-column/12-row grid and **Type & colours…**. Choose a neutral base, main accent and optional extra accents from 31 colour families; set **Dark/Light** separately on each slide. Drag images to crop; Command-drag moves their frames. Contents uses two columns with dotted leaders.
 5. **Export designer handoff** with Command-Shift-E. Choose the slides and components. A full selection produces:

@@ -267,6 +267,8 @@ struct NativeWelcomeView: View {
     ScrollView {
       VStack(alignment: .leading, spacing: 36) {
         VStack(alignment: .leading, spacing: 14) {
+          Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 64, height: 64)
+            .shadow(color: .black.opacity(0.15), radius: 6, y: 3).accessibilityHidden(true)
           NativeEyebrow("Deck Workbench")
           Text("Copy. Images. Intent.").workbenchText(.display)
           Text(
