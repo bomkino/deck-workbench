@@ -493,6 +493,10 @@ type HistoryEntry = {
   label: string
   forward: HistoryOperation
   inverse: HistoryOperation
+  // Present on entries a later command may merge into (held-key nudges,
+  // notes autosave). The merge decision reads only persisted history, so
+  // replay from any checkpoint reproduces it.
+  coalesceKey?: string
 }
 
 type Checkpoint = {
@@ -1536,9 +1540,21 @@ function assertDeckIntegrity(deck: DeckSnapshot): void {
   validateNativeDeck(deck)
 }
 
+// A compound holds at most this many operations (see assertHistoryOperationShape).
+const COMPOUND_OPERATION_LIMIT = 1024
+
+// Longer lists nest in order-preserving chunks, so any single action stays one
+// history entry that open and undo accept. Applying nested compounds in order
+// is the same as applying the flat list.
 function operationList(operations: HistoryOperation[]): HistoryOperation {
   if (operations.length === 0) throw new Error('History operation list cannot be empty')
-  return operations.length === 1 ? operations[0] : { type: 'compound', payload: { operations } }
+  if (operations.length === 1) return operations[0]
+  if (operations.length <= COMPOUND_OPERATION_LIMIT) return { type: 'compound', payload: { operations } }
+  const chunks: HistoryOperation[] = []
+  for (let index = 0; index < operations.length; index += COMPOUND_OPERATION_LIMIT) {
+    chunks.push(operationList(operations.slice(index, index + COMPOUND_OPERATION_LIMIT)))
+  }
+  return operationList(chunks)
 }
 
 function appendOperationPair(
@@ -1553,7 +1569,8 @@ function appendOperationPair(
 
 // Tracks a slide's assignment order through a sequence of operations. Each
 // removal's inverse records the position at that point in the sequence, so
-// the inverses, applied in reverse, restore the exact previous order.
+// the inverses, applied in reverse, restore the exact previous order. Use one
+// tracker for every removal on the slide within one action.
 function assignmentOrder(slide: Slide) {
   const ids = (slide.mediaAssignments ?? []).map((item) => item.id)
   return {
@@ -1570,6 +1587,7 @@ function assignmentOrder(slide: Slide) {
 }
 
 // The inverse of removing one assignment restores its role and its position.
+// Only for a single removal; several removals share one assignmentOrder.
 function assignmentRestore(slide: Slide, assignment: MediaAssignment): HistoryOperation {
   return assignmentOrder(slide).remove(assignment)
 }
@@ -2600,30 +2618,45 @@ const HISTORY_OPERATION_TYPES = new Set([
   'element.imageFit.set',
 ])
 
+// Every new history entry passes through here, so the walk keeps the path as
+// segments and formats it only when it reports a problem. History values come
+// from JSON, so they cannot be cyclic; the depth limit would stop one anyway.
 function assertSafeIdentityFields(
   value: unknown,
   field: string,
-  seen = new WeakSet<object>(),
   depth = 0,
+  path: (string | number)[] = [],
 ): void {
   if (!value || typeof value !== 'object') return
-  if (depth > 64) throw new Error(`${field} exceeds the maximum history value depth`)
-  if (seen.has(value)) throw new Error(`${field} must not contain cycles`)
-  seen.add(value)
+  const at = () => field + path.map((part) => typeof part === 'number' ? `[${part}]` : `.${part}`).join('')
+  if (depth > 64) throw new Error(`${at()} exceeds the maximum history value depth`)
   if (Array.isArray(value)) {
-    for (const [index, item] of value.entries()) {
-      assertSafeIdentityFields(item, `${field}[${index}]`, seen, depth + 1)
+    for (let index = 0; index < value.length; index += 1) {
+      const item = value[index]
+      if (item && typeof item === 'object') {
+        path.push(index)
+        assertSafeIdentityFields(item, field, depth + 1, path)
+        path.pop()
+      }
     }
-    seen.delete(value)
     return
   }
-  for (const [key, item] of Object.entries(value as JsonObject)) {
-    if (typeof item === 'string' && (key === 'id' || key.endsWith('Id'))) {
-      assertIdentity(item, `${field}.${key}`)
+  const keys = Object.keys(value)
+  for (let index = 0; index < keys.length; index += 1) {
+    const key = keys[index]
+    const item = (value as JsonObject)[key]
+    if (typeof item === 'string') {
+      // The same conditions assertIdentity rejects (empty, over 4096, reserved).
+      if ((item.length === 0 || item.length > 4096 || UNSAFE_IDENTITY_KEYS.has(item)) && (key === 'id' || key.endsWith('Id'))) {
+        path.push(key)
+        assertIdentity(item, at())
+      }
+    } else if (item && typeof item === 'object') {
+      path.push(key)
+      assertSafeIdentityFields(item, field, depth + 1, path)
+      path.pop()
     }
-    assertSafeIdentityFields(item, `${field}.${key}`, seen, depth + 1)
   }
-  seen.delete(value)
 }
 
 function assertHistoryOperationShape(value: unknown, field: string, depth = 0): HistoryOperation {
@@ -2634,8 +2667,8 @@ function assertHistoryOperationShape(value: unknown, field: string, depth = 0): 
   const payload = assertRecord(operation.payload, `${field}.payload`)
   assertSafeIdentityFields(payload, `${field}.payload`)
   if (type === 'compound') {
-    if (!Array.isArray(payload.operations) || payload.operations.length === 0 || payload.operations.length > 1024) {
-      throw new Error(`${field} compound operations must contain 1 to 1024 items`)
+    if (!Array.isArray(payload.operations) || payload.operations.length === 0 || payload.operations.length > COMPOUND_OPERATION_LIMIT) {
+      throw new Error(`${field} compound operations must contain 1 to ${COMPOUND_OPERATION_LIMIT} items`)
     }
     for (const [index, item] of payload.operations.entries()) {
       assertHistoryOperationShape(item, `${field}.payload.operations[${index}]`, depth + 1)
@@ -2648,58 +2681,113 @@ function assertHistoryEntryShape(value: unknown, field: string): HistoryEntry {
   const entry = assertRecord(value, field)
   assertIdentity(entry.id, `${field}.id`, 256)
   assertString(entry.label, `${field}.label`, 4096)
+  if (entry.coalesceKey !== undefined) assertString(entry.coalesceKey, `${field}.coalesceKey`, 2048)
   assertHistoryOperationShape(entry.forward, `${field}.forward`)
   assertHistoryOperationShape(entry.inverse, `${field}.inverse`)
   return value as HistoryEntry
 }
 
-function assertCheckpointHistory(checkpoint: Checkpoint): void {
-  const historyIds = new Set<string>()
-  for (const [stackName, stack] of [
-    ['undoStack', checkpoint.undoStack],
-    ['redoStack', checkpoint.redoStack],
-  ] as const) {
-    for (const [index, rawEntry] of stack.entries()) {
-      const entry = assertHistoryEntryShape(rawEntry, `${stackName}[${index}]`)
-      if (historyIds.has(entry.id)) throw new Error(`Duplicate History Entry identity: ${entry.id}`)
-      historyIds.add(entry.id)
+// Open checks history entry shapes only. Whether an entry still applies is
+// verified when it is used: prepareUndo/prepareRedo apply it to a copy and
+// check the result before anything commits, so a stale entry fails that one
+// Undo with an error instead of costing every open O(history × deck).
+//
+// A deck saved by an older kernel may hold an entry that kernel accepted but
+// could never undo (for example a compound of more than 1024 operations).
+// Such an entry and everything beneath it is dropped, so the deck opens with
+// its content intact and the steps above it still undo coherently. No
+// journaled undo can reach those entries: the older kernel refused to undo
+// the malformed one, and nothing beneath it is reachable without it.
+function usableHistory(stack: unknown[], stackName: string): HistoryEntry[] {
+  for (let index = stack.length - 1; index >= 0; index -= 1) {
+    try {
+      assertHistoryEntryShape(stack[index], `${stackName}[${index}]`)
+    } catch {
+      return stack.slice(index + 1) as HistoryEntry[]
     }
   }
+  return stack as HistoryEntry[]
+}
 
-  // Each working deck is private to this check, so history applies in place
-  // rather than cloning the whole deck once per entry.
-  let undoDeck = clone(checkpoint.deck)
-  for (let index = checkpoint.undoStack.length - 1; index >= 0; index -= 1) {
-    undoDeck = applyHistoryOperation(undoDeck, checkpoint.undoStack[index].inverse, true)
-    assertDeckIntegrity(undoDeck)
-  }
-  let redoDeck = clone(checkpoint.deck)
-  for (let index = checkpoint.redoStack.length - 1; index >= 0; index -= 1) {
-    redoDeck = applyHistoryOperation(redoDeck, checkpoint.redoStack[index].forward, true)
-    assertDeckIntegrity(redoDeck)
+function assertCheckpointHistory(checkpoint: Checkpoint): void {
+  checkpoint.undoStack = usableHistory(checkpoint.undoStack, 'undoStack')
+  checkpoint.redoStack = usableHistory(checkpoint.redoStack, 'redoStack')
+  const historyIds = new Set<string>()
+  for (const entry of [...checkpoint.undoStack, ...checkpoint.redoStack]) {
+    if (historyIds.has(entry.id)) throw new Error(`Duplicate History Entry identity: ${entry.id}`)
+    historyIds.add(entry.id)
   }
 }
 
 // History and duplicate-command memory are bounded so each edit, save and
 // reopen costs the same however long a deck has been worked on. Trimming is a
-// pure function of the stored state, so journal replay reproduces it exactly.
+// pure function of the stored state.
+//
+// Besides the entry count, a new command keeps the undo history within a
+// budget of serialized JSON characters, dropping the oldest entries first and
+// always keeping the newest. 32 Mi characters keeps the saved checkpoint well
+// under ~100 MB even after the Mac host pretty-prints it, while still holding
+// several deck-wide style changes on a 1000-slide deck (~4.6 MB each) and the
+// full 500 steps of ordinary editing (a few KB each). Undo/redo only move
+// entries between the stacks and clear nothing, so they never need it.
+//
+// Journal replay keeps the count limit but not the byte budget: replay may
+// then hold more old entries than the live session did, never fewer, so every
+// journaled undo still finds its entry on top (a stricter replay could empty
+// a stack an older kernel's journal later undoes).
 const HISTORY_LIMIT = 500
+const HISTORY_CHARACTER_BUDGET = 32 * 1024 * 1024
 const PROCESSED_COMMAND_LIMIT = 5000
 
-function boundedHistory(stack: HistoryEntry[]): HistoryEntry[] {
-  return stack.length > HISTORY_LIMIT ? stack.slice(stack.length - HISTORY_LIMIT) : stack
+// History entries are immutable once created and shared between stacks, so
+// derived facts about each one are computed once.
+const historyEntryCharacters = new WeakMap<HistoryEntry, number>()
+function historyEntrySize(entry: HistoryEntry): number {
+  let size = historyEntryCharacters.get(entry)
+  if (size === undefined) {
+    size = JSON.stringify(entry).length
+    historyEntryCharacters.set(entry, size)
+  }
+  return size
+}
+
+function boundedHistory(stack: HistoryEntry[], budget = false): HistoryEntry[] {
+  let bounded = stack.length > HISTORY_LIMIT ? stack.slice(stack.length - HISTORY_LIMIT) : stack
+  if (!budget) return bounded
+  let total = 0
+  for (let index = bounded.length - 1; index >= 0; index -= 1) {
+    total += historyEntrySize(bounded[index])
+    if (total > HISTORY_CHARACTER_BUDGET && index < bounded.length - 1) {
+      bounded = bounded.slice(index + 1)
+      break
+    }
+  }
+  return bounded
+}
+
+function processedRevision(ack: JsonObject): number {
+  return Number.isSafeInteger(ack.revision) ? ack.revision as number : -1
 }
 
 function boundedProcessedCommands(processed: Record<string, JsonObject>): Record<string, JsonObject> {
   const entries = Object.entries(processed)
   if (entries.length <= PROCESSED_COMMAND_LIMIT) return processed
-  // Keep the most recent acknowledgements by revision; key order is not
-  // stable once a checkpoint has been written with sorted keys.
-  const ranked = entries
-    .map(([id, ack], position) => ({ id, ack, revision: Number.isSafeInteger(ack.revision) ? ack.revision as number : -1, position }))
-    .sort((a, b) => a.revision - b.revision || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+  // Keep the most recent acknowledgements by revision, then identity; key
+  // order is not stable once a checkpoint has been written with sorted keys.
+  const order = (a: [string, JsonObject], b: [string, JsonObject]) =>
+    processedRevision(a[1]) - processedRevision(b[1]) || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)
+  if (entries.length === PROCESSED_COMMAND_LIMIT + 1) {
+    // The ordinary case after each command: drop the single oldest, which is
+    // what sorting and keeping the last PROCESSED_COMMAND_LIMIT would keep.
+    // `processed` is always a fresh map built by prepare.
+    let oldest = entries[0]
+    for (const entry of entries) if (order(entry, oldest) < 0) oldest = entry
+    delete processed[oldest[0]]
+    return processed
+  }
+  const ranked = entries.sort(order)
   const kept: Record<string, JsonObject> = {}
-  for (const item of ranked.slice(ranked.length - PROCESSED_COMMAND_LIMIT)) kept[item.id] = item.ack
+  for (const [id, ack] of ranked.slice(ranked.length - PROCESSED_COMMAND_LIMIT)) kept[id] = ack
   return kept
 }
 
@@ -2727,7 +2815,8 @@ function validateCheckpoint(input: unknown): Checkpoint | KernelError {
       || Array.isArray(checkpoint.processedCommands)
     ) return failure('InvalidCommand', 'Checkpoint processed-command map is required')
 
-    const normalized = checkpoint as Checkpoint
+    // A shallow copy: unusable history is dropped without changing the input.
+    const normalized = { ...checkpoint } as Checkpoint
     assertDeckIntegrity(normalized.deck)
     for (const [commandId, acknowledgement] of Object.entries(normalized.processedCommands)) {
       assertIdentity(commandId, 'Processed Command identity', 256)
@@ -3339,6 +3428,16 @@ function query(session: KernelSession, name: string, params: JsonObject = {}): J
 }
 
 function prepare(session: KernelSession, command: CommandEnvelope): PrepareResult {
+  return prepareCommand(session, command, false)
+}
+
+// `replaying` is true only for a journaled command (replayRecord). Every
+// journaled command was committed by the kernel that wrote it, possibly an
+// older one, so replay must reproduce a committed revision for it: checks
+// added since then for new commands are not applied, a command now recognised
+// as unchanged still commits, and normalisation applies exactly as it does for
+// new commands so replay stays deterministic.
+function prepareCommand(session: KernelSession, command: CommandEnvelope, replaying: boolean): PrepareResult {
   if (!command || typeof command !== 'object' || Array.isArray(command)) {
     return failure('InvalidCommand', 'Command must be an object')
   }
@@ -3359,11 +3458,15 @@ function prepare(session: KernelSession, command: CommandEnvelope): PrepareResul
   let inverse: HistoryOperation
   let label: string
   let projectionHints: string[] = ['story', 'slide.activeProjection', 'history']
+  let coalesceKey: string | undefined
+  let coalesce = false
   try {
     if (command.type.startsWith('native.')) {
-      const mutation = prepareNativeCommand(session.checkpoint.deck, command)
-      if (mutation.noop) return { ok: true, duplicate: true, acknowledgement: { commandId: command.commandId, revision: session.checkpoint.revision, status: 'unchanged', label: mutation.label } }
+      const mutation = prepareNativeCommand(session.checkpoint.deck, command, !replaying)
+      if (mutation.noop && !replaying) return { ok: true, duplicate: true, acknowledgement: { commandId: command.commandId, revision: session.checkpoint.revision, status: 'unchanged', label: mutation.label } }
       forward = mutation.forward; inverse = mutation.inverse; label = mutation.label
+      coalesceKey = mutation.coalesceKey
+      coalesce = mutation.coalesce === true
       projectionHints = ['native.document', 'history']
     } else if (command.type === 'deck.rename') {
       const title = assertString(command.payload.title, 'title')
@@ -4264,11 +4367,46 @@ function prepare(session: KernelSession, command: CommandEnvelope): PrepareResul
     return failure('InvalidCommand', (error as Error).message)
   }
   const nextRevision = session.checkpoint.revision + 1
-  const entry: HistoryEntry = {
+  const forwardJSON = JSON.stringify(forward), inverseJSON = JSON.stringify(inverse)
+  let entry: HistoryEntry = {
     id: command.commandId,
     label,
-    forward: clone(forward),
-    inverse: clone(inverse),
+    forward: JSON.parse(forwardJSON),
+    inverse: JSON.parse(inverseJSON),
+  }
+  if (coalesceKey !== undefined) entry.coalesceKey = coalesceKey
+  // Exactly JSON.stringify(entry).length, without serializing it again.
+  historyEntryCharacters.set(entry, JSON.stringify({ id: entry.id, label, ...(coalesceKey !== undefined ? { coalesceKey } : {}) }).length
+    + ',"forward":'.length + forwardJSON.length + ',"inverse":'.length + inverseJSON.length)
+  const undoStack = session.checkpoint.undoStack
+  let earlierEntries = undoStack
+  const top = undoStack.at(-1)
+  // A coalescing command (a held-key nudge, notes autosave) extends the latest
+  // step for the same target instead of adding one: Undo then returns to the
+  // state before the first of them. Both sides are absolute native.slide.set
+  // operations, so the earlier inverse and this forward compose exactly. Only
+  // when nothing was undone since (empty redo stack), so a new action never
+  // merges into an older step.
+  if (
+    coalesce && coalesceKey !== undefined && top?.coalesceKey === coalesceKey
+    && session.checkpoint.redoStack.length === 0
+    && top.forward.type === 'native.slide.set' && top.inverse.type === 'native.slide.set'
+  ) {
+    entry = { id: top.id, label, forward: entry.forward, inverse: top.inverse, coalesceKey }
+    earlierEntries = undoStack.slice(0, -1)
+  }
+  let nextUndoStack: HistoryEntry[]
+  try {
+    // Nothing may commit that open or Undo would later reject.
+    assertHistoryEntryShape(entry, 'History Entry')
+    // History entries are never mutated after creation, so stacks share them.
+    nextUndoStack = boundedHistory([...earlierEntries, entry], !replaying)
+  } catch (error) {
+    if (!replaying) return failure('InvalidCommand', `This change cannot be recorded for Undo: ${(error as Error).message}`)
+    // An older kernel committed this change with an entry it could never
+    // undo. The change still replays; it and the steps beneath it are not
+    // undoable, exactly as when such a saved entry is dropped on open.
+    nextUndoStack = []
   }
   const acknowledgement = {
     commandId: command.commandId,
@@ -4282,8 +4420,7 @@ function prepare(session: KernelSession, command: CommandEnvelope): PrepareResul
     baseRevision: session.checkpoint.revision,
     nextRevision,
     nextDeck,
-    // History entries are never mutated after creation, so stacks share them.
-    nextUndoStack: boundedHistory([...session.checkpoint.undoStack, entry]),
+    nextUndoStack,
     nextRedoStack: [],
     nextProcessedCommands: boundedProcessedCommands({
       ...session.checkpoint.processedCommands,
@@ -4360,6 +4497,17 @@ function commit(session: KernelSession, prepared: PreparedChange, owned = false)
   if (session.checkpoint.revision !== prepared.baseRevision) {
     return failure('StaleRevision', 'Prepared change no longer matches live state')
   }
+  if (!owned) {
+    // A change from outside this kernel must not commit history that open
+    // or Undo would reject.
+    try {
+      if (!Array.isArray(prepared.nextUndoStack) || !Array.isArray(prepared.nextRedoStack)) throw new Error('History stacks must be arrays')
+      for (const [index, entry] of prepared.nextUndoStack.entries()) assertHistoryEntryShape(entry, `nextUndoStack[${index}]`)
+      for (const [index, entry] of prepared.nextRedoStack.entries()) assertHistoryEntryShape(entry, `nextRedoStack[${index}]`)
+    } catch (error) {
+      return failure('InvalidCommand', (error as Error).message)
+    }
+  }
   session.checkpoint = {
     format: 'pitchdog.deck-checkpoint',
     schemaVersion: 1,
@@ -4389,7 +4537,7 @@ function replayRecord(session: KernelSession, record: JsonObject): JsonObject | 
   }
   let prepared: PrepareResult
   if (record.operation === 'command') {
-    prepared = prepare(session, record.command as CommandEnvelope)
+    prepared = prepareCommand(session, record.command as CommandEnvelope, true)
   } else if (record.operation === 'undo') {
     const undoStack = session?.checkpoint?.undoStack
     const expectedEntry = Array.isArray(undoStack) ? undoStack.at(-1) : undefined
@@ -4443,10 +4591,19 @@ function operationNeedsStarterSchema(operation: unknown, depth = 0): boolean {
   if (type === 'content.insert') return typeof (payload.block as ContentBlock | undefined)?.state === 'string'
   return false
 }
+// Entries are immutable and shared between stacks, so each is inspected once.
+const historyEntryNeedsStarter = new WeakMap<HistoryEntry, boolean>()
+function entryNeedsStarterSchema(entry: HistoryEntry): boolean {
+  let needs = historyEntryNeedsStarter.get(entry)
+  if (needs === undefined) {
+    needs = operationNeedsStarterSchema(entry.forward) || operationNeedsStarterSchema(entry.inverse)
+    historyEntryNeedsStarter.set(entry, needs)
+  }
+  return needs
+}
 function preparedNeedsStarterSchema(prepared: PreparedChange): boolean {
   if (prepared.nextDeck.sections.some((section) => section.slides.some(slideNeedsStarterSchema))) return true
-  return [...prepared.nextUndoStack, ...prepared.nextRedoStack].some((entry) =>
-    operationNeedsStarterSchema(entry.forward) || operationNeedsStarterSchema(entry.inverse))
+  return prepared.nextUndoStack.some(entryNeedsStarterSchema) || prepared.nextRedoStack.some(entryNeedsStarterSchema)
 }
 
 const DeckKernel = Object.freeze({

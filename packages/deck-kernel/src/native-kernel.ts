@@ -14,7 +14,39 @@ type NativeSlideState = {
   shortlist: string[]; rejected: string[]; sourceFingerprints: Record<string, string>
   layout: NativeLayout
 }
-type NativeMutation = { forward: HistoryOperation; inverse: HistoryOperation; label: string; noop?: boolean }
+// `coalesceKey` marks a step a later command may merge into; `coalesce` asks
+// to merge this command into a top step with the same key (see prepareCommand).
+type NativeMutation = { forward: HistoryOperation; inverse: HistoryOperation; label: string; noop?: boolean; coalesceKey?: string; coalesce?: boolean }
+
+// JSON with object keys sorted (used for small identity keys).
+function canonicalJSON(value: unknown): string {
+  return JSON.stringify(value, (_key, item: unknown) => item && typeof item === 'object' && !Array.isArray(item)
+    ? Object.fromEntries(Object.keys(item).sort().map((key) => [key, (item as JsonObject)[key]]))
+    : item)
+}
+// Whether two JSON values serialize to the same canonical (key-sorted) JSON:
+// equality never depends on key order (the Mac host sends sorted keys; the
+// kernel stores some values in creation order). Keys holding undefined are
+// absent, as in JSON.
+function sameJSON(a: unknown, b: unknown): boolean {
+  if (a === b) return true
+  if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false
+    for (let index = 0; index < a.length; index += 1) if (!sameJSON(a[index] ?? null, b[index] ?? null)) return false
+    return true
+  }
+  const left = a as JsonObject, right = b as JsonObject
+  const leftKeys = Object.keys(left), rightKeys = Object.keys(right)
+  let count = 0
+  for (const key of leftKeys) {
+    if (left[key] === undefined) continue
+    if (right[key] === undefined || !hasOwn(right, key) || !sameJSON(left[key], right[key])) return false
+    count += 1
+  }
+  for (const key of rightKeys) if (right[key] !== undefined) count -= 1
+  return count === 0
+}
 
 function nativePlan(slide: Slide): JsonObject {
   const block = slide.contentBlocks.find((b) => b.role === 'workbench-plan' || b.semanticKey === 'workbench.plan.v1')
@@ -58,11 +90,12 @@ function nativeText(value: unknown): string {
   if (typeof value !== 'string' || value.length > 262144) throw new Error('Notes must contain at most 262144 characters')
   return value
 }
-function validateNativeState(value: unknown, deck?: DeckSnapshot): NativeSlideState {
+// `assets`, when given, is the deck's Asset Reference identities, built once
+// per deck by validateNativeDeck rather than once per slide.
+function validateNativeState(value: unknown, assets?: ReadonlySet<string>): NativeSlideState {
   const state = assertRecord(value, 'Native Slide') as unknown as NativeSlideState
   if (state.version !== 1 || typeof state.copyLocked !== 'boolean' || typeof state.included !== 'boolean') throw new Error('Unsupported native Slide state')
   nativeText(state.notes)
-  const assets = deck ? new Set((deck.assetReferences ?? []).map((a) => a.id)) : null
   for (const key of ['shortlist', 'rejected'] as const) {
     if (!Array.isArray(state[key]) || state[key].length > 12000 || new Set(state[key]).size !== state[key].length) throw new Error(`${key} needs unique Asset IDs`)
     for (const id of state[key]) { assertIdentity(id, 'Asset ID', 256); if (assets && !assets.has(id)) throw new Error('Native candidate Asset does not exist') }
@@ -106,12 +139,62 @@ function validateNativeState(value: unknown, deck?: DeckSnapshot): NativeSlideSt
   return clone(state)
 }
 function validateNativeDeck(deck: DeckSnapshot): void {
-  for (const section of deck.sections) for (const slide of section.slides) if (slide.native) validateNativeState(slide.native, deck)
+  const assets = new Set((deck.assetReferences ?? []).map((a) => a.id))
+  for (const section of deck.sections) for (const slide of section.slides) if (slide.native) validateNativeState(slide.native, assets)
 }
-function nativeMutation(deck: DeckSnapshot, slide: Slide, next: NativeSlideState, label: string): NativeMutation {
+// Assets both shortlisted and rejected on one slide. Older decks may already
+// hold some (an earlier `unassign` did not clear rejection); they stay valid.
+function candidateConflicts(state: NativeSlideState): string[] {
+  const rejected = new Set(state.rejected)
+  return state.shortlist.filter((id) => rejected.has(id))
+}
+// `strict` is false only while replaying a journal (see prepareCommand).
+function nativeMutation(deck: DeckSnapshot, slide: Slide, next: NativeSlideState, label: string, strict = false): NativeMutation {
   validateNativeState(next)
+  const previous = nativeState(deck, slide)
+  if (strict) {
+    const existing = new Set(candidateConflicts(previous))
+    if (candidateConflicts(next).some((id) => !existing.has(id))) throw new Error('An image cannot be both shortlisted and rejected on one slide')
+  }
   return { forward: { type: 'native.slide.set', payload: { slideId: slide.id, value: next } }, inverse: { type: 'native.slide.set', payload: { slideId: slide.id, value: slide.native ? clone(slide.native) : null } }, label,
-    noop: JSON.stringify(nativeState(deck, slide)) === JSON.stringify(next) }
+    noop: sameJSON(previous, next) }
+}
+// An image displaced from its slot stays a candidate, unless it is rejected
+// for this slide (rejection is the explicit judgement and wins).
+function displacedCandidate(state: NativeSlideState, assetId: string): void {
+  if (!state.rejected.includes(assetId) && !state.shortlist.includes(assetId)) state.shortlist.push(assetId)
+}
+// Held arrow keys: `payload.coalesce: true` extends the previous nudge step for
+// the same slide and target, so one Undo restores the frame before the hold.
+function nudgeMutation(mutation: NativeMutation, command: CommandEnvelope, slideId: string, target: string): NativeMutation {
+  return { ...mutation, coalesceKey: canonicalJSON(['native.nudge', slideId, target]), coalesce: command.payload.coalesce === true }
+}
+// Replacement copy keeps only the fields a Content Block has, and rich text
+// only its document/paragraph/text structure: the exact text survives, extra
+// fields and marks (which nothing reads, and which could carry identity-like
+// values history rejects) do not.
+function plainRichText(value: RichTextDocument): RichTextDocument {
+  return { type: 'doc', content: value.content.map((paragraph) => ({ type: 'paragraph', content: paragraph.content.map((node) => ({ type: 'text', text: node.text })) })) }
+}
+function replacementBlock(value: unknown): ContentBlock {
+  const raw = assertRecord(value, 'Content Block')
+  const id = assertIdentity(raw.id, 'Content ID', 256), role = assertString(raw.role, 'role'), semanticKey = assertString(raw.semanticKey, 'semanticKey')
+  if (!isRichTextDocument(raw.value)) throw new Error('Invalid replacement Content Block')
+  const block: ContentBlock = { id, semanticKey, role, value: plainRichText(raw.value) }
+  if (raw.state !== undefined) block.state = raw.state as ContentBlock['state']
+  return block
+}
+// Rules for newly submitted copy, checked only when a slide's copy changes
+// and only for fields that changed, so older slides stay editable. A slide
+// may have no headline: plain-text and Copy.md replacement and an editor
+// left with an untouched blank headline all legitimately send none.
+function assertReplacementCopy(oldBlocks: ContentBlock[], blocks: ContentBlock[], unchanged: ReadonlySet<ContentBlock>): void {
+  if (!blocks.length) throw new Error('Keep at least one copy field on this slide. Mark a field intentionally blank instead of removing every field.')
+  const headlines = (list: ContentBlock[]) => list.filter((b) => b.role === 'headline').length
+  if (headlines(blocks) > 1 && headlines(blocks) > headlines(oldBlocks)) throw new Error('A slide can have only one headline field.')
+  for (const b of blocks) {
+    if (!unchanged.has(b) && b.state === 'present' && richTextToPlainText(b.value) === '') throw new Error('A field marked present needs copy. Leave it empty or mark it intentionally blank.')
+  }
 }
 // Slide management uses the existing insert/remove/move history, not a second store.
 function nativeCopySignature(blocks: ContentBlock[]): string {
@@ -252,23 +335,50 @@ function nativeSlideRename(deck: DeckSnapshot, command: CommandEnvelope): Native
   return { forward: replacement(slide), inverse: replacement(clone(old)), label: 'Rename Slide', noop: old.internalTitle === title }
 }
 
-function prepareNativeCommand(deck: DeckSnapshot, command: CommandEnvelope): NativeMutation {
+// `native.layout.apply` takes either `{ slideIds, layout }` (one layout for
+// every listed slide) or `{ groups: [{ slideIds, layout }, ...] }` (a layout
+// per group, slide identities unique across groups); both are one Undo step.
+function nativeLayoutGroups(payload: JsonObject): { slideIds: unknown[]; layout: Record<string, unknown> }[] {
+  if (payload.groups === undefined) {
+    const ids = payload.slideIds
+    if (!Array.isArray(ids) || !ids.length || ids.length > 1000 || new Set(ids).size !== ids.length) throw new Error('Select unique slides for the layout')
+    return [{ slideIds: ids, layout: assertRecord(payload.layout, 'layout') }]
+  }
+  if (payload.slideIds !== undefined || payload.layout !== undefined) throw new Error('Send either layout groups or one layout for the selected slides')
+  if (!Array.isArray(payload.groups) || !payload.groups.length || payload.groups.length > 1000) throw new Error('Choose 1–1000 layout groups')
+  const seen = new Set<unknown>()
+  return payload.groups.map((raw) => {
+    const group = assertRecord(raw, 'layout group')
+    const ids = group.slideIds
+    if (!Array.isArray(ids) || !ids.length) throw new Error('Each layout group needs slides')
+    for (const id of ids) {
+      if (seen.has(id)) throw new Error('Select unique slides for the layout')
+      seen.add(id)
+    }
+    if (seen.size > 1000) throw new Error('Select unique slides for the layout')
+    return { slideIds: ids, layout: assertRecord(group.layout, 'layout') }
+  })
+}
+
+// `strict` is false only while replaying a journal: checks added for newly
+// submitted commands then do not reject what an older kernel committed.
+function prepareNativeCommand(deck: DeckSnapshot, command: CommandEnvelope, strict = true): NativeMutation {
   if (command.type === 'native.slide.add' || command.type === 'native.slide.duplicate') return nativeSlideInsertion(deck, command)
   if (command.type === 'native.slide.rename') return nativeSlideRename(deck, command)
   if (command.type === 'native.layout.apply') {
-    const ids = command.payload.slideIds
-    if (!Array.isArray(ids) || !ids.length || ids.length > 1000 || new Set(ids).size !== ids.length) throw new Error('Select unique slides for the layout')
-    const layout = assertRecord(command.payload.layout, 'layout')
+    const groups = nativeLayoutGroups(command.payload)
+    // One operation (a native.slide.set or that slide's own compound) per
+    // slide, so a deck-wide change stays within the compound limit.
     const forward: HistoryOperation[] = [], inverse: HistoryOperation[] = []
     let firstMutation: NativeMutation | undefined
-    for (const slideId of ids) {
+    for (const { slideIds, layout } of groups) for (const slideId of slideIds) {
       const destination = findSlide(deck, assertIdentity(slideId, 'slideId', 256))
       if (!destination) throw new Error('The destination slide no longer exists')
       const patch = clone(layout)
       if (patch.frames !== undefined && patch.frames !== null) {
         patch.frames = { ...Object.fromEntries(Object.keys(nativeState(deck, destination).layout.frames).map((role) => [role, null])), ...assertRecord(patch.frames, 'frames') }
       }
-      const m = prepareNativeCommand(deck, { ...command, type: 'native.slide.patch', payload: { slideId, patch: { layout: patch } } })
+      const m = prepareNativeCommand(deck, { ...command, type: 'native.slide.patch', payload: { slideId, patch: { layout: patch } } }, strict)
       firstMutation ??= m
       if (!m.noop) appendOperationPair(forward, inverse, m.forward, m.inverse)
     }
@@ -278,6 +388,8 @@ function prepareNativeCommand(deck: DeckSnapshot, command: CommandEnvelope): Nat
   if (command.type === 'native.copy.replace') {
     const updates = command.payload.slides
     if (!Array.isArray(updates) || !updates.length || updates.length > 1000) throw new Error('Copy replacement needs Slide updates')
+    // Each slide's operations form their own compound (one top-level item
+    // per slide), so replacing copy deck-wide stays one undoable entry.
     const forward: HistoryOperation[] = [], inverse: HistoryOperation[] = [], seen = new Set<string>()
     for (const raw of updates) {
       const update = assertRecord(raw, 'copy update'), id = assertIdentity(update.slideId, 'slideId', 256), slide = findSlide(deck, id)
@@ -294,38 +406,43 @@ function prepareNativeCommand(deck: DeckSnapshot, command: CommandEnvelope): Nat
       if (update.expectedCopyDigest !== undefined) {
         if (typeof update.expectedCopyDigest !== 'string' || update.expectedCopyDigest !== nativeCopyDigest(oldBlocks)) throw new Error(stale)
       }
-      const blocks = clone(update.blocks as ContentBlock[])
+      const slideForward: HistoryOperation[] = [], slideInverse: HistoryOperation[] = []
       if (update.title !== undefined) {
         const rename = nativeSlideRename(deck, { ...command, type: 'native.slide.rename', payload: { slideId: id, title: update.title } })
-        if (!rename.noop) appendOperationPair(forward, inverse, rename.forward, rename.inverse)
+        if (!rename.noop) appendOperationPair(slideForward, slideInverse, rename.forward, rename.inverse)
       }
+      const blocks = (update.blocks as unknown[]).map(replacementBlock)
       const ids = new Set<string>(), keys = new Set<string>()
       for (const b of blocks) {
-        assertIdentity(b.id, 'Content ID', 256); assertString(b.role, 'role'); assertString(b.semanticKey, 'semanticKey')
-        if (metadata(b) || !isRichTextDocument(b.value) || ids.has(b.id) || keys.has(b.semanticKey)) throw new Error('Invalid replacement Content Block')
+        if (metadata(b) || ids.has(b.id) || keys.has(b.semanticKey)) throw new Error('Invalid replacement Content Block')
         if (b.state !== undefined && (!['present', 'intentionally-blank', 'unreviewed'].includes(b.state) || (b.state !== 'present' && richTextToPlainText(b.value) !== ''))) throw new Error('Invalid copy field state')
         if (blockIdentityExists(deck, b.id) && !oldBlocks.some((o) => o.id === b.id)) throw new Error('Content ID belongs to another Slide')
         ids.add(b.id); keys.add(b.semanticKey)
       }
+      // An unchanged field keeps its stored rich text exactly.
+      const unchanged = new Set<ContentBlock>()
       for (let i = 0; i < blocks.length; i++) {
         const original = oldBlocks.find((b) => b.id === blocks[i].id)
-        if (original && nativeCopySignature([original]) === nativeCopySignature([blocks[i]])) blocks[i] = clone(original)
+        if (original && nativeCopySignature([original]) === nativeCopySignature([blocks[i]])) { blocks[i] = clone(original); unchanged.add(blocks[i]) }
       }
-      if (nativeCopySignature(oldBlocks) === nativeCopySignature(blocks)) continue
-      for (const b of oldBlocks.slice().reverse()) {
-        const index = slide.contentBlocks.findIndex((o) => o.id === b.id)
-        appendOperationPair(forward, inverse, { type: 'content.remove', payload: { slideId: id, blockId: b.id } }, { type: 'content.insert', payload: { slideId: id, block: clone(b), afterBlockId: slide.contentBlocks[index - 1]?.id ?? null } })
+      if (nativeCopySignature(oldBlocks) !== nativeCopySignature(blocks)) {
+        if (strict) assertReplacementCopy(oldBlocks, blocks, unchanged)
+        for (const b of oldBlocks.slice().reverse()) {
+          const index = slide.contentBlocks.findIndex((o) => o.id === b.id)
+          appendOperationPair(slideForward, slideInverse, { type: 'content.remove', payload: { slideId: id, blockId: b.id } }, { type: 'content.insert', payload: { slideId: id, block: clone(b), afterBlockId: slide.contentBlocks[index - 1]?.id ?? null } })
+        }
+        let anchor = slide.contentBlocks.filter(metadata).at(-1)?.id ?? null
+        for (const b of blocks) {
+          appendOperationPair(slideForward, slideInverse, { type: 'content.insert', payload: { slideId: id, block: clone(b), afterBlockId: anchor } }, { type: 'content.remove', payload: { slideId: id, blockId: b.id } }); anchor = b.id
+        }
+        const state = nativeState(deck, slide); state.copyLocked = true
+        const m = nativeMutation(deck, slide, state, 'Replace final copy', strict); appendOperationPair(slideForward, slideInverse, m.forward, m.inverse)
       }
-      let anchor = slide.contentBlocks.filter(metadata).at(-1)?.id ?? null
-      for (const b of blocks) {
-        appendOperationPair(forward, inverse, { type: 'content.insert', payload: { slideId: id, block: clone(b), afterBlockId: anchor } }, { type: 'content.remove', payload: { slideId: id, blockId: b.id } }); anchor = b.id
-      }
-      const state = nativeState(deck, slide); state.copyLocked = true
-      const m = nativeMutation(deck, slide, state, 'Replace final copy'); appendOperationPair(forward, inverse, m.forward, m.inverse)
+      if (slideForward.length) appendOperationPair(forward, inverse, operationList(slideForward), operationList(slideInverse))
     }
     if (!forward.length) {
       const slide = findSlide(deck, (updates[0] as JsonObject).slideId as string)!
-      return { ...nativeMutation(deck, slide, nativeState(deck, slide), 'Edit Copy'), noop: true }
+      return { ...nativeMutation(deck, slide, nativeState(deck, slide), 'Edit Copy', strict), noop: true }
     }
     return { forward: operationList(forward), inverse: operationList(inverse), label: command.source.label ?? 'Replace final copy' }
   }
@@ -386,12 +503,20 @@ function prepareNativeCommand(deck: DeckSnapshot, command: CommandEnvelope): Nat
             appendOperationPair(forward, inverse,
               { type: 'asset.assignment.insert', payload: { slideId: id, assignment: { ...assignment, role: vacant } } },
               { type: 'asset.assignment.remove', payload: { slideId: id, mediaAssignmentId: assignment.id } })
-          } else if (!state.shortlist.includes(assignment.assetReferenceId)) state.shortlist.push(assignment.assetReferenceId)
+          } else displacedCandidate(state, assignment.assetReferenceId)
         }
       }
     }
-    const mutation = nativeMutation(deck, slide, state, command.source.label ?? 'Adjust prototype')
-    if (!forward.length) return mutation
+    const mutation = nativeMutation(deck, slide, state, command.source.label ?? 'Adjust prototype', strict)
+    if (!forward.length) {
+      // Notes autosave: a notes-only patch may extend the previous notes step
+      // for this slide (`payload.coalesce: true`), so typing is one Undo.
+      if (Object.keys(patch).length === 1 && patch.notes !== undefined) {
+        mutation.coalesceKey = canonicalJSON(['native.slide.patch.notes', id])
+        mutation.coalesce = command.payload.coalesce === true
+      }
+      return mutation
+    }
     appendOperationPair(forward, inverse, mutation.forward, mutation.inverse)
     return { forward: operationList(forward), inverse: operationList(inverse), label: mutation.label }
   }
@@ -405,7 +530,7 @@ function prepareNativeCommand(deck: DeckSnapshot, command: CommandEnvelope): Nat
       const y = Math.min(1 - Math.max(gradient.start.y, gradient.end.y), Math.max(-Math.min(gradient.start.y, gradient.end.y), dy / frame.height))
       gradient.start.x += x; gradient.end.x += x; gradient.start.y += y; gradient.end.y += y
       state.layout.gradient = gradient
-      return nativeMutation(deck, slide, state, 'Nudge gradient')
+      return nudgeMutation(nativeMutation(deck, slide, state, 'Nudge gradient', strict), command, id, target)
     }
     if (target !== 'text' && !nativeImageRoles(slide, state).includes(target)) throw new Error('Choose a visible element to nudge')
     const frame = clone((target === 'text' ? state.layout.textFrame : state.layout.frames[target]) ?? assertElementFrame(command.payload.frame))
@@ -413,20 +538,26 @@ function prepareNativeCommand(deck: DeckSnapshot, command: CommandEnvelope): Nat
     frame.x = Math.min(Math.max(0, maxX), Math.max(Math.min(0, maxX), frame.x + dx))
     frame.y = Math.min(Math.max(0, maxY), Math.max(Math.min(0, maxY), frame.y + dy))
     if (target === 'text') state.layout.textFrame = frame; else state.layout.frames[target] = frame
-    return nativeMutation(deck, slide, state, 'Nudge prototype')
+    return nudgeMutation(nativeMutation(deck, slide, state, 'Nudge prototype', strict), command, id, target)
   }
   if (command.type !== 'native.curate.set') throw new Error('Unknown native command')
   const asset = assertAssetReferenceSnapshot(command.payload.asset), assetId = asset.id, action = assertString(command.payload.action, 'action', 64)
   const forward: HistoryOperation[] = [], inverse: HistoryOperation[] = []
-  if (!(deck.assetReferences ?? []).some((a) => a.id === assetId)) appendOperationPair(forward, inverse, { type: 'asset.reference.insert', payload: { assetReference: asset } }, { type: 'asset.reference.remove', payload: { assetReferenceId: assetId } })
+  // Removing a shortlist entry or a rejection of an Asset this deck has never
+  // referenced changes nothing, so it records nothing. (Replay keeps the older
+  // behaviour, which inserted the reference, so later journal records find it.)
+  const known = (deck.assetReferences ?? []).some((a) => a.id === assetId)
+  if (!known && !(strict && (action === 'remove-shortlist' || action === 'clear-reject'))) appendOperationPair(forward, inverse, { type: 'asset.reference.insert', payload: { assetReference: asset } }, { type: 'asset.reference.remove', payload: { assetReferenceId: assetId } })
   const candidate = (a: string) => { if (!state.shortlist.includes(a)) state.shortlist.push(a) }
   if (action === 'shortlist') { candidate(assetId); state.rejected = state.rejected.filter((a) => a !== assetId) }
   else if (action === 'remove-shortlist') state.shortlist = state.shortlist.filter((a) => a !== assetId)
   else if (action === 'clear-reject') state.rejected = state.rejected.filter((a) => a !== assetId)
   else if (action === 'reject' || action === 'unassign') {
-    if (action === 'unassign') candidate(assetId)
+    // Unassigning keeps the image as a candidate, so it is no longer rejected.
+    if (action === 'unassign') { candidate(assetId); state.rejected = state.rejected.filter((a) => a !== assetId) }
     if (action === 'reject') { if (!state.rejected.includes(assetId)) state.rejected.push(assetId); state.shortlist = state.shortlist.filter((a) => a !== assetId) }
-    for (const a of slide.mediaAssignments ?? []) if (a.assetReferenceId === assetId) appendOperationPair(forward, inverse, { type: 'asset.assignment.remove', payload: { slideId: id, mediaAssignmentId: a.id } }, assignmentRestore(slide, a))
+    const order = assignmentOrder(slide)
+    for (const a of slide.mediaAssignments ?? []) if (a.assetReferenceId === assetId) appendOperationPair(forward, inverse, { type: 'asset.assignment.remove', payload: { slideId: id, mediaAssignmentId: a.id } }, order.remove(a))
   } else if (action === 'use') {
     const role = assertIdentity(command.payload.role ?? 'primary', 'role', 512)
     if (!nativeImageRoles(slide, state).includes(role)) throw new Error('Choose a visible image slot for this layout')
@@ -444,7 +575,7 @@ function prepareNativeCommand(deck: DeckSnapshot, command: CommandEnvelope): Nat
       }
     }
     if (old && old.assetReferenceId !== assetId) {
-      candidate(old.assetReferenceId)
+      displacedCandidate(state, old.assetReferenceId)
       appendOperationPair(forward, inverse, { type: 'asset.assignment.asset.set', payload: { slideId: id, mediaAssignmentId: old.id, assetReferenceId: assetId } }, { type: 'asset.assignment.asset.set', payload: { slideId: id, mediaAssignmentId: old.id, assetReferenceId: old.assetReferenceId } })
     } else if (!old) {
       const assignment = { id: assertIdentity(command.payload.assignmentId, 'assignmentId', 256), role, assetReferenceId: assetId }
@@ -456,7 +587,7 @@ function prepareNativeCommand(deck: DeckSnapshot, command: CommandEnvelope): Nat
     candidate(assetId); state.rejected = state.rejected.filter((a) => a !== assetId)
   } else throw new Error('Unsupported curation action')
   if (['use', 'shortlist'].includes(action) && command.payload.fingerprint !== undefined) state.sourceFingerprints[assetId] = assertString(command.payload.fingerprint, 'fingerprint', 500)
-  const m = nativeMutation(deck, slide, state, `${action === 'use' ? 'Choose' : action} image`)
+  const m = nativeMutation(deck, slide, state, `${action === 'use' ? 'Choose' : action} image`, strict)
   if (!m.noop || forward.length) appendOperationPair(forward, inverse, m.forward, m.inverse)
   return forward.length ? { forward: operationList(forward), inverse: operationList(inverse), label: m.label } : { ...m, noop: true }
 }
