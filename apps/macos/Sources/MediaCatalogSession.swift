@@ -144,6 +144,7 @@ private struct NativeScanResult: Sendable {
     let warningCount: Int
     let fingerprintsReused: Int
     let fingerprintsComputed: Int
+    var limitReached = false
 }
 
 private final class MediaSessionLease: @unchecked Sendable {
@@ -308,6 +309,8 @@ enum MediaFilesystem {
         defer { try? handle.close() }
         var hash = SHA256()
         while true {
+            // A cancelled scan stops inside a large file, not after it.
+            if Task.isCancelled { throw CancellationError() }
             let chunk = try handle.read(upToCount: 1024 * 1024) ?? Data()
             if chunk.isEmpty { break }
             hash.update(data: chunk)
@@ -701,6 +704,8 @@ actor MediaCatalogSession {
         }
         return [
             "status": discovery.complete ? "completed" : "incomplete",
+            "limitReached": discovery.limitReached,
+            "limit": maximumDiscoveredFiles,
             "changed": summary.changed,
             "created": summary.created,
             "refreshed": summary.refreshed,
@@ -734,6 +739,11 @@ actor MediaCatalogSession {
         var reused = 0
         var computed = 0
         var observations: [MediaObservation] = []
+        var limitReached = false
+        // A new folder appears as it is read: batches go out every 128 files
+        // or every half second, whichever comes first, not only after hashing 128.
+        var published = 0
+        var lastPublish = Date()
         let rootURL = URL(fileURLWithPath: root.path, isDirectory: true)
         // Packages (Photos libraries, apps, bundles) are single documents to
         // the person; their internal files are not media to choose.
@@ -762,6 +772,7 @@ actor MediaCatalogSession {
             if observations.count >= maximumDiscoveredFiles {
                 complete = false
                 warningCount += 1
+                limitReached = true
                 break
             }
             do {
@@ -835,16 +846,19 @@ actor MediaCatalogSession {
                     identity: MediaFileIdentity(device: metadata.device, inode: metadata.inode),
                     linkCount: max(1, metadata.linkCount)
                 ))
-                if observations.count.isMultiple(of: 128) { try await publish(Array(observations.suffix(128))) }
+                if observations.count - published >= 128 || Date().timeIntervalSince(lastPublish) > 0.5 {
+                    try await publish(Array(observations[published...]))
+                    published = observations.count
+                    lastPublish = Date()
+                }
             } catch {
                 complete = false
                 warningCount += 1
             }
         }
-        let remainder = observations.count % 128
-        if remainder > 0 { try await publish(Array(observations.suffix(remainder))) }
+        if published < observations.count { try await publish(Array(observations[published...])) }
         return NativeScanResult(observations: observations, complete: complete, warningCount: warningCount,
-                                fingerprintsReused: reused, fingerprintsComputed: computed)
+                                fingerprintsReused: reused, fingerprintsComputed: computed, limitReached: limitReached)
     }
 
     private struct ReconcileSummary {

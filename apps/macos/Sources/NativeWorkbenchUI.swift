@@ -40,7 +40,7 @@ struct NativeWorkbenchRoot: View {
                 }
               }.frame(maxWidth: .infinity, maxHeight: .infinity)
               if controller.showContext && !controller.cleanPreview {
-                NativePanelResizeHandle(width: $controller.contextWidth, range: NativeWorkbenchRoot.inspectorWidths)
+                NativePanelResizeHandle(width: $controller.contextWidth, range: inspectorWidths)
                 NativeContextPanel(controller: controller)
                   .frame(width: inspectorWidth(available: geometry.size.width))
                   .frame(maxHeight: .infinity)
@@ -78,8 +78,9 @@ struct NativeWorkbenchRoot: View {
           ToolbarItemGroup(placement: .primaryAction) {
             if controller.document != nil {
             Button { controller.startCleanPreview() } label: {
-              Label("Review deck", systemImage: controller.cleanPreview ? "stop.fill" : "play.fill")
-            }.help("Review the deck without editing guides (Shift-Command-P)").disabled(controller.document == nil)
+              Label(controller.cleanPreview ? "End review" : "Review deck", systemImage: controller.cleanPreview ? "stop.fill" : "play.fill")
+            }.help(controller.cleanPreview ? "Return to editing (Escape)" : "Review the deck without editing guides (Shift-Command-P)")
+              .disabled(controller.document == nil || (controller.modalOpen && !controller.cleanPreview))
             Button { controller.showContext.toggle() } label: {
               Label("Copy, notes and inspector", systemImage: "sidebar.right")
             }.help("Show or hide context panel")
@@ -143,9 +144,13 @@ struct NativeWorkbenchRoot: View {
     .environment(\.workbenchInterfaceScale, controller.interfaceScale)
     .frame(minWidth: 900, minHeight: 600)
   }
-  static let inspectorWidths: ClosedRange<Double> = 280...440
+  /// Larger Interface sizes widen the panel with its text, within the window.
+  private var inspectorWidths: ClosedRange<Double> {
+    let scale = min(1.6, max(1, controller.interfaceScale))
+    return (280 * scale)...(440 * scale)
+  }
   private func inspectorWidth(available: CGFloat) -> CGFloat {
-    let chosen = min(Self.inspectorWidths.upperBound, max(Self.inspectorWidths.lowerBound, controller.contextWidth))
+    let chosen = min(inspectorWidths.upperBound, max(inspectorWidths.lowerBound, controller.contextWidth))
     return max(240, min(chosen, available - 421))
   }
   private var subtitle: String {
@@ -393,7 +398,9 @@ struct NativeRecentRow: View {
   let action: () -> Void
   @State private var hovering = false
   @State private var detail = ""
-  private func describe() -> String {
+  /// Off the main thread: a recent deck on a sleeping or offline volume must
+  /// not stall the welcome screen.
+  nonisolated private static func describe(_ url: URL) -> String {
     let folder = (url.deletingLastPathComponent().path as NSString).abbreviatingWithTildeInPath
     guard FileManager.default.fileExists(atPath: url.path) else { return "Not found in " + folder }
     guard let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate else { return folder }
@@ -414,7 +421,10 @@ struct NativeRecentRow: View {
         Spacer(minLength: 8)
         Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(.tertiary)
       }.padding(.horizontal, 12).padding(.vertical, 10)
-        .task(id: url) { detail = describe() }
+        .task(id: url) {
+          let url = self.url
+          detail = await Task.detached(priority: .utility) { Self.describe(url) }.value
+        }
         .background(hovering ? Color.primary.opacity(0.04) : Color.clear)
         .contentShape(Rectangle())
     }.buttonStyle(.plain).onHover { hovering = $0 }
@@ -464,7 +474,7 @@ struct NativeSlideSidebar: View {
           }
         }.padding(12).background(.bar)
       }
-      .navigationSplitViewColumnWidth(min: 200, ideal: 244, max: 380)
+      .navigationSplitViewColumnWidth(min: 200, ideal: 244 * min(1.5, max(1, controller.interfaceScale)), max: 380 * min(1.5, max(1, controller.interfaceScale)))
   }
   @ViewBuilder private var progress: some View {
     let included = controller.slides.filter { $0.settings.included }
@@ -579,7 +589,9 @@ struct NativeMediaGrid: View {
           }
         }.padding(16)
       }.onChange(of: controller.focusedAssetID) { _, id in
-        if !controller.previewOpen, let id { scroll.scrollTo(id, anchor: .center) }
+        // Scroll only as far as needed: a recentring jump would put a
+        // different tile under the second click of a double-click.
+        if !controller.previewOpen, let id { scroll.scrollTo(id) }
       }.onAppear { if let id = controller.focusedAssetID { scroll.scrollTo(id, anchor: .center) } }
     }.onAppear { updateColumns() }
       .onChange(of: width) { _, _ in updateColumns() }
@@ -765,7 +777,7 @@ struct NativeAssetTile: View {
           }
           if controller.shortlistedAssetIDs.contains(asset.id) {
             Image(systemName: "bookmark.fill").accessibilityLabel("Shortlisted")
-              .font(.system(size: 10, weight: .bold)).foregroundStyle(.white).padding(5).background(Color.orange, in: Circle())
+              .font(.system(size: 10, weight: .bold)).foregroundStyle(.white).padding(5).background(NativeDesign.shortlist, in: Circle())
           }
         }.padding(7)
       }
@@ -833,12 +845,22 @@ struct NativeAssetTile: View {
 struct NativeAssetImage: View {
   let source: NativeMediaSource?
   var longestSide: Int = 2048
-  @State private var image: NSImage?
+  @State private var image: CGImage?
+  @State private var shown: String?
   @State private var message: String?
-  @State private var loading = true
+  @State private var loading: Bool
+  init(source: NativeMediaSource?, longestSide: Int = 2048) {
+    self.source = source
+    self.longestSide = longestSide
+    // A warm preview appears at once, without a spinner frame.
+    let warm = source.flatMap { NativeThumbnailService.shared.cached($0, longestSide: longestSide) }
+    _image = State(initialValue: warm)
+    _shown = State(initialValue: warm == nil ? nil : source.map { "\($0.cacheKey):\(longestSide)" })
+    _loading = State(initialValue: warm == nil)
+  }
   var body: some View {
     Group {
-      if let image { Image(nsImage: image).resizable().aspectRatio(contentMode: .fit) }
+      if let image { Image(decorative: image, scale: 1).resizable().aspectRatio(contentMode: .fit) }
       else {
         VStack(spacing: 8) {
           if loading { ProgressView().controlSize(.small) }
@@ -848,12 +870,20 @@ struct NativeAssetImage: View {
           }
         }.foregroundStyle(.secondary).padding(12)
       }
-    }.task(id: "\(source?.cacheKey ?? "missing"):\(longestSide)") {
-      image = nil; message = nil; loading = true
-      guard let source else { loading = false; return }
+    }.task(id: "\(source?.reloadKey ?? "missing"):\(longestSide)") {
+      guard let source else { image = nil; shown = nil; message = nil; loading = false; return }
+      let key = "\(source.cacheKey):\(longestSide)"
+      // Renewed folder access keeps an image already shown.
+      if shown == key, image != nil { return }
+      if let warm = NativeThumbnailService.shared.cached(source, longestSide: longestSide) {
+        image = warm; shown = key; message = nil; loading = false
+        return
+      }
+      image = nil; shown = nil; message = nil; loading = true
       let result = await NativeThumbnailService.shared.preview(for: source, longestSide: longestSide)
       guard !Task.isCancelled else { return }
-      image = result.data.flatMap { NSImage(data: $0) }
+      image = result.image
+      shown = result.image == nil ? nil : key
       message = result.message
       loading = false
     }
@@ -955,7 +985,7 @@ struct NativePreviewView: View {
           Spacer()
           if let id = controller.focusedAssetID {
             if controller.chosenAssetIDs.contains(id) { NativeBadge(text: "Chosen", systemImage: "checkmark.circle.fill", tint: .accentColor) }
-            if controller.shortlistedAssetIDs.contains(id) { NativeBadge(text: "Shortlisted", systemImage: "bookmark.fill", tint: .orange) }
+            if controller.shortlistedAssetIDs.contains(id) { NativeBadge(text: "Shortlisted", systemImage: "bookmark.fill", tint: NativeDesign.shortlist) }
           }
           Text(position).workbenchText(.caption).foregroundStyle(.secondary).monospacedDigit()
           Button { controller.previewOpen = false } label: { HStack(spacing: 6) { Text("Done"); NativeKeycap("Esc") } }
@@ -1014,15 +1044,20 @@ struct NativeCompareView: View {
             }
             Button("Choose this image") { controller.decide("use", assetID: id) }
               .buttonStyle(.borderedProminent).frame(maxWidth: .infinity)
+              .accessibilityLabel("Choose \(controller.assetIndex[id]?.filename ?? "candidate \(index + 1)")")
           }.padding(12)
             .background(Color.white.opacity(selected ? 0.1 : 0.05), in: RoundedRectangle(cornerRadius: NativeDesign.radiusLarge, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: NativeDesign.radiusLarge, style: .continuous)
               .strokeBorder(selected ? Color.accentColor : Color.white.opacity(0.08), lineWidth: selected ? 3 : 1))
             .contentShape(Rectangle())
             .onTapGesture { controller.comparedAssetID = id }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Candidate \(index + 1), \(controller.assetIndex[id]?.filename ?? "image")")
+            .accessibilityAddTraits(selected ? .isSelected : [])
+            .accessibilityAction(named: Text("Select candidate")) { controller.comparedAssetID = id }
         }
       }
-      Text("← → Select candidate · M Choose · S Shortlist · 1/2/3 Choose directly · Esc Close").workbenchText(.caption).foregroundStyle(.secondary)
+      Text("← → Select candidate · M Choose · S / Shift-S Shortlist / remove · 1/2/3 Choose directly · Esc Close").workbenchText(.caption).foregroundStyle(.secondary)
     }.padding(18).frame(maxWidth: .infinity, maxHeight: .infinity)
       .background(Color(white: 0.08))
       .environment(\.colorScheme, .dark)
@@ -1492,6 +1527,8 @@ struct NativeImportSheet: View {
   @ObservedObject var controller: NativeWorkbenchController
   let imported: ImportedCopyDocument
   @State private var matching = false
+  /// Kept here so switching back to the import keeps hand-made mappings.
+  @State private var matches: [String: String]?
   private var canvasID: String { controller.imported?.canvasID ?? imported.canvasID }
   var body: some View {
     NativeSheetScaffold(title: "Import \(imported.title)",
@@ -1503,7 +1540,7 @@ struct NativeImportSheet: View {
             .textSelection(.enabled).padding(.horizontal, 24).padding(.top, 14)
         }
         if matching {
-          NativeReplacementPanel(controller: controller, imported: imported).padding(24)
+          NativeReplacementPanel(controller: controller, imported: imported, stored: $matches).padding(24)
         } else {
           HStack(alignment: .top, spacing: 0) {
             VStack(alignment: .leading, spacing: 10) {
@@ -1577,6 +1614,7 @@ struct NativeImportSheet: View {
 }
 struct NativeSettingsView: View {
   @ObservedObject var controller: NativeWorkbenchController
+  @Environment(\.workbenchUpdates) private var updates
   var body: some View {
     NativeSheetScaffold(title: "Settings", subtitle: "Interface size does not change the canvas or exported deck.", systemImage: "gearshape") {
       Form {
@@ -1590,6 +1628,18 @@ struct NativeSettingsView: View {
             ForEach([0.9, 1.0, 1.1, 1.25, 1.5, 1.75], id: \.self) { Text("\(Int($0*100))%").tag($0) }
           }
           Toggle("Advance after choosing, shortlisting or rejecting", isOn: $controller.autoAdvance)
+        }
+        Section {
+          if let updates, updates.available {
+            NativeUpdateSettings(updates: updates)
+          } else {
+            Text("Updates are checked by the installed app.").workbenchText(.caption).foregroundStyle(.secondary)
+          }
+        } header: {
+          Text("Updates")
+        } footer: {
+          Text("Deck Workbench \(NativeUpdates.versionDescription). Updates come from this project's GitHub releases and install only when signed by pitch.dog.")
+            .workbenchText(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         Section {
           ForEach([(NativeAdobeAutomation.inDesignID, "Connect InDesign"), (NativeAdobeAutomation.photoshopID, "Connect Photoshop")], id: \.0) { id, title in

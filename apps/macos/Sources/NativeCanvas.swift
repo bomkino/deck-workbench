@@ -19,6 +19,8 @@ final class PrototypeCanvasView: NSView {
   private var scene: ResolvedPrototype?
   private var images: [String: CGImage] = [:]
   private var imageKeys: [String: String] = [:]
+  private var reloadKeys: [String: String] = [:]
+  private var drawKey = 0
   private var imageTasks: [String: Task<Void, Never>] = [:]
   private var sceneKey = -1
   private var viewportRevision = -1
@@ -65,8 +67,8 @@ final class PrototypeCanvasView: NSView {
       scene = nil
       sceneKey = -1
       for task in imageTasks.values { task.cancel() }
-      imageTasks = [:]; imageKeys = [:]; images = [:]
-      needsDisplay = true
+      imageTasks = [:]; imageKeys = [:]; reloadKeys = [:]; images = [:]
+      drawKey = 0; needsDisplay = true
       return
     }
     let resolved = controller.resolvedScene
@@ -80,17 +82,25 @@ final class PrototypeCanvasView: NSView {
     }
     for id in slide.chosenIDs {
       guard let source = controller.sources[id] else {
-        imageTasks.removeValue(forKey: id)?.cancel(); imageKeys[id] = nil; images[id] = nil
+        imageTasks.removeValue(forKey: id)?.cancel(); imageKeys[id] = nil; reloadKeys[id] = nil; images[id] = nil
         continue
       }
-      guard imageKeys[id] != source.cacheKey else { continue }
-      images[id] = nil
+      let sameOriginal = imageKeys[id] == source.cacheKey
+      // Renewed folder access changes nothing for an image already shown;
+      // it retries one that failed.
+      if sameOriginal && (images[id] != nil || reloadKeys[id] == source.reloadKey) { continue }
       imageKeys[id] = source.cacheKey
+      reloadKeys[id] = source.reloadKey
       imageTasks[id]?.cancel()
+      if let warm = NativeThumbnailService.shared.cached(source, longestSide: 2048) {
+        images[id] = warm; imageTasks[id] = nil; needsDisplay = true
+        continue
+      }
+      images[id] = nil
       imageTasks[id] = Task { [weak self] in
-        let data = await NativeThumbnailService.shared.data(for: source, longestSide: 2048)
-        guard !Task.isCancelled, let self, self.imageKeys[id] == source.cacheKey else { return }
-        self.images[id] = data.flatMap(NativeSlideRenderer.decodedImage)
+        let image = await NativeThumbnailService.shared.image(for: source, longestSide: 2048)
+        guard !Task.isCancelled, let self, self.reloadKeys[id] == source.reloadKey else { return }
+        self.images[id] = image
         self.imageTasks[id] = nil
         self.needsDisplay = true
       }
@@ -99,8 +109,16 @@ final class PrototypeCanvasView: NSView {
       imageTasks.removeValue(forKey: id)?.cancel()
       images[id] = nil
       imageKeys[id] = nil
+      reloadKeys[id] = nil
     }
-    needsDisplay = true
+    // Most controller changes (notes typing, status, progress) leave the
+    // slide as it was; redraw only for what the canvas shows.
+    var drawn = Hasher()
+    drawn.combine(sceneKey); drawn.combine(slide.id); drawn.combine(controller.zoom)
+    drawn.combine(controller.cleanPreview); drawn.combine(controller.showGuides)
+    drawn.combine(controller.selectionTarget); drawn.combine(Set(images.keys))
+    let key = drawn.finalize()
+    if key != drawKey { drawKey = key; needsDisplay = true }
   }
   /// Catalogue sizes of the originals on this slide (upright, as previews are).
   private func sourceSizes(_ scene: ResolvedPrototype) -> [String: CGSize] {
@@ -422,12 +440,16 @@ final class PrototypeCanvasView: NSView {
     NSCursor.arrow.set()
     return super.resignFirstResponder()
   }
+  override func viewDidChangeEffectiveAppearance() {
+    super.viewDidChangeEffectiveAppearance()
+    needsDisplay = true
+  }
   override func viewDidMoveToWindow() {
     super.viewDidMoveToWindow()
     if window == nil {
       spaceHeld = false; cancelGesture()
       for task in imageTasks.values { task.cancel() }
-      imageTasks = [:]; imageKeys = [:]; images = [:]
+      imageTasks = [:]; imageKeys = [:]; reloadKeys = [:]; images = [:]; drawKey = 0
     } else if let controller {
       // Back in a window without a SwiftUI update: reload what was released.
       update(controller)

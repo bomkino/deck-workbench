@@ -255,7 +255,12 @@ final class PitchDeckDocumentStore {
         do {
             try Self.requireContainedDirectory("recovery", in: packageURL)
             let previousCheckpoint = try Self.readRequired("checkpoint.json", in: packageURL)
-            try Self.writeDurable(previousCheckpoint, relativePath: "recovery/previous-checkpoint.json", in: packageURL)
+            // Only a checkpoint the manifest vouches for replaces the recovery
+            // copy: after an interrupted save, the recovery copy may be the
+            // only checkpoint that matches.
+            if Self.sha256(previousCheckpoint) == manifest.checkpointHash {
+                try Self.writeDurable(previousCheckpoint, relativePath: "recovery/previous-checkpoint.json", in: packageURL)
+            }
             try Self.writeDurable(checkpoint, relativePath: "checkpoint.json", in: packageURL)
             var nextManifest = manifest
             nextManifest.title = metadata.title
@@ -633,6 +638,7 @@ final class PitchDeckDocumentStore {
                 throw error
             }
         }
+        PitchDeckHeldLocks.shared.insert(ownerToken)
         return ownerToken
     }
 
@@ -658,6 +664,12 @@ final class PitchDeckDocumentStore {
         }
         guard let pid = (payload["processId"] as? NSNumber)?.int32Value, pid > 0 else {
             return "left by an earlier Workbench session"
+        }
+        // This process wrote it but no open deck holds it: closing could not
+        // remove it (a drive that dropped out, say), so reopening here is safe.
+        if pid == ProcessInfo.processInfo.processIdentifier, host != nil,
+           let token = payload["ownerToken"] as? String, !PitchDeckHeldLocks.shared.contains(token) {
+            return "left when this deck could not be closed properly"
         }
         if Darwin.kill(pid, 0) == 0 || errno == EPERM { return nil }
         return "left by a Workbench session that is no longer running"
@@ -711,6 +723,8 @@ final class PitchDeckDocumentStore {
     }
 
     private static func releaseWriterLock(in packageURL: URL, ownerToken: String) throws {
+        // Released or not, no open deck in this process holds it any more.
+        PitchDeckHeldLocks.shared.remove(ownerToken)
         try withContainedParent(of: writerLockFile, in: packageURL) { parentDescriptor, name in
             let storedToken = try writerLockOwnerToken(parentDescriptor: parentDescriptor, name: name)
             guard storedToken == ownerToken else {
@@ -864,4 +878,14 @@ final class PitchDeckDocumentStore {
     private static func iso8601(_ date: Date) -> String {
         ISO8601DateFormatter().string(from: date)
     }
+}
+
+/// Writer-lock tokens held by decks open in this process.
+final class PitchDeckHeldLocks: @unchecked Sendable {
+    static let shared = PitchDeckHeldLocks()
+    private let lock = NSLock()
+    private var tokens: Set<String> = []
+    func insert(_ token: String) { lock.withLock { _ = tokens.insert(token) } }
+    func remove(_ token: String) { lock.withLock { _ = tokens.remove(token) } }
+    func contains(_ token: String) -> Bool { lock.withLock { tokens.contains(token) } }
 }

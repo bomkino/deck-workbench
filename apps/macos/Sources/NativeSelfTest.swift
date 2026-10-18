@@ -209,14 +209,19 @@ enum NativeAcceptance {
     controller.chooseLayout("left")
     await controller.flush()
     try require(controller.selectedSlide?.imageRoles == ["primary"] && controller.selectedSlide?.settings.shortlist.contains(second.id) == true, "Layout slot reconciliation lost a candidate")
+    let notesBefore = controller.notes
     controller.setNotes("Acknowledged note")
     await controller.flush()
     controller.setNotes("Later typing")
     await controller.flush()
     try require(controller.notesDrafts.isEmpty, "Acknowledged notes remained dirty")
+    // Both autosaves of one typing session are one Undo step.
     controller.undo(documentOnly: true)
     await controller.flush()
-    try require(controller.notes == "Acknowledged note" && controller.selectedSlide?.settings.notes == "Acknowledged note", "Notes undo was overwritten by a retained draft")
+    try require(controller.notes == notesBefore && controller.selectedSlide?.settings.notes == notesBefore, "Notes undo was overwritten by a retained draft, or typing took several Undo steps")
+    controller.undo(redo: true, documentOnly: true)
+    await controller.flush()
+    try require(controller.selectedSlide?.settings.notes == "Later typing", "Redo did not restore the latest notes")
     controller.enqueue(type: "native.slide.patch", payload: ["slideId": ids[0], "patch": ["layout": ["columns": 0]]], label: "Deliberate invalid layout")
     controller.setNotes("Valid action after rejected layout")
     await controller.flush()
@@ -252,11 +257,16 @@ enum NativeAcceptance {
     try require(NativeHandoffExporter.safeFilename(String(repeating: "x", count: 230) + ".jpeg").hasSuffix(".jpeg"), "Filename truncation discarded the extension")
     try require(NativeHandoffExporter.csvField("=1+1").hasPrefix("\"'"), "CSV text can execute as a formula")
     if let source = sources[first.id] {
-      let warm = await NativeThumbnailService.shared.data(for: source, longestSide: 512)
+      let warm = await NativeThumbnailService.shared.image(for: source, longestSide: 512)
       let hits = await NativeThumbnailService.shared.cacheHits
-      let cached = await NativeThumbnailService.shared.data(for: source, longestSide: 512)
+      let cached = await NativeThumbnailService.shared.image(for: source, longestSide: 512)
       let afterHits = await NativeThumbnailService.shared.cacheHits
-      try require(warm != nil && warm == cached && afterHits > hits, "Warm thumbnails are not reused")
+      try require(warm != nil && warm === cached && afterHits > hits, "Warm thumbnails are not reused")
+      // A rescan renews folder access; the decoded preview stays warm.
+      var renewed = source
+      renewed.accessGeneration = (source.accessGeneration ?? 0) + 1
+      try require(NativeThumbnailService.shared.cached(renewed, longestSide: 512) === warm,
+        "Renewed folder access discarded a decoded preview")
     }
     let exported = try await Task.detached {
       try NativeHandoffExporter.export(

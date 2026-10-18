@@ -5,16 +5,24 @@
 # tag, the commit this run checked out from main is used, only if it carries
 # that version; the tag is then created with the release.
 #
+# The release is published first without being Latest, so its files can be
+# downloaded while installed copies still read the current Latest feed. A copy
+# of the current Latest release then updates itself from the new release's own
+# feed; only if that works is the new release made Latest. If it fails, the
+# release stays published but not Latest and the run fails.
+#
 # The key is the SPARKLE_PRIVATE_KEY secret of the `release` environment,
 # which only main may use. Only the signing step receives it; it is written to
 # a file only the runner can read, used by Sparkle's generate_appcast and
-# deleted. Scripts run from main's checkout, never from the tagged commit.
+# deleted. The GitHub token goes only to the steps that call GitHub, never to
+# the signing step or the app under test. Scripts run from main's checkout,
+# never from the tagged commit.
 name: Publish tagged Mac release
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing version tag to publish (vX.Y.Z, on main)
+        description: Version tag to publish (vX.Y.Z); created from main if missing
         required: true
         type: string
       rehearse:
@@ -33,12 +41,13 @@ jobs:
     environment: release
     timeout-minutes: 30
     env:
-      GH_TOKEN: ${{ github.token }}
       RELEASE_TAG: ${{ inputs.tag }}
     steps:
+      # Nothing is pushed with git: the release creates its tag through the API.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: On main only
         run: '[ "$GITHUB_REF" = refs/heads/main ] || { echo "::error::Run this from main."; exit 1; }'
       - name: Use the tag, or main's commit for a new version
@@ -49,6 +58,8 @@ jobs:
           git tag "$RELEASE_TAG" "$GITHUB_SHA"
           echo "$RELEASE_TAG is main's $GITHUB_SHA; publishing creates the tag on GitHub."
       - name: Find and check the exact artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: scripts/publish-native-release.sh stage "$RELEASE_TAG" "$RUNNER_TEMP/release"
       - name: Sign the update feed
         env:
@@ -62,13 +73,22 @@ jobs:
             DOWNLOAD_URL="https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_TAG/" \
             scripts/sign-release.sh "$RUNNER_TEMP/release" "$RUNNER_TEMP/release/update-notes.md"
           rm -f "$RUNNER_TEMP/update.key"
-      - name: Publish the release
+      - name: Publish the release, not yet Latest
         if: ${{ !inputs.rehearse }}
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: scripts/publish-native-release.sh publish "$RELEASE_TAG" "$RUNNER_TEMP/release"
-      - name: Update a copy of the release before from the live feed
+      - name: Update a copy of the Latest release from the new release's feed
         if: ${{ !inputs.rehearse }}
         timeout-minutes: 10
-        run: scripts/test-live-update.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/test-live-update.sh "$RELEASE_TAG" "https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_TAG/appcast.xml"
+      - name: Make the release Latest
+        if: ${{ !inputs.rehearse }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/publish-native-release.sh promote "$RELEASE_TAG"
       - name: Forget the key
         if: always()
         run: rm -f "$RUNNER_TEMP/update.key"

@@ -37,8 +37,10 @@ struct NativeContextPanel: View {
                   HStack(spacing: 6) {
                     Button("Use") { controller.decide("use", assetID: id) }
                       .disabled(slide.imageRoles.isEmpty)
+                      .accessibilityLabel("Use \(controller.assetIndex[id]?.filename ?? "candidate")")
                     Button("Remove") { controller.decide("remove-shortlist", assetID: id) }
                       .help("Remove candidate; keep any chosen assignment")
+                      .accessibilityLabel("Remove \(controller.assetIndex[id]?.filename ?? "candidate") from shortlist")
                   }.controlSize(.small)
                 }
                 Spacer(minLength: 0)
@@ -219,7 +221,11 @@ struct NativeHandoffResultSheet: View {
 struct NativeReplacementPanel: View {
   @ObservedObject var controller: NativeWorkbenchController
   let imported: ImportedCopyDocument
-  @State private var matches: [String: String] = [:]
+  @Binding var stored: [String: String]?
+  private var matches: [String: String] {
+    get { stored ?? [:] }
+    nonmutating set { stored = newValue }
+  }
   private var valid: Bool { !matches.isEmpty && Set(matches.values).count == matches.count }
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
@@ -255,7 +261,7 @@ struct NativeReplacementPanel: View {
       if !valid && !matches.isEmpty { Text("Each incoming slide can be used once.").foregroundStyle(.orange).workbenchText(.caption) }
       Button("Replace copy on \(matches.count) mapped slides") { controller.replaceCopy(with: imported, matches: matches) }
         .buttonStyle(.borderedProminent).disabled(!valid)
-    }.onAppear { matches = controller.replacementMatches(for: imported) }
+    }.onAppear { if stored == nil { stored = controller.replacementMatches(for: imported) } }
   }
 }
 

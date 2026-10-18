@@ -4,8 +4,11 @@ struct NativeMoodboardSheet: View {
   @ObservedObject var controller: NativeWorkbenchController
   @State private var selected: [String] = []
   @State private var query = ""
-  private var candidates: [NativeMediaAsset] {
-    controller.assets.filter { asset in
+  /// Filtered and sorted when the search or the library changes, not on every
+  /// click: a large library made each selection wait for a full sort.
+  @State private var candidates: [NativeMediaAsset] = []
+  private func refreshCandidates() {
+    candidates = controller.assets.filter { asset in
       (asset.mediaKind == "image" || asset.mediaKind == "gif") && asset.availability == "available"
         && (query.isEmpty || (asset.filename + " " + asset.folder).localizedCaseInsensitiveContains(query))
     }.sorted { $0.filename.localizedStandardCompare($1.filename) == .orderedAscending }
@@ -59,5 +62,8 @@ struct NativeMoodboardSheet: View {
       Spacer()
       Button(selected.isEmpty ? "Add blank moodboard" : "Add moodboard") { controller.addSpecialSlide("moodboard", assetIDs: selected) }.buttonStyle(.borderedProminent)
     }.nativeSheetFrame(width: 790, height: 720)
+      .onAppear { refreshCandidates() }
+      .onChange(of: query) { _, _ in refreshCandidates() }
+      .onChange(of: controller.assetGeneration) { _, _ in refreshCandidates() }
   }
 }

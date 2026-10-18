@@ -106,6 +106,18 @@ enum NativeProductionCopyChecks {
       try require(reread.title == snapshot.deck.title && reread.slides.map(\.title) == snapshot.deck.slides.map(\.title)
         && zip(reread.slides, snapshot.deck.slides).allSatisfy { fields($0.blocks) == fields($1.copyBlocks) && $0.notes == $1.settings.notes },
         "Copy.md re-import changed a name, field, role, blank state, notes or boundary LF")
+      // Carriage returns inside copy survive Copy.md, including a file whose
+      // line endings were converted to CRLF on the way back.
+      var returns = snapshot.deck.slides[0]
+      if let index = returns.contentBlocks.firstIndex(where: { !$0.isMetadata }) {
+        returns.contentBlocks[index].setText("\r\nopens\ra\r\nline\r")
+        let written = NativeCopyMarkdown.write(title: snapshot.deck.title, canvasID: canvasID, slides: [returns])
+        for (variant, text) in [("LF", written), ("CRLF", written.replacingOccurrences(of: "\n", with: "\r\n"))] {
+          let back = try NativeCopyImport.parse(Data(text.utf8), filename: "Copy.md")
+          try require(back.slides.count == 1 && fields(back.slides[0].blocks) == fields(returns.copyBlocks),
+            "Copy.md (\(variant)) changed carriage returns inside copy")
+        }
+      }
       options.copy = false; options.productionCopy = true
       try require(NativeHandoffExporter.requiredAssetIDs(snapshot: snapshot, options: options).isEmpty, "Production writing alone requested artwork")
       let writing = try NativeHandoffExporter.export(snapshot: mixed, sources: [:], to: folder, options: options, progress: { _ in })

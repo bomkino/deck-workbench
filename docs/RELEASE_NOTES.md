@@ -1,3 +1,21 @@
+# v1.0.0 — fast, steady and ready for real decks
+
+Workbench 1.0 is a quality release. Six audits went through the whole app: media, interface, documents, the document engine, handoff and release. The fixes are below; what remains is listed in Known limitations. Your decks open as before; nothing to migrate.
+
+**Decks always reopen.** Replacing the copy on a large deck could save an Undo step the deck then could not open with; that can no longer happen, and a deck already affected opens again, losing only the Undo steps that never worked. Reopening a large deck with long history takes a fraction of a second instead of up to a minute, and every edit checks the deck far faster.
+
+**Faster with large libraries.** Previews are kept decoded in memory, so scrolling, previewing and the canvas no longer decode images on the main thread, and a rescan or reconnect keeps them instead of loading everything again. The canvas redraws only when the slide changes, typing notes no longer redraws the window, and each edit's document is read off the main thread. A new folder shows its first files within a second, the library re-sorts only what changed, and a folder over 12,000 media files says so plainly.
+
+**Undo that matches what you did.** Holding an arrow key to nudge, and a session of typing designer notes, each undo as one step. Applying type to one slide and colours to every slide is one step too. Undo waits while a sheet is open, so a sheet never works from a deck that changed underneath it, and undoing an added slide keeps you where you were.
+
+**Sharper handoffs.** PSDs and the prototype PDF decode artwork at the size it is placed (up to 8192 px) instead of a fixed 3072 px preview, so large placements and crops stay sharp, and each slide is laid out and decoded once for every output. PSD layers carry the original filenames. An automatic InDesign build that runs past an hour keeps going to the end. Two exports into the same folder never collide, and a crashed export's hidden leftovers are cleaned up. Copy.md keeps every character of your copy, line endings included.
+
+**Safer when something goes wrong.** Retry asks before repairing an interrupted save, as opening does, and keeps your queued actions to try again. Quitting with unsaved actions offers to save them to a file first. A deck whose lock could not be removed (a drive that dropped out) reopens without relaunching. Rename actions can be restored from a saved queue, and the recovery copy of a deck's checkpoint is never replaced by a damaged one.
+
+**Smaller things.** Double-clicking a tile previews that tile; Return previews the focused image; Shift-S removes from the shortlist in Compare too; shortlisted images have their own colour; side panels widen with Interface size; the Help menu links this version's guide and notes and a way to report a problem; accessibility labels name the image a button acts on. **About Deck Workbench** shows the licence and notices.
+
+**Updates you can trust.** A new version now becomes the one installed copies are offered only after a copy of the previous version has updated itself to it from its own signed feed.
+
 # v0.5.0 — a new workspace, PSD copy guides and in-app updates
 
 Install this version by hand once (it replaces 0.4.0 like any earlier release); from here on, Workbench updates itself.

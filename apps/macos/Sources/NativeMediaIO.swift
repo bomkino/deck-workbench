@@ -4,33 +4,28 @@ import CryptoKit
 import Darwin
 import Foundation
 import ImageIO
-import UniformTypeIdentifiers
 
 /// Immutable native services receive a granted source, never a user-controlled
 /// arbitrary path from a renderer. Source pixels are never modified in place.
 enum NativeMediaIO {
-  static func withSource<T>(_ source: NativeMediaSource, operation: (String, URL) throws -> T)
-    throws -> T
-  {
-    var root = URL(fileURLWithPath: source.rootPath, isDirectory: true)
-    // A bookmark that no longer resolves (a renamed volume, a copied Mac)
-    // falls back to the saved path; the folder identity check below decides.
-    if let bookmark = source.bookmark {
-      var stale = false
-      if let resolved = try? URL(
-        resolvingBookmarkData: bookmark, options: [.withSecurityScope, .withoutUI], relativeTo: nil,
-        bookmarkDataIsStale: &stale)
-      {
-        root = resolved
-      }
-    }
-    let access = root.startAccessingSecurityScopedResource()
+  /// Previews pass `mounting: false`: an unmounted network volume reads as
+  /// unavailable instead of being mounted (or prompting) for a thumbnail.
+  static func withSource<T>(
+    _ source: NativeMediaSource, mounting: Bool = true, operation: (String, URL) throws -> T
+  ) throws -> T {
+    let cached = source.bookmark.flatMap(NativeBookmarkCache.shared.url)
+    var root = cached ?? resolvedRoot(source, mounting: mounting)
+    var access = root.startAccessingSecurityScopedResource()
     defer { if access { root.stopAccessingSecurityScopedResource() } }
-    let authorized = try MediaFilesystem.authorizeDirectory(root)
-    guard authorized.device == source.rootDevice, authorized.inode == source.rootInode else {
-      throw WorkbenchFailure(
-        name: "MediaRootNeedsPermission",
-        message: "Reconnect \(root.lastPathComponent); the saved folder identity changed.")
+    var authorized: AuthorizedMediaRoot
+    do { authorized = try authorize(source, root: root) } catch {
+      guard cached != nil, let bookmark = source.bookmark else { throw error }
+      // The folder moved or was renamed since it was resolved; resolve again.
+      if access { root.stopAccessingSecurityScopedResource() }
+      NativeBookmarkCache.shared.store(nil, for: bookmark)
+      root = resolvedRoot(source, mounting: mounting)
+      access = root.startAccessingSecurityScopedResource()
+      authorized = try authorize(source, root: root)
     }
     let segments = try MediaFilesystem.safeSegments(source.relativePath)
     // Compare canonical paths, not Foundation's display-standardized aliases
@@ -47,16 +42,48 @@ enum NativeMediaIO {
     return try operation(authorized.path, url)
   }
 
-  static func thumbnail(_ source: NativeMediaSource, longestSide: Int) throws -> Data {
+  /// A bookmark that no longer resolves (a renamed volume, a copied Mac)
+  /// falls back to the saved path; the folder identity check decides.
+  private static func resolvedRoot(_ source: NativeMediaSource, mounting: Bool) -> URL {
+    let saved = URL(fileURLWithPath: source.rootPath, isDirectory: true)
+    guard let bookmark = source.bookmark else { return saved }
+    var options: URL.BookmarkResolutionOptions = [.withSecurityScope, .withoutUI]
+    if !mounting { options.insert(.withoutMounting) }
+    var stale = false
+    guard
+      let resolved = try? URL(
+        resolvingBookmarkData: bookmark, options: options, relativeTo: nil, bookmarkDataIsStale: &stale)
+    else { return saved }
+    NativeBookmarkCache.shared.store(resolved, for: bookmark)
+    return resolved
+  }
+
+  private static func authorize(_ source: NativeMediaSource, root: URL) throws -> AuthorizedMediaRoot {
+    let authorized = try MediaFilesystem.authorizeDirectory(root)
+    guard authorized.device == source.rootDevice, authorized.inode == source.rootInode else {
+      throw WorkbenchFailure(
+        name: "MediaRootNeedsPermission",
+        message: "Reconnect \(root.lastPathComponent); the saved folder identity changed.")
+    }
+    return authorized
+  }
+
+  /// A decoded, display-ready preview: drawing it never decodes on the main thread.
+  static func thumbnail(_ source: NativeMediaSource, longestSide: Int) throws -> CGImage {
     try Task.checkCancellation()
-    return try withSource(source) { root, url in
+    return try withSource(source, mounting: false) { root, url in
       let image: CGImage
       if source.mediaKind == "video" {
-        let asset = AVURLAsset(url: url)
-        let generator = AVAssetImageGenerator(asset: asset)
+        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
         generator.appliesPreferredTrackTransform = true
         generator.maximumSize = CGSize(width: longestSide, height: longestSide)
-        image = try generator.copyCGImage(at: .zero, actualTime: nil)
+        do { image = try generator.copyCGImage(at: .zero, actualTime: nil) } catch let error as NSError
+        where error.domain == AVFoundationErrorDomain {
+          // Formats AVFoundation cannot read (WebM, for example) still hand off.
+          throw WorkbenchFailure(
+            name: "PreviewUnsupported",
+            message: "No preview is available. The original can still be copied for the designer.")
+        }
       } else {
         // Bounded compressed input + ImageIO downsampling, not full-size decode.
         let data = try MediaFilesystem.readContainedFile(
@@ -81,20 +108,7 @@ enum NativeMediaIO {
         image = thumb
       }
       try Task.checkCancellation()
-      let output = NSMutableData()
-      guard
-        let destination = CGImageDestinationCreateWithData(
-          output, UTType.png.identifier as CFString, 1, nil)
-      else {
-        throw WorkbenchFailure(
-          name: "PreviewUnsupported", message: "The preview encoder could not start.")
-      }
-      CGImageDestinationAddImage(destination, image, nil)
-      guard CGImageDestinationFinalize(destination) else {
-        throw WorkbenchFailure(
-          name: "PreviewUnsupported", message: "The image could not be previewed.")
-      }
-      return output as Data
+      return image
     }
   }
 
@@ -188,12 +202,38 @@ enum NativeMediaIO {
   }
 }
 
+/// Resolved media folders, reused by every preview of the same folder.
+final class NativeBookmarkCache: @unchecked Sendable {
+  static let shared = NativeBookmarkCache()
+  private let lock = NSLock()
+  private var urls: [Data: URL] = [:]
+  func url(_ bookmark: Data) -> URL? { lock.withLock { urls[bookmark] } }
+  func store(_ url: URL?, for bookmark: Data) { lock.withLock { urls[bookmark] = url } }
+}
+
+/// Decoded previews, sized by their pixels. NSCache is thread-safe, so a view
+/// can show a warm image synchronously instead of a spinner for one frame.
+final class NativeImageCache: @unchecked Sendable {
+  private let cache = NSCache<NSString, CGImage>()
+  init() {
+    let memory = ProcessInfo.processInfo.physicalMemory
+    cache.totalCostLimit = Int(min(768 << 20, max(192 << 20, memory / 16)))
+    cache.countLimit = 1024
+  }
+  func image(_ key: String) -> CGImage? { cache.object(forKey: key as NSString) }
+  func store(_ image: CGImage, _ key: String) {
+    cache.setObject(image, forKey: key as NSString, cost: max(1, image.bytesPerRow * image.height))
+  }
+}
+
 private actor ImageWorkLimiter {
   private var active = 0
   private var waiting: [(UUID, CheckedContinuation<Bool, Never>)] = []
-  func acquire(_ id: UUID) async -> Bool {
+  private let slots = max(2, min(4, ProcessInfo.processInfo.activeProcessorCount / 2))
+  /// Urgent work (the canvas, an open preview) goes ahead of queued tiles.
+  func acquire(_ id: UUID, urgent: Bool = false) async -> Bool {
     if Task.isCancelled { return false }
-    if active < 2 {
+    if active < slots {
       active += 1
       return true
     }
@@ -202,6 +242,8 @@ private actor ImageWorkLimiter {
         await withCheckedContinuation { continuation in
           if Task.isCancelled {
             continuation.resume(returning: false)
+          } else if urgent {
+            waiting.insert((id, continuation), at: 0)
           } else {
             waiting.append((id, continuation))
           }
@@ -222,8 +264,8 @@ private actor ImageWorkLimiter {
   }
 }
 
-struct NativePreviewResult: Sendable {
-  let data: Data?
+struct NativePreviewResult: @unchecked Sendable {
+  let image: CGImage?
   let message: String?
   static func failed(_ error: Error) -> NativePreviewResult {
     let failure = WorkbenchFailure.unexpected(error)
@@ -237,32 +279,36 @@ struct NativePreviewResult: Sendable {
     else if failure.name == "MediaRootUnavailable" { message = "Media folder unavailable. Reconnect its drive or folder." }
     else if ["PreviewUnsupported", "UnsupportedMediaPreview"].contains(failure.name) { message = "Preview unsupported. The original can still be included in handoff." }
     else { message = "Preview failed. Rescan or reconnect the media folder." }
-    return NativePreviewResult(data: nil, message: message)
+    return NativePreviewResult(image: nil, message: message)
   }
 }
 
 actor NativeThumbnailService {
   static let shared = NativeThumbnailService()
   private let limiter = ImageWorkLimiter()
-  private let cache = NSCache<NSString, NSData>()
+  private nonisolated let store = NativeImageCache()
   private var jobs: [String: Task<NativePreviewResult, Never>] = [:]
   private var consumers: [String: Set<UUID>] = [:]
   private(set) var cacheHits = 0
   private(set) var decodeCount = 0
-  init() {
-    cache.totalCostLimit = 96 * 1024 * 1024
-    cache.countLimit = 512
+  private static func size(_ longestSide: Int) -> Int { min(3072, max(64, longestSide)) }
+  private static func key(_ source: NativeMediaSource, _ longestSide: Int) -> String {
+    "\(source.cacheKey):\(size(longestSide))"
   }
-  func data(for source: NativeMediaSource, longestSide: Int = 512) async -> Data? {
-    await preview(for: source, longestSide: longestSide).data
+  /// A preview that is already decoded, without waiting.
+  nonisolated func cached(_ source: NativeMediaSource, longestSide: Int = 512) -> CGImage? {
+    store.image(Self.key(source, longestSide))
+  }
+  func image(for source: NativeMediaSource, longestSide: Int = 512) async -> CGImage? {
+    await preview(for: source, longestSide: longestSide).image
   }
   func preview(for source: NativeMediaSource, longestSide: Int = 512) async -> NativePreviewResult {
-    guard !Task.isCancelled else { return NativePreviewResult(data: nil, message: nil) }
-    let size = min(3072, max(64, longestSide))
-    let key = "\(source.cacheKey):\(size)"
-    if let cached = cache.object(forKey: key as NSString) {
+    guard !Task.isCancelled else { return NativePreviewResult(image: nil, message: nil) }
+    let size = Self.size(longestSide)
+    let key = Self.key(source, size)
+    if let cached = store.image(key) {
       cacheHits += 1
-      return NativePreviewResult(data: cached as Data, message: nil)
+      return NativePreviewResult(image: cached, message: nil)
     }
     let consumer = UUID()
     consumers[key, default: []].insert(consumer)
@@ -272,10 +318,10 @@ actor NativeThumbnailService {
       decodeCount += 1
       let limiter = self.limiter
       work = Task {
-        guard await limiter.acquire(UUID()) else { return NativePreviewResult(data: nil, message: nil) }
+        guard await limiter.acquire(UUID(), urgent: size >= 1024) else { return NativePreviewResult(image: nil, message: nil) }
         let worker = Task.detached(priority: .userInitiated) {
-          do { return NativePreviewResult(data: try NativeMediaIO.thumbnail(source, longestSide: size), message: nil) }
-          catch is CancellationError { return NativePreviewResult(data: nil, message: nil) }
+          do { return NativePreviewResult(image: try NativeMediaIO.thumbnail(source, longestSide: size), message: nil) }
+          catch is CancellationError { return NativePreviewResult(image: nil, message: nil) }
           catch { return NativePreviewResult.failed(error) }
         }
         let result = await withTaskCancellationHandler(operation: { await worker.value }, onCancel: { worker.cancel() })
@@ -286,9 +332,9 @@ actor NativeThumbnailService {
     }
     let result = await withTaskCancellationHandler(operation: { await work.value },
       onCancel: { Task { await self.removeConsumer(consumer, key: key) } })
-    if let data = result.data, !Task.isCancelled { cache.setObject(data as NSData, forKey: key as NSString, cost: data.count) }
+    if let image = result.image, !Task.isCancelled { store.store(image, key) }
     removeConsumer(consumer, key: key)
-    return Task.isCancelled ? NativePreviewResult(data: nil, message: nil) : result
+    return Task.isCancelled ? NativePreviewResult(image: nil, message: nil) : result
   }
   private func removeConsumer(_ consumer: UUID, key: String) {
     consumers[key]?.remove(consumer)

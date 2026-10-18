@@ -571,13 +571,23 @@ test('malformed persisted and live history returns KernelError instead of throwi
       ],
     },
   ]
+  // Malformed entries never fail the whole open: the deck content opens and
+  // the unusable entry, with every step beneath it, is no longer undoable.
+  // Steps above it stay. The caller's checkpoint object is not changed.
+  const usableTop = {
+    id: 'history-usable', label: 'Usable',
+    forward: { type: 'deck.rename', payload: { title: 'Pitch Deck' } },
+    inverse: { type: 'deck.rename', payload: { title: 'After' } },
+  }
   for (const item of historyCases) {
     const candidate = checkpoint()
-    candidate.undoStack = item.entries
+    const duplicate = item.name === 'duplicate history identity'
+    candidate.undoStack = duplicate ? item.entries : [...item.entries, usableTop]
     const before = JSON.stringify(candidate)
     let opened
     assert.doesNotThrow(() => { opened = kernel.open(candidate) }, item.name)
-    assert.equal(opened.error.name, 'InvalidCommand', item.name)
+    if (duplicate) assert.equal(opened.error.name, 'InvalidCommand', item.name)
+    else assert.deepEqual(JSON.parse(JSON.stringify(opened.checkpoint.undoStack.map((entry) => entry.id))), ['history-usable'], item.name)
     assert.equal(JSON.stringify(candidate), before, item.name)
   }
 

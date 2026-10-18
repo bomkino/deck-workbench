@@ -1,6 +1,8 @@
 # Security policy
 
-Deck Workbench is a native Mac app that processes local documents and media. Its document kernel runs in JavaScriptCore inside the app, without a browser. Security reports are welcome through a private GitHub security advisory when available.
+Deck Workbench is a native Mac app that processes local documents and media. Its document kernel runs in JavaScriptCore inside the app, without a browser. Report privately through GitHub's Security tab → Report a vulnerability, or email hello@pitch.dog. Please don't open a public issue for a vulnerability.
+
+Only the latest release is supported; fixes arrive as updates.
 
 Please include:
 

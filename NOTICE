@@ -18,5 +18,14 @@ In-app updates use Sparkle 2.10.0 (MIT, with the external licences of the
 code it includes), embedded unchanged as `Contents/Frameworks/Sparkle.framework`.
 Its full licence ships under `legal/sparkle/`.
 
+The colour library includes unmodified sRGB ramps from Radix Colors 3.0.0
+(`@radix-ui/colors`, MIT, copyright 2021 Radix). Its licence and source
+receipt ship under `legal/radix-colors/`.
+
+The starter kit's Text Scramble script incorporates text-generation code from
+Raycast extensions (MIT, copyright 2021 Raycast), pinned at
+41aa46f190eeb9d414b342847000653f5759e49f. Its full notice ships in the kit
+as `StarterKit/Notices/Raycast-MIT.txt`.
+
 No promotional credit, logo placement, backlink or praise to pitch.dog is
 requested beyond legally required notices.
