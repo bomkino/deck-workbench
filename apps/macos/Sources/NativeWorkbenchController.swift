@@ -107,6 +107,9 @@ final class NativeWorkbenchController: ObservableObject {
   private var filterSignature = ""
   private(set) var assetGeneration = 0
   private var noteGenerations: [String: Int] = [:]
+  /// When each slide's notes were last sent in this session: autosaves within
+  /// a typing session undo as one step, a later one starts a new step.
+  private var noteSentAt: [String: Date] = [:]
   private var enqueuedNoteGenerations: [String: Int] = [:]
   @Published var imported: ImportedCopyDocument?
   @Published private(set) var importRunning = false
@@ -416,6 +419,8 @@ final class NativeWorkbenchController: ObservableObject {
   }
   func selectSlide(_ id: String) {
     guard slideIndex[id] != nil, !lifecycleBusy else { return }
+    // A held arrow's last moves belong to the slide they were made on.
+    flushHeldNudge()
     // selectionChanged owns the visible target. Do not select invisible text on
     // image-only slides after it has already selected the image.
     selectedSlideID = id
@@ -555,14 +560,18 @@ final class NativeWorkbenchController: ObservableObject {
       return
     }
     do {
-      // Consecutive autosaves of one slide's notes undo as one step.
-      let data = try JSONSerialization.data(withJSONObject: ["slideId": id, "patch": ["notes": text], "coalesce": true], options: .sortedKeys)
+      // Autosaves of one typing session undo as one step; after a pause of
+      // half a minute, or after reopening, the next one is a step of its own.
+      let continuing = noteSentAt[id].map { Date().timeIntervalSince($0) < 30 } ?? false
+      noteSentAt[id] = Date()
+      let data = try JSONSerialization.data(withJSONObject: ["slideId": id, "patch": ["notes": text], "coalesce": continuing], options: .sortedKeys)
       enqueuedNoteGenerations[id] = generation
       submit(NativePendingCommand(type: "native.slide.patch", payload: data, deckID: deckID,
         commandID: UUID().uuidString.lowercased(), label: "Save designer notes", noteSlideID: id, noteGeneration: generation))
     } catch { failure = error.localizedDescription }
   }
   func flush() async {
+    flushHeldNudge()
     for task in noteTasks.values { task.cancel() }
     noteTasks = [:]
     for id in Array(notesDrafts.keys) { commitNote(id) }
@@ -678,6 +687,8 @@ final class NativeWorkbenchController: ObservableObject {
     }
     // A sheet works from the deck as it opened; Undo waits until it closes.
     guard let deckID = document?.deck.deckId, !lifecycleBusy, !modalOpen else { return }
+    // Moves still gathered from a held arrow are sent first, so Undo takes them back too.
+    flushHeldNudge()
     for task in noteTasks.values { task.cancel() }
     noteTasks = [:]
     for id in Array(notesDrafts.keys) { commitNote(id) }
@@ -1165,6 +1176,8 @@ final class NativeWorkbenchController: ObservableObject {
     notesDrafts = [:]
     noteGenerations = [:]
     enqueuedNoteGenerations = [:]
+    noteSentAt = [:]
+    heldNudgeTask?.cancel(); heldNudgeTask = nil; heldNudge = nil
     previewOpen = false; previewIDs = []; previewUsesCandidates = false
     compareOpen = false; comparedAssetID = nil; compareIDs = []
     focusedAssetID = nil; cleanPreview = false; exportResult = nil; showExportResult = false
