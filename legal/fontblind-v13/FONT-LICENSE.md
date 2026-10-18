@@ -25,6 +25,6 @@ The `packages/workspace/app/fonts/v13/` folder named in **Scope** no longer exis
 | `pd-body-400.otf` | 63128 | `195288dfbb409db3624ebfc3ba167aa6309c6eedd321b8a09fcf834e05fdd688` | the declaration's `.otf` scope |
 | `pd-body-600.otf` | 69524 | `dd46bb32b881122bd815befdb0af8a272ec648b654d878c38c975e8cb8429cd9` | the declaration's `.otf` scope |
 | `pd-body-700.otf` | 69564 | `78a04f141bb723d746aa40802bc4a365277f489fab09e11eb78e9b591d90fdbc` | the declaration's `.otf` scope |
-| `pd-head-medium.ttf` | 145840 | `5e7539a4e245509fd78e95bc754358dfaaa10d6f81351272cc12e011c286d7ba` | **to be confirmed by pitch.dog**: listed in `FONT-PROVENANCE.json` as part of the v13 release, but the Scope sentence names only `.woff2` and `.otf` files |
+| `pd-head-medium.ttf` | 145840 | `5e7539a4e245509fd78e95bc754358dfaaa10d6f81351272cc12e011c286d7ba` | pitch.dog's confirmation (2026-10-18) that the CC0 declaration covers this font, which `FONT-PROVENANCE.json` lists as part of the v13 release; the Scope sentence above names only `.woff2` and `.otf` files |
 
 `Phosphor.ttf` in the same folder is not a FontBlind font; it is Phosphor Icons under MIT (`legal/phosphor-icons/`).
