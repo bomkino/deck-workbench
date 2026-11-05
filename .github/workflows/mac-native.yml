@@ -61,4 +61,5 @@ jobs:
             artifacts/evidence/handoffs/**/*.csv
             artifacts/evidence/handoffs/**/Export issues.txt
           if-no-files-found: warn
-          retention-days: 90
+          # Releases consume the exact main build; keep that promotion window.
+          retention-days: ${{ github.ref == 'refs/heads/main' && 90 || 14 }}
